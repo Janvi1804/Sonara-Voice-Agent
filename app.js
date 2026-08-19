@@ -35,7 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const selLlmModel = document.getElementById('selLlmModel');
     const selLlmProvider = document.getElementById('selLlmProvider');
     const txtLlmApiKey = document.getElementById('txtLlmApiKey');
+    const txtHfToken = document.getElementById('txtHfToken');
     const txtSystemPrompt = document.getElementById('txtSystemPrompt');
+    const rowHfToken = document.getElementById('rowHfToken');
+    const rowApiKey = document.getElementById('rowApiKey');
     const selSttModel = document.getElementById('selSttModel');
     const selLanguage = document.getElementById('selLanguage');
     const selTtsVoice = document.getElementById('selTtsVoice');
@@ -70,9 +73,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let isAiSpeaking = false;
     let turnStartTime = 0;
 
+    // Show/hide token fields dynamically based on provider
+    const updateProviderFields = () => {
+        const prov = selLlmProvider ? selLlmProvider.value : 'huggingface';
+        if (rowHfToken) rowHfToken.style.display = prov === 'huggingface' ? 'flex' : 'none';
+        if (rowApiKey) rowApiKey.style.display = prov !== 'huggingface' ? 'flex' : 'none';
+    };
+    if (selLlmProvider) selLlmProvider.addEventListener('change', updateProviderFields);
+
     // Load saved settings from LocalStorage
     const loadSettings = () => {
         if (localStorage.getItem('sonara_llm_api_key')) txtLlmApiKey.value = localStorage.getItem('sonara_llm_api_key');
+        if (localStorage.getItem('sonara_hf_token') && txtHfToken) txtHfToken.value = localStorage.getItem('sonara_hf_token');
         if (localStorage.getItem('sonara_llm_model')) selLlmModel.value = localStorage.getItem('sonara_llm_model');
         if (localStorage.getItem('sonara_llm_provider')) selLlmProvider.value = localStorage.getItem('sonara_llm_provider');
         if (localStorage.getItem('sonara_system_prompt')) txtSystemPrompt.value = localStorage.getItem('sonara_system_prompt');
@@ -90,10 +102,12 @@ document.addEventListener('DOMContentLoaded', () => {
             rngSilenceDuration.value = localStorage.getItem('sonara_silence_dur');
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         }
+        updateProviderFields();
     };
 
     const saveSettings = () => {
         localStorage.setItem('sonara_llm_api_key', txtLlmApiKey.value.trim());
+        if (txtHfToken) localStorage.setItem('sonara_hf_token', txtHfToken.value.trim());
         localStorage.setItem('sonara_llm_model', selLlmModel.value);
         localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
         localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
@@ -111,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ttsEngine.setSpeed(parseFloat(rngSpeed.value));
         }
         settingsModal.classList.remove('active');
-        appendSystemMessage("Configuration applied successfully.");
+        appendSystemMessage("✅ Configuration saved! HuggingFace Gemma 2 is now active.");
     };
 
     // Range input listeners
@@ -128,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnClearChat) btnClearChat.addEventListener('click', () => {
         transcriptContainer.innerHTML = '';
         conversationHistory = [];
+
         appendSystemMessage("Conversation cleared. Ready for new interaction.");
     });
 
@@ -436,7 +451,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
         const apiKey = txtLlmApiKey ? txtLlmApiKey.value.trim() : '';
-        const provider = selLlmProvider ? selLlmProvider.value : 'groq';
+        const hfToken = txtHfToken ? txtHfToken.value.trim() : '';
+        const provider = selLlmProvider ? selLlmProvider.value : 'huggingface';
         const model = selLlmModel ? selLlmModel.value : 'gemma2-9b-it';
         const systemPrompt = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an intelligent voice AI.';
 
@@ -455,9 +471,74 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            if (apiKey && provider === 'groq') {
+            if (provider === 'huggingface') {
+                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 (Requires HF Token) ---
+                // Map UI model name → HuggingFace model ID
+                const hfModelMap = {
+                    'gemma2-9b-it':  'google/gemma-2-9b-it',
+                    'gemma2-27b-it': 'google/gemma-2-27b-it',
+                    'gemini-1.5-flash': 'google/gemma-2-9b-it', // fallback
+                    'gemini-1.5-pro':   'google/gemma-2-27b-it',
+                    'llama-3.3-70b-versatile': 'meta-llama/Llama-3.3-70B-Instruct',
+                };
+                const hfModelId = hfModelMap[model] || 'google/gemma-2-9b-it';
+                const hfUrl = `https://api-inference.huggingface.co/models/${hfModelId}/v1/chat/completions`;
+
+                const hfHeaders = { 'Content-Type': 'application/json' };
+                if (hfToken) hfHeaders['Authorization'] = `Bearer ${hfToken}`;
+
+                const messages = [
+                    { role: 'system', content: systemPrompt },
+                    ...conversationHistory.slice(-8)
+                ];
+
+                const attemptHFCall = async () => {
+                    return fetch(hfUrl, {
+                        method: 'POST',
+                        headers: hfHeaders,
+                        body: JSON.stringify({
+                            model: hfModelId,
+                            messages,
+                            max_tokens: 250,
+                            temperature: 0.65,
+                            stream: false
+                        })
+                    });
+                };
+
+                let hfRes = await attemptHFCall();
+
+                // Handle model cold-start (503) — retry once after 5s
+                if (hfRes.status === 503) {
+                    appendSystemMessage('⏳ Gemma 2 is loading on HuggingFace servers. Retrying in 5 seconds...');
+                    await new Promise(r => setTimeout(r, 5000));
+                    hfRes = await attemptHFCall();
+                }
+
+                if (!hfRes.ok) {
+                    const errText = await hfRes.text().catch(() => '');
+                    if (hfRes.status === 401 || hfRes.status === 403) {
+                        throw new Error('Invalid or missing HuggingFace token. Go to ⚙️ Settings → add your hf_... token from huggingface.co/settings/tokens. Also accept Gemma 2 terms at huggingface.co/google/gemma-2-9b-it');
+                    }
+                    throw new Error(`HuggingFace API error ${hfRes.status}: ${errText.slice(0, 150)}`);
+                }
+
+                const hfData = await hfRes.json();
+                fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
+                if (!fullResponse) throw new Error('Gemma 2 returned an empty response. Please try again.');
+
+                markFirstToken();
+                aiMessageBubble.textContent = fullResponse;
+                // Word-by-word TTS streaming for natural pacing
+                const hfWords = fullResponse.split(' ');
+                for (const w of hfWords) {
+                    if (ttsEngine) ttsEngine.feedToken(w + ' ');
+                }
+
+            } else if (apiKey && provider === 'groq') {
                 // --- GROQ CLOUD: Gemma 2 / Llama (Sub-100ms TTFT, Streaming) ---
                 const groqModel = (model === 'gemini-1.5-flash' || model === 'gemini-1.5-pro') ? 'gemma2-9b-it' : model;
+
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
                     headers: {

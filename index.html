@@ -169,16 +169,24 @@
                         <div class="form-row">
                             <label>Provider Backend</label>
                             <select id="selLlmProvider" class="form-input">
-                                <option value="groq" selected>Groq Cloud (Sub-100ms TTFT - Recommended)</option>
-                                <option value="gemini">Google Gemini AI Studio API</option>
-                                <option value="openrouter">OpenRouter API</option>
-                                <option value="local">Local Ollama / OpenAI Compatible API</option>
+                                <option value="huggingface" selected>🤗 HuggingFace Inference API (Gemma 2 Native)</option>
+                                <option value="groq">⚡ Groq Cloud (Sub-100ms — Fastest)</option>
+                                <option value="gemini">✨ Google Gemini AI Studio API</option>
+                                <option value="openrouter">🌐 OpenRouter API</option>
                             </select>
                         </div>
-                        <div class="form-row">
+                        <div class="form-row" id="rowHfToken">
+                            <label>🤗 HuggingFace Token (for Gemma 2)</label>
+                            <input type="password" id="txtHfToken" class="form-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                            <small class="helper-text">
+                                Get free token: <a href="https://huggingface.co/settings/tokens" target="_blank" style="color:var(--accent-cyan)">huggingface.co/settings/tokens</a>
+                                &bull; Then accept Gemma 2 terms: <a href="https://huggingface.co/google/gemma-2-9b-it" target="_blank" style="color:var(--accent-cyan)">Gemma 2 model page</a>
+                            </small>
+                        </div>
+                        <div class="form-row" id="rowApiKey">
                             <label>API Key (Groq / Gemini / OpenRouter)</label>
                             <input type="password" id="txtLlmApiKey" class="form-input" placeholder="gsk_... or AIzaSy... (Saved locally in browser)" />
-                            <small class="helper-text">You can use your free Groq/Gemini key for lightning fast cloud inference or test without key in fallback mode.</small>
+                            <small class="helper-text">For Groq/Gemini/OpenRouter providers only.</small>
                         </div>
                         <div class="form-row">
                             <label>System Instructions (Persona)</label>
