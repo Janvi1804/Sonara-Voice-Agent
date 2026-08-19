@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // AudioWorklet with silent gain sink (prevents feedback loop, keeps audio thread active)
+            // High-Performance Synchronous DSP Resampler & VAD Pipeline
             const nativeSampleRate = audioContext.sampleRate;
             const targetSampleRate = 16000;
             const resampleRatio = targetSampleRate / nativeSampleRate;
@@ -269,46 +269,22 @@ document.addEventListener('DOMContentLoaded', () => {
             silentSink.gain.value = 0;
             silentSink.connect(audioContext.destination);
 
-            try {
-                await audioContext.audioWorklet.addModule('/vad-worklet.js');
-                const workletNode = new AudioWorkletNode(audioContext, 'vad-processor');
-                workletNode.port.onmessage = (e) => {
-                    if (!isCallActive || !vadEngine || e.data.type !== 'frame') return;
-                    const inputData = e.data.data;
-
-                    // Downsample native sampleRate → 16 kHz
-                    const outputLength = Math.floor(inputData.length * resampleRatio);
-                    const pcm16k = new Float32Array(outputLength);
-                    for (let i = 0; i < outputLength; i++) {
-                        pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
-                    }
-                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                    }
-                };
-                micSource.connect(workletNode);
-                workletNode.connect(silentSink);
-                scriptProcessor = workletNode;
-            } catch (workletErr) {
-                // Fallback: ScriptProcessorNode
-                console.warn('AudioWorklet unavailable, falling back to ScriptProcessorNode:', workletErr.message);
-                const spNode = audioContext.createScriptProcessor(2048, 1, 1);
-                spNode.onaudioprocess = (e) => {
-                    if (!isCallActive || !vadEngine) return;
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    const outputLength = Math.floor(inputData.length * resampleRatio);
-                    const pcm16k = new Float32Array(outputLength);
-                    for (let i = 0; i < outputLength; i++) {
-                        pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
-                    }
-                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                    }
-                };
-                micSource.connect(spNode);
-                spNode.connect(silentSink);
-                scriptProcessor = spNode;
-            }
+            const spNode = audioContext.createScriptProcessor(1024, 1, 1);
+            spNode.onaudioprocess = (e) => {
+                if (!isCallActive || !vadEngine) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const outputLength = Math.floor(inputData.length * resampleRatio);
+                const pcm16k = new Float32Array(outputLength);
+                for (let i = 0; i < outputLength; i++) {
+                    pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
+                }
+                for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
+                    vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
+                }
+            };
+            micSource.connect(spNode);
+            spNode.connect(silentSink);
+            scriptProcessor = spNode;
 
             initSpeechRecognition();
             return true;
@@ -843,8 +819,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const cy = canvas.height / 2;
             const baseRadius = 80;
 
-            if (inputAnalyser) {
+            if (inputAnalyser && isCallActive) {
                 inputAnalyser.getByteFrequencyData(inputDataArray);
+                // Real-time dynamic audio input level (AEC + NS)
+                let sum = 0;
+                for (let i = 0; i < inputDataArray.length; i++) {
+                    sum += inputDataArray[i];
+                }
+                const avg = sum / inputDataArray.length;
+                const db = Math.round((avg / 255) * 60 - 60);
+                const dbPct = Math.min(100, Math.round((avg / 128) * 100));
+                if (audioLevelBar) audioLevelBar.style.width = `${dbPct}%`;
+                if (audioLevelLabel) audioLevelLabel.textContent = `${db} dB`;
             }
 
             if (ttsEngine && ttsEngine.getAnalyser()) {
