@@ -474,8 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             if (provider === 'huggingface' && hfToken) {
-                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 (Token required for gated model) ---
-                // Map UI model name → HuggingFace model ID
+                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 via Serverless API Proxy ---
                 const hfModelMap = {
                     'gemma2-9b-it':  'google/gemma-2-9b-it',
                     'gemma2-27b-it': 'google/gemma-2-27b-it',
@@ -484,50 +483,75 @@ document.addEventListener('DOMContentLoaded', () => {
                     'llama-3.3-70b-versatile': 'meta-llama/Llama-3.3-70B-Instruct',
                 };
                 const hfModelId = hfModelMap[model] || 'google/gemma-2-9b-it';
-                const hfUrl = `https://api-inference.huggingface.co/models/${hfModelId}/v1/chat/completions`;
-
-                const hfHeaders = { 'Content-Type': 'application/json' };
-                if (hfToken) hfHeaders['Authorization'] = `Bearer ${hfToken}`;
-
                 const messages = [
                     { role: 'system', content: systemPrompt },
                     ...conversationHistory.slice(-8)
                 ];
 
-                const attemptHFCall = async () => {
-                    return fetch(hfUrl, {
+                let serverSuccess = false;
+
+                // 1. Call Vercel Serverless Function (/api/chat) — 100% CORS-free on Vercel
+                try {
+                    const apiRes = await fetch('/api/chat', {
                         method: 'POST',
-                        headers: hfHeaders,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: 'huggingface',
+                            model: hfModelId,
+                            messages,
+                            hfToken
+                        })
+                    });
+
+                    if (apiRes.ok) {
+                        const apiData = await apiRes.json();
+                        if (apiData.text) {
+                            fullResponse = apiData.text.trim();
+                            serverSuccess = true;
+                        }
+                    } else {
+                        const errData = await apiRes.json().catch(() => ({}));
+                        if (errData.error) {
+                            console.warn('/api/chat response:', errData.error);
+                            if (errData.error.includes('terms') || errData.error.includes('403') || errData.error.includes('401')) {
+                                throw new Error(errData.error);
+                            }
+                        }
+                    }
+                } catch (apiErr) {
+                    if (apiErr.message && (apiErr.message.includes('terms') || apiErr.message.includes('403') || apiErr.message.includes('401'))) {
+                        throw apiErr;
+                    }
+                    console.warn('/api/chat unavailable, attempting direct fallback:', apiErr.message);
+                }
+
+                // 2. Direct fallback if /api/chat was not available (e.g. pure static dev)
+                if (!serverSuccess) {
+                    const routerUrl = 'https://router.huggingface.co/hf-inference/v1/chat/completions';
+                    const hfRes = await fetch(routerUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${hfToken}`
+                        },
                         body: JSON.stringify({
                             model: hfModelId,
                             messages,
                             max_tokens: 250,
-                            temperature: 0.65,
-                            stream: false
+                            temperature: 0.65
                         })
                     });
-                };
 
-                let hfRes = await attemptHFCall();
-
-                // Handle model cold-start (503) — retry once after 5s
-                if (hfRes.status === 503) {
-                    appendSystemMessage('⏳ Gemma 2 is loading on HuggingFace servers. Retrying in 5 seconds...');
-                    await new Promise(r => setTimeout(r, 5000));
-                    hfRes = await attemptHFCall();
-                }
-
-                if (!hfRes.ok) {
-                    const errText = await hfRes.text().catch(() => '');
-                    if (hfRes.status === 401 || hfRes.status === 403) {
-                        throw new Error('Invalid or missing HuggingFace token. Go to ⚙️ Settings → add your hf_... token from huggingface.co/settings/tokens. Also accept Gemma 2 terms at huggingface.co/google/gemma-2-9b-it');
+                    if (hfRes.ok) {
+                        const hfData = await hfRes.json();
+                        fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
+                    } else {
+                        const errText = await hfRes.text().catch(() => '');
+                        throw new Error(`HuggingFace API (${hfRes.status}): ${errText.slice(0, 120)}`);
                     }
-                    throw new Error(`HuggingFace API error ${hfRes.status}: ${errText.slice(0, 150)}`);
                 }
 
-                const hfData = await hfRes.json();
-                fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
-                if (!fullResponse) throw new Error('Gemma 2 returned an empty response. Please try again.');
+                if (!fullResponse) throw new Error('Gemma 2 returned empty response. Please try again.');
 
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
