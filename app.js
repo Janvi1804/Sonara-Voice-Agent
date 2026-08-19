@@ -233,10 +233,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 },
                 onSpeechEnd: (duration) => {
-                    console.log(`Speech ended. Duration: ${duration.toFixed(0)}ms`);
-                    if (currentSpeechText.trim().length > 0) {
-                        const finalPrompt = currentSpeechText.trim();
-                        currentSpeechText = '';
+                    // Only trigger LLM if: user said something real AND we aren't already processing
+                    if (isAiThinking || isAiSpeaking) return;
+                    const finalPrompt = currentSpeechText.trim();
+                    currentSpeechText = '';
+                    if (finalPrompt.length > 1) {
                         processUserUtterance(finalPrompt);
                     }
                 },
@@ -250,33 +251,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Resampling to 16kHz for Silero VAD
-            const bufferSize = 2048;
-            scriptProcessor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+            // AudioWorklet (modern replacement for deprecated ScriptProcessorNode)
             const nativeSampleRate = audioContext.sampleRate;
             const targetSampleRate = 16000;
             const resampleRatio = targetSampleRate / nativeSampleRate;
+            let workletResampleBuf = [];
 
-            scriptProcessor.onaudioprocess = (e) => {
-                if (!isCallActive || !vadEngine) return;
-                const inputData = e.inputBuffer.getChannelData(0);
+            try {
+                await audioContext.audioWorklet.addModule('/vad-worklet.js');
+                const workletNode = new AudioWorkletNode(audioContext, 'vad-processor');
+                workletNode.port.onmessage = (e) => {
+                    if (!isCallActive || !vadEngine || e.data.type !== 'frame') return;
+                    const inputData = e.data.data;
 
-                // Downsample to 16kHz
-                const outputLength = Math.floor(inputData.length * resampleRatio);
-                const pcm16k = new Float32Array(outputLength);
-                for (let i = 0; i < outputLength; i++) {
-                    const originalIdx = Math.floor(i / resampleRatio);
-                    pcm16k[i] = inputData[originalIdx];
-                }
-
-                // Chunk into 512 frame batches
-                for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                    vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                }
-            };
-
-            micSource.connect(scriptProcessor);
-            scriptProcessor.connect(audioContext.destination);
+                    // Downsample native sampleRate → 16 kHz
+                    const outputLength = Math.floor(inputData.length * resampleRatio);
+                    const pcm16k = new Float32Array(outputLength);
+                    for (let i = 0; i < outputLength; i++) {
+                        pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
+                    }
+                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
+                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
+                    }
+                };
+                micSource.connect(workletNode);
+                workletNode.connect(audioContext.destination);
+                scriptProcessor = workletNode; // keep ref for disconnect on stop
+            } catch (workletErr) {
+                // Fallback: ScriptProcessorNode (still works, just deprecated)
+                console.warn('AudioWorklet unavailable, falling back to ScriptProcessorNode:', workletErr.message);
+                const spNode = audioContext.createScriptProcessor(2048, 1, 1);
+                spNode.onaudioprocess = (e) => {
+                    if (!isCallActive || !vadEngine) return;
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const outputLength = Math.floor(inputData.length * resampleRatio);
+                    const pcm16k = new Float32Array(outputLength);
+                    for (let i = 0; i < outputLength; i++) {
+                        pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
+                    }
+                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
+                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
+                    }
+                };
+                micSource.connect(spNode);
+                spNode.connect(audioContext.destination);
+                scriptProcessor = spNode;
+            }
 
             initSpeechRecognition();
             return true;
@@ -340,13 +360,21 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         speechRecognition.onerror = (e) => {
+            // 'no-speech' is totally normal — user just paused. Never log it as error.
+            if (e.error === 'no-speech' || e.error === 'aborted') return;
             console.warn('STT Error:', e.error);
         };
 
+        let sttRestartTimer = null;
         speechRecognition.onend = () => {
-            if (isCallActive) {
+            if (!isCallActive) return;
+            // Don't restart immediately if AI is speaking — avoids "interrupted" error loop
+            const delay = isAiSpeaking ? 800 : 100;
+            clearTimeout(sttRestartTimer);
+            sttRestartTimer = setTimeout(() => {
+                if (!isCallActive) return;
                 try { speechRecognition.start(); } catch (e) {}
-            }
+            }, delay);
         };
 
         try {

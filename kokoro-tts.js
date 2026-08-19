@@ -163,7 +163,10 @@ export class KokoroTTS {
 
                 utterance.onend = complete;
                 utterance.onerror = (e) => {
-                    console.error('Speech synthesis error:', e);
+                    // 'interrupted' is expected during barge-in cancellation — not a real error
+                    if (e.error !== 'interrupted' && e.error !== 'canceled') {
+                        console.error('Speech synthesis error:', e.error);
+                    }
                     complete();
                 };
 
