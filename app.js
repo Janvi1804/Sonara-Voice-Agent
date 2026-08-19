@@ -220,12 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Initialize Silero VAD Engine
+            // Initialize Silero VAD Engine with optimal voice sensitivity (0.45 threshold)
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.65,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 650,
                 onFrame: (data) => {
                     const probPct = Math.round(data.prob * 100);
                     if (vadConfidenceBar) vadConfidenceBar.style.width = `${probPct}%`;
@@ -244,17 +244,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 onSpeechStart: () => {
                     if (vadStatus) vadStatus.textContent = 'USER SPEAKING';
                     if (!isAiSpeaking && !isAiThinking) {
-                        setAgentState('listening', 'User Speaking (DSP Active)');
+                        setAgentState('listening', 'Hearing your voice...');
                     }
                 },
                 onSpeechEnd: (duration) => {
-                    // Only trigger LLM if: user said something real AND we aren't already processing
                     if (isAiThinking || isAiSpeaking) return;
-                    const finalPrompt = currentSpeechText.trim();
-                    currentSpeechText = '';
-                    if (finalPrompt.length > 1) {
-                        processUserUtterance(finalPrompt);
-                    }
+                    commitUserVoiceInput();
                 },
                 onBargeIn: () => {
                     console.log('⚡ BARGE-IN TRIGGERED: Interrupting AI speech output!');
@@ -266,11 +261,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // AudioWorklet (modern replacement for deprecated ScriptProcessorNode)
+            // AudioWorklet with silent gain sink (prevents feedback loop, keeps audio thread active)
             const nativeSampleRate = audioContext.sampleRate;
             const targetSampleRate = 16000;
             const resampleRatio = targetSampleRate / nativeSampleRate;
-            let workletResampleBuf = [];
+            const silentSink = audioContext.createGain();
+            silentSink.gain.value = 0;
+            silentSink.connect(audioContext.destination);
 
             try {
                 await audioContext.audioWorklet.addModule('/vad-worklet.js');
@@ -290,10 +287,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 micSource.connect(workletNode);
-                workletNode.connect(audioContext.destination);
-                scriptProcessor = workletNode; // keep ref for disconnect on stop
+                workletNode.connect(silentSink);
+                scriptProcessor = workletNode;
             } catch (workletErr) {
-                // Fallback: ScriptProcessorNode (still works, just deprecated)
+                // Fallback: ScriptProcessorNode
                 console.warn('AudioWorklet unavailable, falling back to ScriptProcessorNode:', workletErr.message);
                 const spNode = audioContext.createScriptProcessor(2048, 1, 1);
                 spNode.onaudioprocess = (e) => {
@@ -309,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 micSource.connect(spNode);
-                spNode.connect(audioContext.destination);
+                spNode.connect(silentSink);
                 scriptProcessor = spNode;
             }
 
@@ -322,7 +319,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    let sttCommitTimer = null;
+    const commitUserVoiceInput = () => {
+        clearTimeout(sttCommitTimer);
+        if (isAiThinking || isAiSpeaking) return;
+        const prompt = currentSpeechText.trim();
+        currentSpeechText = '';
+        if (prompt.length >= 2) {
+            processUserUtterance(prompt);
+        }
+    };
+
     const stopAudioPipeline = () => {
+        clearTimeout(sttCommitTimer);
         if (ttsEngine) ttsEngine.interrupt();
         if (speechRecognition) {
             try { speechRecognition.stop(); } catch (e) {}
@@ -351,50 +360,71 @@ document.addEventListener('DOMContentLoaded', () => {
     const initSpeechRecognition = () => {
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) {
-            appendSystemMessage('Web Speech Recognition unavailable. You can type messages to talk to SONARA.');
+            appendSystemMessage('Web Speech Recognition unavailable in this browser. You can type in the box below to chat with Gemma 2.');
             return;
         }
 
-        speechRecognition = new SpeechRec();
-        speechRecognition.continuous = true;
-        speechRecognition.interimResults = true;
-        speechRecognition.lang = (selLanguage && selLanguage.value === 'hi') ? 'hi-IN' : 'en-US';
-
-        speechRecognition.onresult = (event) => {
-            let interim = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    currentSpeechText += ' ' + event.results[i][0].transcript;
-                } else {
-                    interim += event.results[i][0].transcript;
-                }
-            }
-            if (interim.trim()) {
-                currentSpeechText = interim.trim();
-            }
-        };
-
-        speechRecognition.onerror = (e) => {
-            // 'no-speech' is totally normal — user just paused. Never log it as error.
-            if (e.error === 'no-speech' || e.error === 'aborted') return;
-            console.warn('STT Error:', e.error);
-        };
-
-        let sttRestartTimer = null;
-        speechRecognition.onend = () => {
-            if (!isCallActive) return;
-            // Don't restart immediately if AI is speaking — avoids "interrupted" error loop
-            const delay = isAiSpeaking ? 800 : 100;
-            clearTimeout(sttRestartTimer);
-            sttRestartTimer = setTimeout(() => {
-                if (!isCallActive) return;
-                try { speechRecognition.start(); } catch (e) {}
-            }, delay);
-        };
-
         try {
+            speechRecognition = new SpeechRec();
+            speechRecognition.continuous = true;
+            speechRecognition.interimResults = true;
+            speechRecognition.lang = (selLanguage && selLanguage.value === 'hi') ? 'hi-IN' : 'en-US';
+
+            speechRecognition.onresult = (event) => {
+                let finalChunk = '';
+                let interimChunk = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalChunk += ' ' + event.results[i][0].transcript;
+                    } else {
+                        interimChunk += ' ' + event.results[i][0].transcript;
+                    }
+                }
+
+                if (finalChunk.trim()) {
+                    currentSpeechText = (currentSpeechText + ' ' + finalChunk.trim()).trim();
+                }
+
+                const liveHeard = (currentSpeechText + ' ' + interimChunk.trim()).trim();
+                if (liveHeard && !isAiSpeaking && !isAiThinking) {
+                    setAgentState('listening', `Hearing: "${liveHeard}"`);
+                }
+
+                // Dual Trigger: If user finishes a sentence, debounce 750ms and commit
+                if (finalChunk.trim() || interimChunk.trim()) {
+                    clearTimeout(sttCommitTimer);
+                    sttCommitTimer = setTimeout(() => {
+                        if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                            const fullSaid = (currentSpeechText + ' ' + interimChunk.trim()).trim();
+                            if (fullSaid.length >= 2) {
+                                currentSpeechText = '';
+                                processUserUtterance(fullSaid);
+                            }
+                        }
+                    }, 850);
+                }
+            };
+
+            speechRecognition.onerror = (e) => {
+                if (e.error === 'no-speech' || e.error === 'aborted') return;
+                console.warn('STT Note:', e.error);
+            };
+
+            let sttRestartTimer = null;
+            speechRecognition.onend = () => {
+                if (!isCallActive) return;
+                const delay = isAiSpeaking ? 800 : 100;
+                clearTimeout(sttRestartTimer);
+                sttRestartTimer = setTimeout(() => {
+                    if (!isCallActive) return;
+                    try { speechRecognition.start(); } catch (e) {}
+                }, delay);
+            };
+
             speechRecognition.start();
-        } catch (e) {}
+        } catch (e) {
+            console.warn('SpeechRecognition init error:', e);
+        }
     };
 
     /**

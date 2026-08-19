@@ -6,9 +6,9 @@ export class SileroVAD {
     constructor(options = {}) {
         this.sampleRate = options.sampleRate || 16000;
         this.frameSize = options.frameSize || 512; // 32ms frame at 16kHz
-        this.threshold = options.threshold || 0.65;
-        this.silenceDurationMs = options.silenceDurationMs || 700;
-        this.minSpeechDurationMs = options.minSpeechDurationMs || 250;
+        this.threshold = options.threshold || 0.45;
+        this.silenceDurationMs = options.silenceDurationMs || 650;
+        this.minSpeechDurationMs = options.minSpeechDurationMs || 200;
 
         this.onSpeechStart = options.onSpeechStart || (() => {});
         this.onSpeechEnd = options.onSpeechEnd || (() => {});
