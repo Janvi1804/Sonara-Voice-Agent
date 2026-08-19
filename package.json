@@ -1,0 +1,9 @@
+﻿{
+  "name": "sonara-voice-agent",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node -e \"console.log('Build successful')\"",
+    "start": "node server/server.js"
+  }
+}
