@@ -1,0 +1,268 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SONARA-AI | Next-Gen Real-Time Voice Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+    <!-- Background Ambient Glows -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+    <div class="ambient-glow glow-3"></div>
+
+    <div class="app-container">
+        <!-- Top Navigation Header -->
+        <header class="app-header">
+            <div class="brand-badge">
+                <div class="brand-icon-pulse">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>SONARA <span>VOICE AI</span></h1>
+                    <span class="pipeline-badge">Duplex v3.2 &bull; Silero + Gemma 2 + Kokoro</span>
+                </div>
+            </div>
+
+            <div class="header-stats">
+                <div class="stat-pill" title="End-to-End Latency">
+                    <i class="fa-solid fa-bolt text-amber"></i>
+                    <span>Latency:</span>
+                    <strong id="latencyE2E">0 ms</strong>
+                </div>
+                <div class="stat-pill" title="VAD Speech Probability">
+                    <i class="fa-solid fa-wave-square text-cyan"></i>
+                    <span>VAD:</span>
+                    <strong id="vadStatus">SILENCE</strong>
+                </div>
+                <button id="btnOpenSettings" class="icon-btn" title="Model & API Configuration">
+                    <i class="fa-solid fa-sliders"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Visualizer & Interaction Stage -->
+        <main class="main-stage">
+            <!-- Center Glowing Voice Orb & Canvas -->
+            <div class="orb-wrapper">
+                <canvas id="visualizerCanvas" width="560" height="560"></canvas>
+                <div class="orb-core" id="orbCore">
+                    <div class="orb-ring ring-1"></div>
+                    <div class="orb-ring ring-2"></div>
+                    <div class="orb-ring ring-3"></div>
+                    <div class="orb-center-icon">
+                        <i id="orbStateIcon" class="fa-solid fa-microphone-slash"></i>
+                    </div>
+                </div>
+
+                <!-- Floating Status Badge -->
+                <div class="agent-status-tag" id="agentStatusTag">
+                    <span class="status-dot"></span>
+                    <span class="status-label" id="agentStatusText">Agent Inactive &bull; Click to Start</span>
+                </div>
+            </div>
+
+            <!-- Real-time Speech Probability & Audio Level Bar -->
+            <div class="audio-metrics-bar">
+                <div class="metric-item">
+                    <div class="metric-header">
+                        <span><i class="fa-solid fa-shield-halved"></i> Silero VAD Confidence</span>
+                        <span id="vadConfidenceLabel">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill vad-fill" id="vadConfidenceBar" style="width: 0%;"></div>
+                        <div class="threshold-marker" id="vadThresholdMarker" style="left: 65%;" title="Silence/Speech Threshold (65%)"></div>
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-header">
+                        <span><i class="fa-solid fa-volume-high"></i> DSP Audio Input Level (AEC + NS)</span>
+                        <span id="audioLevelLabel">0 dB</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill audio-fill" id="audioLevelBar" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Action Controls -->
+            <div class="stage-controls">
+                <button id="btnToggleVoice" class="primary-call-btn">
+                    <div class="btn-glow"></div>
+                    <i class="fa-solid fa-phone" id="callBtnIcon"></i>
+                    <span id="callBtnText">Start Real-Time Voice</span>
+                </button>
+                <button id="btnInterrupt" class="action-pill-btn" title="Barge-in / Interrupt Agent" disabled>
+                    <i class="fa-solid fa-hand"></i> Interrupt (Barge-in)
+                </button>
+                <button id="btnClearChat" class="action-pill-btn" title="Clear Conversation Transcript">
+                    <i class="fa-solid fa-trash-can"></i> Clear Log
+                </button>
+            </div>
+        </main>
+
+        <!-- Live Streaming Conversation Drawer -->
+        <section class="transcript-section">
+            <div class="transcript-header">
+                <div class="transcript-title">
+                    <i class="fa-solid fa-comments"></i>
+                    <span>Live Duplex Transcript</span>
+                </div>
+                <div class="model-tags-bar">
+                    <span class="tag-chip"><i class="fa-solid fa-bolt"></i> Whisper v3 Turbo</span>
+                    <span class="tag-chip"><i class="fa-solid fa-microchip"></i> Gemma 2 (27B)</span>
+                    <span class="tag-chip"><i class="fa-solid fa-music"></i> Kokoro-82M (af_heart)</span>
+                </div>
+            </div>
+
+            <div class="transcript-body" id="transcriptContainer">
+                <div class="chat-message system">
+                    <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+                    <div class="message-content">
+                        <div class="message-author">SONARA AGENT &bull; System Ready</div>
+                        <div class="message-bubble">
+                            Welcome! I am your real-time multimodal voice agent powered by <strong>Silero VAD</strong>, <strong>Google Gemma 2</strong>, <strong>Whisper Large v3 Turbo</strong>, and <strong>Kokoro-82M</strong> natural human voice. Click <strong>"Start Real-Time Voice"</strong> to speak naturally!
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Text Input for Hybrid Testing -->
+            <div class="chat-input-bar">
+                <input type="text" id="manualTextInput" placeholder="Or type a prompt to test Gemma 2 & Kokoro-82M speech directly..." />
+                <button id="btnSendText" class="send-btn" title="Send Text">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Configuration Modal / Settings Drawer -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-sliders"></i> Engine Configuration & Models</h2>
+                <button class="close-modal-btn" id="btnCloseSettings"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="modal-body">
+                <div class="settings-grid">
+                    <!-- LLM Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-brain"></i> LLM Reasoning Engine</label>
+                        <div class="form-row">
+                            <label>Model Architecture</label>
+                            <select id="selLlmModel" class="form-input">
+                                <option value="gemma2-9b-it" selected>Google Gemma 2 9B Instruct (Ultra Fast)</option>
+                                <option value="gemma2-27b-it">Google Gemma 2 27B Instruct (High IQ)</option>
+                                <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (Multimodal)</option>
+                                <option value="gemini-1.5-pro">Google Gemini 1.5 Pro</option>
+                                <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label>Provider Backend</label>
+                            <select id="selLlmProvider" class="form-input">
+                                <option value="groq" selected>Groq Cloud (Sub-100ms TTFT - Recommended)</option>
+                                <option value="gemini">Google Gemini AI Studio API</option>
+                                <option value="openrouter">OpenRouter API</option>
+                                <option value="local">Local Ollama / OpenAI Compatible API</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label>API Key (Groq / Gemini / OpenRouter)</label>
+                            <input type="password" id="txtLlmApiKey" class="form-input" placeholder="gsk_... or AIzaSy... (Saved locally in browser)" />
+                            <small class="helper-text">You can use your free Groq/Gemini key for lightning fast cloud inference or test without key in fallback mode.</small>
+                        </div>
+                        <div class="form-row">
+                            <label>System Instructions (Persona)</label>
+                            <textarea id="txtSystemPrompt" class="form-input text-area" rows="2">You are SONARA, an ultra-intelligent, friendly, concise real-time voice AI assistant. You speak naturally like a human with warmth, brevity, and charisma. Keep responses concise (1-2 sentences) suited for spoken voice.</textarea>
+                        </div>
+                    </div>
+
+                    <!-- STT Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text (STT)</label>
+                        <div class="form-row">
+                            <label>STT Model</label>
+                            <select id="selSttModel" class="form-input">
+                                <option value="whisper-large-v3-turbo" selected>OpenAI Whisper Large v3 Turbo (Groq / HF)</option>
+                                <option value="nvidia-parakeet">NVIDIA Parakeet CTC 0.6B / 1.1B</option>
+                                <option value="assemblyai-universal">AssemblyAI Universal-1 (Realtime)</option>
+                                <option value="web-speech">Native Web Speech Recognition (Built-in Browser)</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label>Input Language</label>
+                            <select id="selLanguage" class="form-input">
+                                <option value="en" selected>English (Automatic Accent Adaptation)</option>
+                                <option value="hi">Hindi (हिन्दी / Hinglish)</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="ja">Japanese</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- TTS Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS: Kokoro-82M)</label>
+                        <div class="form-row">
+                            <label>TTS Model & Voice Profile</label>
+                            <select id="selTtsVoice" class="form-input">
+                                <option value="af_heart" selected>Kokoro-82M - Heart (Warm & Natural Female)</option>
+                                <option value="af_bella">Kokoro-82M - Bella (Expressive Female)</option>
+                                <option value="af_nicole">Kokoro-82M - Nicole (Calm & Clear)</option>
+                                <option value="am_adam">Kokoro-82M - Adam (Natural Deep Male)</option>
+                                <option value="am_michael">Kokoro-82M - Michael (Professional Male)</option>
+                                <option value="bf_emma">Kokoro-82M - Emma (British Female)</option>
+                                <option value="bm_george">Kokoro-82M - George (British Male)</option>
+                                <option value="native-browser">Native Browser Neural Voice (Fallback)</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label>Speaking Speed: <span id="lblSpeed">1.05x</span></label>
+                            <input type="range" id="rngSpeed" min="0.8" max="1.5" step="0.05" value="1.05" class="slider" />
+                        </div>
+                    </div>
+
+                    <!-- VAD & DSP Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-sliders"></i> Silero VAD & Audio DSP</label>
+                        <div class="form-row checkbox-row">
+                            <label><input type="checkbox" id="chkAec" checked /> Acoustic Echo Cancellation (AEC)</label>
+                            <label><input type="checkbox" id="chkNoiseSuppression" checked /> Noise Suppression (NS)</label>
+                            <label><input type="checkbox" id="chkAutoGain" checked /> Automatic Gain Control (AGC)</label>
+                        </div>
+                        <div class="form-row">
+                            <label>VAD Sensitivity Threshold: <span id="lblVadThreshold">0.65</span></label>
+                            <input type="range" id="rngVadThreshold" min="0.3" max="0.95" step="0.05" value="0.65" class="slider" />
+                        </div>
+                        <div class="form-row">
+                            <label>Silence Hangover Duration: <span id="lblSilenceDuration">700 ms</span></label>
+                            <input type="range" id="rngSilenceDuration" min="300" max="2000" step="50" value="700" class="slider" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="save-settings-btn" id="btnSaveSettings">
+                    <i class="fa-solid fa-check"></i> Save & Apply Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="vad-silero.js"></script>
+    <script src="kokoro-tts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
