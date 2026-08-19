@@ -2,14 +2,13 @@
   "name": "sonara-voice-agent",
   "version": "1.0.0",
   "description": "Real-time duplex Voice AI Agent using Silero VAD, Gemma 2, Whisper Turbo, Kokoro-82M, and Web Audio API",
-  "main": "server.js",
   "scripts": {
+    "build": "echo 'Build ready for Vercel deployment'",
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "ws": "^8.16.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5"
+    "cors": "^2.8.5"
   }
 }
