@@ -532,68 +532,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ttsEngine) ttsEngine.feedToken(fullResponse);
 
             } else {
-                // --- DEFAULT FREE: HuggingFace Gemma 2 9B IT (No API Key Needed!) ---
-                const hfModel = 'google/gemma-2-9b-it';
-                const hfHeaders = { 'Content-Type': 'application/json' };
+                // --- DEFAULT FREE MODE: Pollinations.AI (No API key, No CORS, Always Works) ---
+                // Pollinations.AI is completely free, CORS-enabled, and needs zero setup.
+                // For actual Gemma 2, add a free Groq key in ⚙️ Settings → instant streaming.
 
-                // Build message array with conversation context (last 6 turns)
-                const historySlice = conversationHistory.slice(-6);
+                const historySlice = conversationHistory.slice(-8);
                 const messages = [
-                    { role: 'user', content: `[System: ${systemPrompt}]\nLet's begin.` },
-                    { role: 'assistant', content: 'Understood! I am SONARA, ready to help.' },
+                    { role: 'system', content: systemPrompt },
                     ...historySlice.map(m => ({
                         role: m.role === 'assistant' ? 'assistant' : 'user',
                         content: m.content
                     }))
                 ];
 
-                const hfRes = await fetch(
-                    `https://api-inference.huggingface.co/models/${hfModel}/v1/chat/completions`,
-                    {
-                        method: 'POST',
-                        headers: hfHeaders,
-                        body: JSON.stringify({
-                            model: hfModel,
-                            messages,
-                            max_tokens: 200,
-                            temperature: 0.65,
-                            stream: false
-                        })
-                    }
-                );
+                const pollRes = await fetch('https://text.pollinations.ai/openai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'openai-fast',
+                        messages,
+                        max_tokens: 200,
+                        temperature: 0.7,
+                        stream: false,
+                        private: true
+                    })
+                });
 
-                if (!hfRes.ok) {
-                    if (hfRes.status === 503) {
-                        // Model cold-starting on HF free servers — wait and retry once
-                        appendSystemMessage('⏳ Gemma 2 is loading on free servers. Retrying in 4 seconds...');
-                        await new Promise(r => setTimeout(r, 4000));
-                        const retry = await fetch(
-                            `https://api-inference.huggingface.co/models/${hfModel}/v1/chat/completions`,
-                            {
-                                method: 'POST',
-                                headers: hfHeaders,
-                                body: JSON.stringify({ model: hfModel, messages, max_tokens: 200, temperature: 0.65 })
-                            }
-                        );
-                        if (!retry.ok) {
-                            fullResponse = "Gemma 2 is still warming up. Please wait a moment and try again, or add a free Groq API key in ⚙️ Settings for instant always-on responses!";
-                        } else {
-                            const retryData = await retry.json();
-                            fullResponse = retryData.choices?.[0]?.message?.content?.trim() || "I'm here to help!";
-                        }
-                    } else {
-                        const errText = await hfRes.text().catch(() => '');
-                        throw new Error(`Gemma 2 API error ${hfRes.status}: ${errText.slice(0, 120)}`);
-                    }
-                } else {
-                    const hfData = await hfRes.json();
-                    fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
-                    if (!fullResponse) throw new Error('Gemma 2 returned an empty response. Please retry.');
+                if (!pollRes.ok) {
+                    const errText = await pollRes.text().catch(() => '');
+                    throw new Error(`Free AI API error ${pollRes.status}: ${errText.slice(0, 100)}`);
                 }
+
+                const pollData = await pollRes.json();
+                fullResponse = pollData.choices?.[0]?.message?.content?.trim() || '';
+                if (!fullResponse) throw new Error('Empty response. Please retry.');
 
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
-                if (ttsEngine) ttsEngine.feedToken(fullResponse);
+                // Stream token word-by-word into TTS for natural pacing
+                const words = fullResponse.split(' ');
+                for (const word of words) {
+                    if (ttsEngine) ttsEngine.feedToken(word + ' ');
+                }
             }
 
             if (ttsEngine) ttsEngine.flush();
