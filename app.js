@@ -450,11 +450,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma 2';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
-        const apiKey = txtLlmApiKey ? txtLlmApiKey.value.trim() : '';
-        const hfToken = txtHfToken ? txtHfToken.value.trim() : '';
+        // Read from Settings field first, fallback to Vercel env variable (VITE_HF_TOKEN / VITE_API_KEY)
+        const apiKey = (txtLlmApiKey?.value.trim()) || (import.meta.env.VITE_API_KEY || '');
+        const hfToken = (txtHfToken?.value.trim()) || (import.meta.env.VITE_HF_TOKEN || '');
         const provider = selLlmProvider ? selLlmProvider.value : 'huggingface';
         const model = selLlmModel ? selLlmModel.value : 'gemma2-9b-it';
         const systemPrompt = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an intelligent voice AI.';
+
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
 
