@@ -418,7 +418,18 @@ document.addEventListener('DOMContentLoaded', () => {
             let fullResponse = '';
             let firstTokenTime = 0;
 
+            const markFirstToken = () => {
+                if (!firstTokenTime) {
+                    firstTokenTime = performance.now();
+                    const ttft = Math.round(firstTokenTime - turnStartTime);
+                    if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
+                    setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
+                }
+            };
+
             if (apiKey && provider === 'groq') {
+                // --- GROQ CLOUD: Gemma 2 / Llama (Sub-100ms TTFT, Streaming) ---
+                const groqModel = (model === 'gemini-1.5-flash' || model === 'gemini-1.5-pro') ? 'gemma2-9b-it' : model;
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -426,20 +437,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         'Authorization': `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        model: model === 'gemini-1.5-flash' ? 'gemma2-9b-it' : model,
+                        model: groqModel,
                         messages: [
                             { role: 'system', content: systemPrompt },
                             ...conversationHistory
                         ],
-                        temperature: 0.6,
+                        temperature: 0.65,
                         max_tokens: 300,
                         stream: true
                     })
                 });
 
                 if (!res.ok) {
-                    const errJson = await res.json();
-                    throw new Error(errJson.error?.message || `HTTP ${res.status}`);
+                    const errJson = await res.json().catch(() => ({}));
+                    throw new Error(errJson.error?.message || `Groq HTTP ${res.status}`);
                 }
 
                 const reader = res.body.getReader();
@@ -449,11 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
                     buffer = lines.pop();
-
                     for (const line of lines) {
                         const cleanLine = line.replace(/^data:\s*/, '').trim();
                         if (!cleanLine || cleanLine === '[DONE]') continue;
@@ -461,12 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const parsed = JSON.parse(cleanLine);
                             const token = parsed.choices[0]?.delta?.content || '';
                             if (token) {
-                                if (!firstTokenTime) {
-                                    firstTokenTime = performance.now();
-                                    const ttft = Math.round(firstTokenTime - turnStartTime);
-                                    if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
-                                    setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
-                                }
+                                markFirstToken();
                                 fullResponse += token;
                                 aiMessageBubble.textContent = fullResponse;
                                 if (ttsEngine) ttsEngine.feedToken(token);
@@ -474,71 +478,110 @@ document.addEventListener('DOMContentLoaded', () => {
                         } catch (e) {}
                     }
                 }
+
             } else if (apiKey && provider === 'gemini') {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                // --- GOOGLE GEMINI API ---
+                const geminiModel = (model === 'gemma2-9b-it' || model === 'gemma2-27b-it') ? 'gemini-1.5-flash' : model;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
                 const contents = conversationHistory.map(m => ({
                     role: m.role === 'assistant' ? 'model' : 'user',
                     parts: [{ text: m.content }]
                 }));
-
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         systemInstruction: { parts: [{ text: systemPrompt }] },
-                        contents: contents
+                        contents,
+                        generationConfig: { maxOutputTokens: 300, temperature: 0.65 }
                     })
                 });
-
                 const data = await res.json();
-                fullResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here to help!";
-                firstTokenTime = performance.now();
-                if (latencyE2E) latencyE2E.textContent = `${Math.round(firstTokenTime - turnStartTime)} ms`;
+                if (data.error) throw new Error(data.error.message);
+                fullResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I'm here to help!";
+                markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 if (ttsEngine) ttsEngine.feedToken(fullResponse);
-            } else {
-                // High-speed Instant Fallback
-                await new Promise(r => setTimeout(r, 180));
-                firstTokenTime = performance.now();
-                if (latencyE2E) latencyE2E.textContent = `${Math.round(firstTokenTime - turnStartTime)} ms`;
 
-                fullResponse = generateIntelligentResponse(userPrompt);
+            } else {
+                // --- DEFAULT FREE: HuggingFace Gemma 2 9B IT (No API Key Needed!) ---
+                const hfModel = 'google/gemma-2-9b-it';
+                const hfHeaders = { 'Content-Type': 'application/json' };
+
+                // Build message array with conversation context (last 6 turns)
+                const historySlice = conversationHistory.slice(-6);
+                const messages = [
+                    { role: 'user', content: `[System: ${systemPrompt}]\nLet's begin.` },
+                    { role: 'assistant', content: 'Understood! I am SONARA, ready to help.' },
+                    ...historySlice.map(m => ({
+                        role: m.role === 'assistant' ? 'assistant' : 'user',
+                        content: m.content
+                    }))
+                ];
+
+                const hfRes = await fetch(
+                    `https://api-inference.huggingface.co/models/${hfModel}/v1/chat/completions`,
+                    {
+                        method: 'POST',
+                        headers: hfHeaders,
+                        body: JSON.stringify({
+                            model: hfModel,
+                            messages,
+                            max_tokens: 200,
+                            temperature: 0.65,
+                            stream: false
+                        })
+                    }
+                );
+
+                if (!hfRes.ok) {
+                    if (hfRes.status === 503) {
+                        // Model cold-starting on HF free servers — wait and retry once
+                        appendSystemMessage('⏳ Gemma 2 is loading on free servers. Retrying in 4 seconds...');
+                        await new Promise(r => setTimeout(r, 4000));
+                        const retry = await fetch(
+                            `https://api-inference.huggingface.co/models/${hfModel}/v1/chat/completions`,
+                            {
+                                method: 'POST',
+                                headers: hfHeaders,
+                                body: JSON.stringify({ model: hfModel, messages, max_tokens: 200, temperature: 0.65 })
+                            }
+                        );
+                        if (!retry.ok) {
+                            fullResponse = "Gemma 2 is still warming up. Please wait a moment and try again, or add a free Groq API key in ⚙️ Settings for instant always-on responses!";
+                        } else {
+                            const retryData = await retry.json();
+                            fullResponse = retryData.choices?.[0]?.message?.content?.trim() || "I'm here to help!";
+                        }
+                    } else {
+                        const errText = await hfRes.text().catch(() => '');
+                        throw new Error(`Gemma 2 API error ${hfRes.status}: ${errText.slice(0, 120)}`);
+                    }
+                } else {
+                    const hfData = await hfRes.json();
+                    fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
+                    if (!fullResponse) throw new Error('Gemma 2 returned an empty response. Please retry.');
+                }
+
+                markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 if (ttsEngine) ttsEngine.feedToken(fullResponse);
             }
 
             if (ttsEngine) ttsEngine.flush();
             conversationHistory.push({ role: 'assistant', content: fullResponse });
+
         } catch (err) {
             console.error('LLM Error:', err);
-            aiMessageBubble.textContent = `[Error: ${err.message}]. Please check your API key in settings.`;
+            const errMsg = `⚠️ ${err.message}. Tip: Add a free Groq API key in ⚙️ Settings for reliable instant Gemma 2 responses.`;
+            aiMessageBubble.textContent = errMsg;
             if (ttsEngine) {
-                ttsEngine.feedToken("I encountered a connection issue. Please check your settings.");
+                ttsEngine.feedToken("I had trouble connecting to Gemma. Please add your Groq API key in settings for the best experience.");
                 ttsEngine.flush();
             }
         } finally {
             isAiThinking = false;
         }
-    };
-
-    const generateIntelligentResponse = (prompt) => {
-        const lower = prompt.toLowerCase();
-        if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-            return "Hello! I am SONARA, your real-time voice assistant powered by Silero VAD, Google Gemma 2, and Kokoro 82M speech synthesis. How can I help you today?";
-        }
-        if (lower.includes('who are you') || lower.includes('what can you do')) {
-            return "I am SONARA, an ultra-low latency voice agent. I can understand your voice in real time, classify speech with Silero VAD, reason with Gemma 2, and respond with human-like Kokoro neural voices.";
-        }
-        if (lower.includes('vad') || lower.includes('silero')) {
-            return "Silero VAD is actively classifying your audio frames and managing instant barge-in interruption whenever you speak.";
-        }
-        if (lower.includes('gemma') || lower.includes('gemini')) {
-            return "Google Gemma 2 is built with sliding-window attention and high parameter efficiency, perfect for sub-100 millisecond voice dialogue.";
-        }
-        if (lower.includes('kokoro')) {
-            return "Kokoro-82M generates rich, natural human-like voice synthesis directly in the browser with expressive inflection.";
-        }
-        return `I heard you say: "${prompt}". Thanks to duplex streaming and Silero VAD, you can interrupt me anytime and converse naturally!`;
     };
 
     const appendChatMessage = (role, text, isDynamic = false) => {
