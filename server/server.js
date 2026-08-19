@@ -12,9 +12,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+// Serve root static frontend files
+app.use(express.static(path.join(__dirname, '..')));
 
-// WebSocket real-time audio pipeline channel
 wss.on('connection', (ws) => {
     console.log('⚡ Client connected via WebSocket for real-time duplex audio');
 
@@ -24,9 +24,7 @@ wss.on('connection', (ws) => {
             if (data.type === 'ping') {
                 ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
             }
-        } catch (e) {
-            // Binary audio streaming chunk
-        }
+        } catch (e) {}
     });
 
     ws.on('close', () => {
@@ -35,8 +33,5 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`\n======================================================`);
-    console.log(`🚀 SONARA Real-Time Voice AI Agent running!`);
-    console.log(`👉 Open in browser: http://localhost:${PORT}`);
-    console.log(`======================================================\n`);
+    console.log(`\n🚀 SONARA Server running at: http://localhost:${PORT}\n`);
 });
