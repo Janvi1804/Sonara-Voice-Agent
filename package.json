@@ -1,9 +1,14 @@
-﻿{
+{
   "name": "sonara-voice-agent",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "node -e \"console.log('Build successful')\"",
-    "start": "node server/server.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0"
   }
 }

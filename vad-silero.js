@@ -1,8 +1,8 @@
-﻿/**
+/**
  * Silero VAD (Voice Activity Detection) Engine
  * Real-time silence/speech classifier and barge-in detector with Web Audio DSP.
  */
-class SileroVAD {
+export class SileroVAD {
     constructor(options = {}) {
         this.sampleRate = options.sampleRate || 16000;
         this.frameSize = options.frameSize || 512; // 32ms frame at 16kHz
@@ -18,27 +18,23 @@ class SileroVAD {
         this.isSpeaking = false;
         this.speakingStartTime = 0;
         this.lastSpeechTime = 0;
-        this.silenceTimer = null;
         this.aiIsSpeaking = false;
 
         // Neural DSP energy & spectral history
         this.noiseFloor = 0.005;
         this.smoothedProb = 0.0;
-        this.historySize = 5;
-        this.energyHistory = new Float32Array(this.historySize);
-        this.historyIdx = 0;
     }
 
     setThreshold(val) {
-        this.threshold = Math.max(0.1, Math.min(0.99, val));
+        this.threshold = Math.max(0.1, Math.min(0.99, Number(val) || 0.65));
     }
 
     setSilenceDuration(ms) {
-        this.silenceDurationMs = ms;
+        this.silenceDurationMs = Number(ms) || 700;
     }
 
     setAiSpeakingState(isSpeaking) {
-        this.aiIsSpeaking = isSpeaking;
+        this.aiIsSpeaking = !!isSpeaking;
     }
 
     /**
@@ -48,7 +44,7 @@ class SileroVAD {
         const n = pcmData.length;
         if (n === 0) return { prob: 0, isSpeaking: this.isSpeaking };
 
-        // 1. Calculate RMS Energy
+        // 1. Calculate RMS Energy and Zero Crossing Rate
         let sumSquares = 0;
         let zeroCrossings = 0;
         let prevSample = pcmData[0];
@@ -77,7 +73,6 @@ class SileroVAD {
         const snr = Math.max(0, 20 * Math.log10((rms + 1e-6) / (this.noiseFloor + 1e-6)));
 
         // Silero VAD Neural Logistic Approximation
-        // Human speech typically has SNR > 12dB and ZCR in human phoneme range (0.04 - 0.45)
         const snrFactor = 1 / (1 + Math.exp(-0.35 * (snr - 14)));
         const zcrFactor = (zcr > 0.03 && zcr < 0.55) ? 1.0 : 0.3;
         const energyConfidence = Math.min(1.0, rms / 0.035);
@@ -85,7 +80,7 @@ class SileroVAD {
         // Combined speech probability
         const rawProb = Math.min(1.0, Math.max(0.0, (snrFactor * 0.7 + energyConfidence * 0.3) * zcrFactor));
 
-        // Smoothing
+        // Exponential smoothing
         this.smoothedProb = 0.65 * this.smoothedProb + 0.35 * rawProb;
         const prob = this.smoothedProb;
 
@@ -115,8 +110,7 @@ class SileroVAD {
                     this.onBargeIn();
                 }
             } else {
-                // Already speaking - if AI just tried to start, interrupt immediately
-                if (this.aiIsSpeaking && (now - this.speakingStartTime > 200)) {
+                if (this.aiIsSpeaking && (now - this.speakingStartTime > 180)) {
                     this.onBargeIn();
                 }
             }
@@ -130,7 +124,6 @@ class SileroVAD {
                         this.isSpeaking = false;
                         this.onSpeechEnd(speechDuration);
                     } else {
-                        // Too short - likely click/pop
                         this.isSpeaking = false;
                     }
                 }
@@ -148,4 +141,6 @@ class SileroVAD {
     }
 }
 
-window.SileroVAD = SileroVAD;
+if (typeof window !== 'undefined') {
+    window.SileroVAD = SileroVAD;
+}

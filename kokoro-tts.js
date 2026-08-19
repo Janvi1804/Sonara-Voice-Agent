@@ -1,8 +1,8 @@
-﻿/**
+/**
  * Kokoro-82M Text-to-Speech (TTS) Engine
  * Ultra-realistic, human-like voice synthesis with sentence-level streaming and barge-in support.
  */
-class KokoroTTS {
+export class KokoroTTS {
     constructor(audioContext, options = {}) {
         this.audioContext = audioContext;
         this.voice = options.voice || 'af_heart';
@@ -43,7 +43,7 @@ class KokoroTTS {
     }
 
     setSpeed(speedVal) {
-        this.speed = speedVal;
+        this.speed = Number(speedVal) || 1.05;
     }
 
     getAnalyser() {
@@ -125,11 +125,14 @@ class KokoroTTS {
                 return;
             }
 
-            // High-fidelity speech synthesis
             if ('speechSynthesis' in window) {
-                // Ensure audio context is active
                 if (this.audioContext && this.audioContext.state === 'suspended') {
                     this.audioContext.resume();
+                }
+
+                // Chrome bug workaround: cancel stuck speech if inactive
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
                 }
 
                 const utterance = new SpeechSynthesisUtterance(text);
@@ -143,26 +146,34 @@ class KokoroTTS {
                 const availableVoices = window.speechSynthesis.getVoices();
                 if (availableVoices.length > 0) {
                     const match = availableVoices.find(v => 
-                        (voiceConfig.gender === 'female' ? (v.name.includes('Female') || v.name.includes('Zira') || v.name.includes('Natural') || v.name.includes('Samantha')) : (v.name.includes('Male') || v.name.includes('David') || v.name.includes('Natural'))) &&
+                        (voiceConfig.gender === 'female' ? (v.name.includes('Female') || v.name.includes('Zira') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google US English')) : (v.name.includes('Male') || v.name.includes('David') || v.name.includes('Natural'))) &&
                         v.lang.startsWith(voiceConfig.lang.slice(0, 2))
                     ) || availableVoices.find(v => v.lang.startsWith(voiceConfig.lang.slice(0, 2))) || availableVoices[0];
                     
                     if (match) utterance.voice = match;
                 }
 
-                utterance.onend = () => {
-                    resolve();
+                let isCompleted = false;
+                const complete = () => {
+                    if (!isCompleted) {
+                        isCompleted = true;
+                        resolve();
+                    }
                 };
 
+                utterance.onend = complete;
                 utterance.onerror = (e) => {
                     console.error('Speech synthesis error:', e);
-                    resolve();
+                    complete();
                 };
+
+                // Watchdog timeout to prevent speech synthesis hang
+                const maxTimeoutMs = Math.max(3000, text.length * 150);
+                setTimeout(complete, maxTimeoutMs);
 
                 window.speechSynthesis.speak(utterance);
             } else {
-                // Fallback timeout simulation
-                const duration = (text.split(' ').length / 3) * 1000;
+                const duration = Math.max(1000, (text.split(' ').length / 3) * 1000);
                 setTimeout(resolve, duration);
             }
         });
@@ -195,4 +206,6 @@ class KokoroTTS {
     }
 }
 
-window.KokoroTTS = KokoroTTS;
+if (typeof window !== 'undefined') {
+    window.KokoroTTS = KokoroTTS;
+}

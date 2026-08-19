@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body class="dark-theme">
     <!-- Background Ambient Glows -->
@@ -126,7 +126,7 @@
                     <div class="message-content">
                         <div class="message-author">SONARA AGENT &bull; System Ready</div>
                         <div class="message-bubble">
-                            Welcome! I am your real-time multimodal voice agent powered by <strong>Silero VAD</strong>, <strong>Google Gemma 2</strong>, <strong>Whisper Large v3 Turbo</strong>, and <strong>Kokoro-82M</strong> natural human voice. Click <strong>"Start Real-Time Voice"</strong> to speak naturally!
+                            Welcome! I am <strong>SONARA</strong>, your real-time multimodal voice agent powered by <strong>Silero VAD</strong>, <strong>Google Gemma 2</strong>, <strong>Whisper Large v3 Turbo</strong>, and <strong>Kokoro-82M</strong> natural human voice. Click <strong>"Start Real-Time Voice"</strong> to begin talking seamlessly!
                         </div>
                     </div>
                 </div>
@@ -260,9 +260,7 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="vad-silero.js"></script>
-    <script src="kokoro-tts.js"></script>
-    <script src="app.js"></script>
+    <!-- Main Module Script -->
+    <script type="module" src="/app.js"></script>
 </body>
 </html>
