@@ -202,9 +202,9 @@ document.addEventListener('DOMContentLoaded', () => {
             inputAnalyser.fftSize = 256;
             micSource.connect(inputAnalyser);
 
-            // Initialize Kokoro TTS Engine
+            // Initialize Kokoro TTS Engine (Default: Adam Natural Deep Male)
             ttsEngine = new KokoroTTS(audioContext, {
-                voice: selTtsVoice ? selTtsVoice.value : 'af_heart',
+                voice: selTtsVoice ? selTtsVoice.value : 'am_adam',
                 speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
                 onStart: () => {
                     isAiSpeaking = true;

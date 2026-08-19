@@ -5,7 +5,7 @@
 export class KokoroTTS {
     constructor(audioContext, options = {}) {
         this.audioContext = audioContext;
-        this.voice = options.voice || 'af_heart';
+        this.voice = options.voice || 'am_adam';
         this.speed = options.speed || 1.05;
         this.onStart = options.onStart || (() => {});
         this.onEnd = options.onEnd || (() => {});
