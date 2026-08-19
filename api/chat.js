@@ -1,6 +1,6 @@
 /**
  * Vercel Serverless Function: /api/chat
- * Secure, CORS-free backend proxy for HuggingFace Gemma 2 & LLM inference.
+ * High-speed proxy for HuggingFace Google Gemma models via https://router.huggingface.co/v1/chat/completions
  */
 
 export default async function handler(req, res) {
@@ -24,9 +24,8 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
             messages = [],
-            model = 'google/gemma-2-9b-it',
+            model = 'google/gemma-3-12b-it',
             hfToken: clientHfToken,
-            apiKey: clientApiKey,
             provider = 'huggingface',
             temperature = 0.65,
             max_tokens = 250
@@ -34,39 +33,44 @@ export default async function handler(req, res) {
 
         const hfToken = clientHfToken || process.env.VITE_HF_TOKEN || process.env.HF_TOKEN || '';
 
-        // --- 1. HuggingFace Gemma 2 Provider ---
+        // --- HuggingFace Google Gemma Models on HF Router ---
         if (provider === 'huggingface') {
             if (!hfToken) {
                 return res.status(400).json({
-                    error: 'HuggingFace Token is missing. Add VITE_HF_TOKEN in Vercel settings or enter it in app Settings.'
+                    error: 'HuggingFace Token is missing. Add VITE_HF_TOKEN in Vercel or enter it in app Settings.'
                 });
             }
 
+            // Map frontend model names to active HuggingFace router models
             const hfModelMap = {
-                'gemma2-9b-it': 'google/gemma-2-9b-it',
-                'gemma2-27b-it': 'google/gemma-2-27b-it',
-                'google/gemma-2-9b-it': 'google/gemma-2-9b-it',
-                'google/gemma-2-27b-it': 'google/gemma-2-27b-it'
+                'gemma2-9b-it': 'google/gemma-3-12b-it',
+                'gemma2-27b-it': 'google/gemma-3-27b-it',
+                'gemma-3-12b-it': 'google/gemma-3-12b-it',
+                'gemma-3-27b-it': 'google/gemma-3-27b-it',
+                'gemma-3-4b-it': 'google/gemma-3-4b-it',
+                'google/gemma-2-9b-it': 'google/gemma-3-12b-it',
+                'google/gemma-3-12b-it': 'google/gemma-3-12b-it',
+                'google/gemma-3-27b-it': 'google/gemma-3-27b-it',
+                'google/gemma-3-4b-it': 'google/gemma-3-4b-it'
             };
-            const targetModel = hfModelMap[model] || model || 'google/gemma-2-9b-it';
 
-            const endpoints = [
-                'https://router.huggingface.co/hf-inference/v1/chat/completions',
-                `https://api-inference.huggingface.co/models/${targetModel}/v1/chat/completions`
-            ];
+            const targetModel = hfModelMap[model] || 'google/gemma-3-12b-it';
+            const candidateModels = [targetModel, 'google/gemma-3-12b-it', 'google/gemma-3-4b-it', 'google/gemma-3-27b-it'];
+            // Remove duplicates
+            const uniqueModels = [...new Set(candidateModels)];
 
             let lastErr = null;
 
-            for (const ep of endpoints) {
+            for (const candModel of uniqueModels) {
                 try {
-                    const hfRes = await fetch(ep, {
+                    const hfRes = await fetch('https://router.huggingface.co/v1/chat/completions', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${hfToken}`
                         },
                         body: JSON.stringify({
-                            model: targetModel,
+                            model: candModel,
                             messages,
                             max_tokens,
                             temperature
@@ -75,34 +79,13 @@ export default async function handler(req, res) {
 
                     if (hfRes.ok) {
                         const data = await hfRes.json();
-                        const text = data.choices?.[0]?.message?.content || '';
+                        const text = data.choices?.[0]?.message?.content?.trim() || '';
                         if (text) {
-                            return res.status(200).json({ text });
+                            return res.status(200).json({ text, model: candModel });
                         }
                     } else {
-                        const errText = await hfRes.text();
-                        lastErr = `HF Status ${hfRes.status}: ${errText}`;
-                        if (hfRes.status === 503) {
-                            await new Promise(r => setTimeout(r, 3000));
-                            const retryRes = await fetch(ep, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${hfToken}`
-                                },
-                                body: JSON.stringify({
-                                    model: targetModel,
-                                    messages,
-                                    max_tokens,
-                                    temperature
-                                })
-                            });
-                            if (retryRes.ok) {
-                                const retryData = await retryRes.json();
-                                const retryText = retryData.choices?.[0]?.message?.content || '';
-                                if (retryText) return res.status(200).json({ text: retryText });
-                            }
-                        }
+                        const errData = await hfRes.json().catch(() => ({}));
+                        lastErr = errData.error?.message || `HF Error (${hfRes.status})`;
                     }
                 } catch (e) {
                     lastErr = e.message;
@@ -110,11 +93,11 @@ export default async function handler(req, res) {
             }
 
             return res.status(502).json({
-                error: lastErr || 'HuggingFace inference failed. Please ensure your token is valid and you accepted terms on huggingface.co/google/gemma-2-9b-it'
+                error: lastErr || 'HuggingFace Gemma models did not respond. Check your HF token permissions.'
             });
         }
 
-        // --- 2. Fallback Free AI Provider (Pollinations) ---
+        // --- Fallback: Pollinations AI ---
         const pollRes = await fetch('https://text.pollinations.ai/openai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -133,9 +116,9 @@ export default async function handler(req, res) {
             return res.status(200).json({ text });
         }
 
-        return res.status(500).json({ error: 'Inference backend failed.' });
+        return res.status(500).json({ error: 'Backend error' });
     } catch (err) {
-        console.error('API Handler Error:', err);
+        console.error('API Error:', err);
         return res.status(500).json({ error: err.message });
     }
 }

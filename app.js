@@ -474,15 +474,18 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             if (provider === 'huggingface' && hfToken) {
-                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 via Serverless API Proxy ---
+                // --- HUGGINGFACE INFERENCE API: Google Gemma on HF Router ---
                 const hfModelMap = {
-                    'gemma2-9b-it':  'google/gemma-2-9b-it',
-                    'gemma2-27b-it': 'google/gemma-2-27b-it',
-                    'gemini-1.5-flash': 'google/gemma-2-9b-it', // fallback
-                    'gemini-1.5-pro':   'google/gemma-2-27b-it',
+                    'gemma2-9b-it':  'google/gemma-3-12b-it',
+                    'gemma2-27b-it': 'google/gemma-3-27b-it',
+                    'gemma-3-12b-it': 'google/gemma-3-12b-it',
+                    'gemma-3-27b-it': 'google/gemma-3-27b-it',
+                    'gemma-3-4b-it':  'google/gemma-3-4b-it',
+                    'gemini-1.5-flash': 'google/gemma-3-12b-it',
+                    'gemini-1.5-pro':   'google/gemma-3-27b-it',
                     'llama-3.3-70b-versatile': 'meta-llama/Llama-3.3-70B-Instruct',
                 };
-                const hfModelId = hfModelMap[model] || 'google/gemma-2-9b-it';
+                const hfModelId = hfModelMap[model] || 'google/gemma-3-12b-it';
                 const messages = [
                     { role: 'system', content: systemPrompt },
                     ...conversationHistory.slice(-8)
@@ -525,9 +528,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn('/api/chat unavailable, attempting direct fallback:', apiErr.message);
                 }
 
-                // 2. Direct fallback if /api/chat was not available (e.g. pure static dev)
+                // 2. Direct fallback to HuggingFace Router if /api/chat was not reachable
                 if (!serverSuccess) {
-                    const routerUrl = 'https://router.huggingface.co/hf-inference/v1/chat/completions';
+                    const routerUrl = 'https://router.huggingface.co/v1/chat/completions';
                     const hfRes = await fetch(routerUrl, {
                         method: 'POST',
                         headers: {
@@ -546,12 +549,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         const hfData = await hfRes.json();
                         fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
                     } else {
-                        const errText = await hfRes.text().catch(() => '');
-                        throw new Error(`HuggingFace API (${hfRes.status}): ${errText.slice(0, 120)}`);
+                        const errData = await hfRes.json().catch(() => ({}));
+                        const errMsg = errData.error?.message || `HuggingFace API error (${hfRes.status})`;
+                        throw new Error(errMsg);
                     }
                 }
 
-                if (!fullResponse) throw new Error('Gemma 2 returned empty response. Please try again.');
+                if (!fullResponse) throw new Error('Gemma returned empty response. Please try again.');
 
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
