@@ -27,19 +27,32 @@ export class KokoroTTS {
         }
 
         // Voice metadata
+        this.resolvedVoice = null;
+
+        // Voice profiles
         this.voices = {
-            'af_heart': { name: 'Heart (Warm & Natural Female)', gender: 'female', lang: 'en-US', pitch: 1.05, rate: 1.05 },
-            'af_bella': { name: 'Bella (Expressive Female)', gender: 'female', lang: 'en-US', pitch: 1.15, rate: 1.08 },
-            'af_nicole': { name: 'Nicole (Calm & Clear Female)', gender: 'female', lang: 'en-US', pitch: 1.0, rate: 1.0 },
-            'am_adam': { name: 'Adam (Deep Natural Male)', gender: 'male', lang: 'en-US', pitch: 0.9, rate: 1.02 },
-            'am_michael': { name: 'Michael (Professional Male)', gender: 'male', lang: 'en-US', pitch: 0.95, rate: 1.05 },
-            'bf_emma': { name: 'Emma (British Female)', gender: 'female', lang: 'en-GB', pitch: 1.05, rate: 1.0 },
-            'bm_george': { name: 'George (British Male)', gender: 'male', lang: 'en-GB', pitch: 0.92, rate: 1.0 }
+            'af_heart':   { name: 'Heart (Warm & Natural Female)', gender: 'female', lang: 'en-US', pitch: 1.15, rate: 1.05 },
+            'af_bella':   { name: 'Bella (Expressive Female)', gender: 'female', lang: 'en-US', pitch: 1.25, rate: 1.08 },
+            'af_nicole':  { name: 'Nicole (Calm & Clear Female)', gender: 'female', lang: 'en-US', pitch: 1.10, rate: 1.0 },
+            'am_adam':    { name: 'Adam (Deep Natural Male)', gender: 'male', lang: 'en-US', pitch: 0.85, rate: 1.02 },
+            'am_michael': { name: 'Michael (Professional Male)', gender: 'male', lang: 'en-US', pitch: 0.90, rate: 1.05 },
+            'bf_emma':    { name: 'Emma (British Female)', gender: 'female', lang: 'en-GB', pitch: 1.15, rate: 1.0 },
+            'bm_george':  { name: 'George (British Male)', gender: 'male', lang: 'en-GB', pitch: 0.88, rate: 1.0 }
         };
+
+        // Pre-resolve voice and listen for voiceschanged event
+        this.resolveSystemVoice();
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                this.resolveSystemVoice();
+            };
+        }
     }
 
     setVoice(voiceId) {
         this.voice = voiceId;
+        this.resolvedVoice = null;
+        this.resolveSystemVoice();
     }
 
     setSpeed(speedVal) {
@@ -48,6 +61,50 @@ export class KokoroTTS {
 
     getAnalyser() {
         return this.analyser;
+    }
+
+    resolveSystemVoice() {
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+        const available = window.speechSynthesis.getVoices();
+        if (!available || available.length === 0) return null;
+
+        const config = this.voices[this.voice] || this.voices['af_heart'];
+        const isFemale = config.gender === 'female';
+
+        // 1. Match by name & keywords
+        let match = available.find(v => {
+            const name = v.name.toLowerCase();
+            if (isFemale) {
+                return (
+                    name.includes('female') ||
+                    name.includes('zira') ||
+                    name.includes('samantha') ||
+                    name.includes('jenny') ||
+                    name.includes('kavya') ||
+                    name.includes('google us english') ||
+                    name.includes('google uk english female') ||
+                    name.includes('aria') ||
+                    name.includes('eva')
+                );
+            } else {
+                return (
+                    (name.includes('male') && !name.includes('female')) ||
+                    name.includes('david') ||
+                    name.includes('mark') ||
+                    name.includes('george') ||
+                    name.includes('guy') ||
+                    name.includes('google uk english male')
+                );
+            }
+        });
+
+        // 2. Language match fallback
+        if (!match) {
+            match = available.find(v => v.lang.startsWith(config.lang.slice(0, 2))) || available[0];
+        }
+
+        this.resolvedVoice = match;
+        return match;
     }
 
     /**
@@ -116,7 +173,7 @@ export class KokoroTTS {
     }
 
     /**
-     * Synthesize and play sentence using Kokoro Neural Voice / Web Speech Synthesis
+     * Synthesize and play sentence with strictly consistent locked voice
      */
     speakSentence(text) {
         return new Promise((resolve) => {
@@ -130,28 +187,27 @@ export class KokoroTTS {
                     this.audioContext.resume();
                 }
 
-                // Chrome bug workaround: cancel stuck speech if inactive
                 if (window.speechSynthesis.paused) {
                     window.speechSynthesis.resume();
                 }
 
                 const utterance = new SpeechSynthesisUtterance(text);
                 const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
+                const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
+
+                if (targetVoice) {
+                    utterance.voice = targetVoice;
+                }
+
+                // Strict pitch lock based on gender so tone never shifts
+                if (voiceConfig.gender === 'female') {
+                    utterance.pitch = voiceConfig.pitch || 1.15;
+                } else {
+                    utterance.pitch = voiceConfig.pitch || 0.85;
+                }
 
                 utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
-                utterance.pitch = voiceConfig.pitch || 1.0;
                 utterance.lang = voiceConfig.lang || 'en-US';
-
-                // Find matching system voice if available
-                const availableVoices = window.speechSynthesis.getVoices();
-                if (availableVoices.length > 0) {
-                    const match = availableVoices.find(v => 
-                        (voiceConfig.gender === 'female' ? (v.name.includes('Female') || v.name.includes('Zira') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google US English')) : (v.name.includes('Male') || v.name.includes('David') || v.name.includes('Natural'))) &&
-                        v.lang.startsWith(voiceConfig.lang.slice(0, 2))
-                    ) || availableVoices.find(v => v.lang.startsWith(voiceConfig.lang.slice(0, 2))) || availableVoices[0];
-                    
-                    if (match) utterance.voice = match;
-                }
 
                 let isCompleted = false;
                 const complete = () => {
@@ -163,9 +219,8 @@ export class KokoroTTS {
 
                 utterance.onend = complete;
                 utterance.onerror = (e) => {
-                    // 'interrupted' is expected during barge-in cancellation — not a real error
                     if (e.error !== 'interrupted' && e.error !== 'canceled') {
-                        console.error('Speech synthesis error:', e.error);
+                        console.error('Speech synthesis note:', e.error);
                     }
                     complete();
                 };
