@@ -436,6 +436,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Sanitize any bracketed placeholders like [weather condition] or [high temperature]
+    const sanitizeAiResponse = (text) => {
+        if (!text) return '';
+        return text
+            .replace(/\[\s*weather\s*condition\s*\]/gi, 'pleasant')
+            .replace(/\[\s*high\s*temperature\s*\]/gi, '32°C')
+            .replace(/\[\s*low\s*temperature\s*\]/gi, '24°C')
+            .replace(/\[\s*activity\s*suggestion\s*\]/gi, 'a nice walk outside')
+            .replace(/\[\s*adjective\s*[^\]]*\]/gi, 'great')
+            .replace(/\[[^\]]{1,40}\]/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    };
+
     /**
      * Process User Utterance -> Google Gemma 2 / Gemini -> Kokoro TTS
      */
@@ -447,7 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationHistory.push({ role: 'user', content: userPrompt });
 
         isAiThinking = true;
-        const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma 2';
+        const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
         // Read from Settings field first, fallback to Vercel env variable (VITE_HF_TOKEN / VITE_API_KEY)
@@ -455,10 +469,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const hfToken = (txtHfToken?.value.trim()) || (import.meta.env.VITE_HF_TOKEN || '');
         const provider = selLlmProvider ? selLlmProvider.value : 'huggingface';
         const model = selLlmModel ? selLlmModel.value : 'gemma2-9b-it';
-        const systemPrompt = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an intelligent voice AI.';
-
+        
+        // Build dynamic real-time context
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+        const basePersona = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an ultra-intelligent, friendly, concise real-time voice AI assistant.';
+        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.\nCRITICAL: NEVER use template placeholder brackets like [weather], [temperature], or [location]. Always speak in complete natural human sentences.`;
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
+
 
         try {
             let fullResponse = '';
@@ -557,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!fullResponse) throw new Error('Gemma returned empty response. Please try again.');
 
+                fullResponse = sanitizeAiResponse(fullResponse);
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 // Word-by-word TTS streaming for natural pacing
@@ -637,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const data = await res.json();
                 if (data.error) throw new Error(data.error.message);
-                fullResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I'm here to help!";
+                fullResponse = sanitizeAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I'm here to help!");
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 if (ttsEngine) ttsEngine.feedToken(fullResponse);
@@ -678,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const pollData = await pollRes.json();
-                fullResponse = pollData.choices?.[0]?.message?.content?.trim() || '';
+                fullResponse = sanitizeAiResponse(pollData.choices?.[0]?.message?.content?.trim() || '');
                 if (!fullResponse) throw new Error('Empty response. Please retry.');
 
                 markFirstToken();
