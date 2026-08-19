@@ -473,8 +473,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            if (provider === 'huggingface') {
-                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 (Requires HF Token) ---
+            if (provider === 'huggingface' && hfToken) {
+                // --- HUGGINGFACE INFERENCE API: Native Gemma 2 (Token required for gated model) ---
                 // Map UI model name → HuggingFace model ID
                 const hfModelMap = {
                     'gemma2-9b-it':  'google/gemma-2-9b-it',
@@ -615,9 +615,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ttsEngine) ttsEngine.feedToken(fullResponse);
 
             } else {
-                // --- DEFAULT FREE MODE: Pollinations.AI (No API key, No CORS, Always Works) ---
-                // Pollinations.AI is completely free, CORS-enabled, and needs zero setup.
-                // For actual Gemma 2, add a free Groq key in ⚙️ Settings → instant streaming.
+                // --- FREE FALLBACK: Pollinations.AI ---
+                // Reached when: no HF token, no Groq/Gemini key, or unknown provider.
+                // Show one-time hint if user selected HuggingFace but forgot to add token.
+                if (provider === 'huggingface' && !hfToken) {
+                    appendSystemMessage('ℹ️ HuggingFace token nahi mila. ⚙️ Settings me HF Token add karo ya neeche Pollinations AI se jawab aa raha hai (free).');
+                }
 
                 const historySlice = conversationHistory.slice(-8);
                 const messages = [
@@ -664,10 +667,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             console.error('LLM Error:', err);
-            const errMsg = `⚠️ ${err.message}. Tip: Add a free Groq API key in ⚙️ Settings for reliable instant Gemma 2 responses.`;
+            let errMsg;
+            if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+                errMsg = 'Network error — AI server tak nahi pahucha. ⚙️ Settings me HuggingFace token daalo (hf_...) ya internet check karo.';
+            } else {
+                errMsg = `⚠️ ${err.message}`;
+            }
             aiMessageBubble.textContent = errMsg;
             if (ttsEngine) {
-                ttsEngine.feedToken("I had trouble connecting to Gemma. Please add your Groq API key in settings for the best experience.");
+                ttsEngine.feedToken("I had a connection issue. Please check your settings and try again.");
                 ttsEngine.flush();
             }
         } finally {
