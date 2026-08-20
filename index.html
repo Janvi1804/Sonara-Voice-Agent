@@ -221,9 +221,30 @@
 
                     <!-- TTS Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS: Kokoro-82M)</label>
+                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS Engine)</label>
                         <div class="form-row">
-                            <label>TTS Model & Voice Profile</label>
+                            <label>TTS Engine Architecture</label>
+                            <select id="selTtsEngine" class="form-input">
+                                <option value="fish-speech" selected>🐟 Fish Speech (Fish Audio Cloud / Self-Hosted • Zero-Shot Voice Cloning)</option>
+                                <option value="kokoro">⚡ Kokoro-82M (Ultra-Fast Built-in • 100% Free)</option>
+                                <option value="native">🌐 Native Web Speech API</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="rowFishApiKey">
+                            <label>🐟 Fish Audio API Key</label>
+                            <input type="password" id="txtFishApiKey" class="form-input" placeholder="sk-fish-... (from fish.audio/app/api-keys)" />
+                            <small class="helper-text">Optional. Auto-falls back to Kokoro-82M if key has no credits.</small>
+                        </div>
+                        <div class="form-row" id="rowFishCustomUrl">
+                            <label>🐟 Custom Fish Speech Endpoint (Self-Hosted / RunPod)</label>
+                            <input type="text" id="txtFishCustomUrl" class="form-input" placeholder="https://api.fish.audio/v1/tts or http://localhost:8080/v1/tts" />
+                        </div>
+                        <div class="form-row" id="rowFishVoiceId">
+                            <label>🐟 Fish Voice Clone Reference ID (Optional)</label>
+                            <input type="text" id="txtFishVoiceId" class="form-input" placeholder="e.g. 7f92f8afb8ec43bf81429cc1c9199cb1" />
+                        </div>
+                        <div class="form-row">
+                            <label>Kokoro Built-in Voice Profile</label>
                             <select id="selTtsVoice" class="form-input">
                                 <option value="am_adam" selected>Kokoro-82M - Adam (Natural Deep Male • Recommended)</option>
                                 <option value="am_michael">Kokoro-82M - Michael (Professional Male)</option>

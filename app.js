@@ -1,9 +1,10 @@
 /**
  * SONARA VOICE AI - Main Application & Full Duplex Orchestrator
- * Integrates Silero VAD, WebRTC/Web Audio DSP, Whisper v3 Turbo, Gemma 2, and Kokoro-82M.
+ * Integrates Silero VAD, WebRTC/Web Audio DSP, Whisper v3 Turbo, Gemma 2, Kokoro-82M, and Fish Speech.
  */
 import { SileroVAD } from './vad-silero.js';
 import { KokoroTTS } from './kokoro-tts.js';
+import { FishSpeechTTS } from './fish-speech-tts.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     // UI Elements
@@ -41,6 +42,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const rowApiKey = document.getElementById('rowApiKey');
     const selSttModel = document.getElementById('selSttModel');
     const selLanguage = document.getElementById('selLanguage');
+    
+    // TTS Form Elements
+    const selTtsEngine = document.getElementById('selTtsEngine');
+    const txtFishApiKey = document.getElementById('txtFishApiKey');
+    const txtFishCustomUrl = document.getElementById('txtFishCustomUrl');
+    const txtFishVoiceId = document.getElementById('txtFishVoiceId');
+    const rowFishApiKey = document.getElementById('rowFishApiKey');
+    const rowFishCustomUrl = document.getElementById('rowFishCustomUrl');
+    const rowFishVoiceId = document.getElementById('rowFishVoiceId');
     const selTtsVoice = document.getElementById('selTtsVoice');
     const rngSpeed = document.getElementById('rngSpeed');
     const lblSpeed = document.getElementById('lblSpeed');
@@ -67,6 +77,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let inputAnalyser = null;
     let vadEngine = null;
     let ttsEngine = null;
+    let kokoroEngine = null;
+    let fishEngine = null;
     let speechRecognition = null;
 
     let conversationHistory = [];
@@ -76,13 +88,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSessionPaused = false;
     let turnStartTime = 0;
 
-    // Show/hide token fields dynamically based on provider
+    // Show/hide token fields dynamically based on provider & TTS engine
     const updateProviderFields = () => {
-        const prov = selLlmProvider ? selLlmProvider.value : 'huggingface';
+        const prov = selLlmProvider ? selLlmProvider.value : 'groq';
         if (rowHfToken) rowHfToken.style.display = prov === 'huggingface' ? 'flex' : 'none';
         if (rowApiKey) rowApiKey.style.display = prov !== 'huggingface' ? 'flex' : 'none';
+
+        const ttsMode = selTtsEngine ? selTtsEngine.value : 'fish-speech';
+        if (rowFishApiKey) rowFishApiKey.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
+        if (rowFishCustomUrl) rowFishCustomUrl.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
+        if (rowFishVoiceId) rowFishVoiceId.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
     };
     if (selLlmProvider) selLlmProvider.addEventListener('change', updateProviderFields);
+    if (selTtsEngine) selTtsEngine.addEventListener('change', updateProviderFields);
 
     // Load saved settings from LocalStorage
     const loadSettings = () => {
@@ -95,6 +113,22 @@ document.addEventListener('DOMContentLoaded', () => {
             selLlmProvider.value = 'groq';
         }
         if (localStorage.getItem('sonara_system_prompt')) txtSystemPrompt.value = localStorage.getItem('sonara_system_prompt');
+        
+        // TTS Settings
+        if (selTtsEngine && localStorage.getItem('sonara_tts_engine')) {
+            selTtsEngine.value = localStorage.getItem('sonara_tts_engine');
+        }
+        if (txtFishApiKey) {
+            const savedFish = localStorage.getItem('sonara_fish_api_key');
+            txtFishApiKey.value = savedFish !== null ? savedFish : 'sk-fish-S9_QFLOkQpCoC3gzO8UcH82vBTInlpwaphe2hshb1jY';
+        }
+        if (txtFishCustomUrl && localStorage.getItem('sonara_fish_custom_url')) {
+            txtFishCustomUrl.value = localStorage.getItem('sonara_fish_custom_url');
+        }
+        if (txtFishVoiceId && localStorage.getItem('sonara_fish_voice_id')) {
+            txtFishVoiceId.value = localStorage.getItem('sonara_fish_voice_id');
+        }
+
         if (localStorage.getItem('sonara_tts_voice')) selTtsVoice.value = localStorage.getItem('sonara_tts_voice');
         if (localStorage.getItem('sonara_tts_speed')) {
             rngSpeed.value = localStorage.getItem('sonara_tts_speed');
@@ -124,6 +158,13 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('sonara_llm_model', selLlmModel.value);
         localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
         localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
+
+        // TTS
+        if (selTtsEngine) localStorage.setItem('sonara_tts_engine', selTtsEngine.value);
+        if (txtFishApiKey) localStorage.setItem('sonara_fish_api_key', txtFishApiKey.value.trim());
+        if (txtFishCustomUrl) localStorage.setItem('sonara_fish_custom_url', txtFishCustomUrl.value.trim());
+        if (txtFishVoiceId) localStorage.setItem('sonara_fish_voice_id', txtFishVoiceId.value.trim());
+
         localStorage.setItem('sonara_tts_voice', selTtsVoice.value);
         localStorage.setItem('sonara_tts_speed', rngSpeed.value);
         localStorage.setItem('sonara_vad_thresh', rngVadThreshold.value);
@@ -135,13 +176,24 @@ document.addEventListener('DOMContentLoaded', () => {
             vadEngine.setThreshold(parseFloat(rngVadThreshold.value));
             vadEngine.setSilenceDuration(parseInt(rngSilenceDuration.value));
         }
-        if (ttsEngine) {
-            ttsEngine.setVoice(selTtsVoice.value);
-            ttsEngine.setSpeed(parseFloat(rngSpeed.value));
+        if (fishEngine) {
+            fishEngine.setApiKey(txtFishApiKey ? txtFishApiKey.value.trim() : '');
+            fishEngine.setCustomUrl(txtFishCustomUrl ? txtFishCustomUrl.value.trim() : '');
+            fishEngine.setVoiceId(txtFishVoiceId ? txtFishVoiceId.value.trim() : '');
+            fishEngine.setSpeed(parseFloat(rngSpeed.value));
         }
+        if (kokoroEngine) {
+            kokoroEngine.setVoice(selTtsVoice.value);
+            kokoroEngine.setSpeed(parseFloat(rngSpeed.value));
+        }
+
+        const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'fish-speech';
+        ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
+
         settingsModal.classList.remove('active');
         const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : selLlmModel.value;
-        appendSystemMessage(`✅ Configuration saved! Active Engine: ${activeModelName}`);
+        const activeTtsName = selTtsEngine ? (selTtsEngine.value === 'fish-speech' ? 'Fish Speech 🐟' : 'Kokoro-82M ⚡') : 'TTS';
+        appendSystemMessage(`✅ Configuration saved! Active Engine: ${activeModelName} • TTS: ${activeTtsName}`);
     };
 
     // Range input listeners
@@ -234,31 +286,49 @@ document.addEventListener('DOMContentLoaded', () => {
             inputAnalyser.fftSize = 256;
             micSource.connect(inputAnalyser);
 
-            // Initialize Kokoro TTS Engine (Default: Adam Natural Deep Male)
-            ttsEngine = new KokoroTTS(audioContext, {
+            const handleTtsStart = (engineName) => {
+                isAiSpeaking = true;
+                if (vadEngine) vadEngine.setAiSpeakingState(true);
+                setAgentState('speaking', `SONARA Speaking (${engineName})`);
+            };
+
+            const handleTtsEnd = () => {
+                isAiSpeaking = false;
+                isProcessingUtterance = false;
+                currentSpeechText = '';
+                lastInterimText = '';
+                if (vadEngine) vadEngine.setAiSpeakingState(false);
+                if (isCallActive) {
+                    setAgentState('listening', 'Listening with Silero VAD...');
+                    setTimeout(() => {
+                        if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                            startRecognitionSafely();
+                        }
+                    }, 250);
+                }
+            };
+
+            // Initialize Kokoro-82M Core Engine
+            kokoroEngine = new KokoroTTS(audioContext, {
                 voice: selTtsVoice ? selTtsVoice.value : 'am_adam',
                 speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
-                onStart: () => {
-                    isAiSpeaking = true;
-                    if (vadEngine) vadEngine.setAiSpeakingState(true);
-                    setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
-                },
-                onEnd: () => {
-                    isAiSpeaking = false;
-                    isProcessingUtterance = false;
-                    currentSpeechText = '';
-                    lastInterimText = '';
-                    if (vadEngine) vadEngine.setAiSpeakingState(false);
-                    if (isCallActive) {
-                        setAgentState('listening', 'Listening with Silero VAD...');
-                        setTimeout(() => {
-                            if (isCallActive && !isAiSpeaking && !isAiThinking) {
-                                startRecognitionSafely();
-                            }
-                        }, 250);
-                    }
-                }
+                onStart: () => handleTtsStart('Kokoro-82M'),
+                onEnd: handleTtsEnd
             });
+
+            // Initialize Fish Speech TTS with automatic Kokoro Fallback
+            fishEngine = new FishSpeechTTS(audioContext, {
+                apiKey: txtFishApiKey ? txtFishApiKey.value.trim() : '',
+                customUrl: txtFishCustomUrl ? txtFishCustomUrl.value.trim() : '',
+                voiceId: txtFishVoiceId ? txtFishVoiceId.value.trim() : '',
+                fallbackEngine: kokoroEngine,
+                speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
+                onStart: () => handleTtsStart('Fish Speech 🐟'),
+                onEnd: handleTtsEnd
+            });
+
+            const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'fish-speech';
+            ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
 
             // Initialize Silero VAD Engine with optimal voice sensitivity (0.45 threshold)
             vadEngine = new SileroVAD({
