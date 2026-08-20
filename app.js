@@ -235,13 +235,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     isAiSpeaking = true;
                     if (vadEngine) vadEngine.setAiSpeakingState(true);
                     setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
+                    if (speechRecognition) {
+                        try { speechRecognition.abort(); } catch (e) {}
+                        isRecognizing = false;
+                    }
                 },
                 onEnd: () => {
                     isAiSpeaking = false;
+                    isProcessingUtterance = false;
+                    currentSpeechText = '';
+                    lastInterimText = '';
                     if (vadEngine) vadEngine.setAiSpeakingState(false);
                     if (isCallActive) {
                         setAgentState('listening', 'Listening with Silero VAD...');
-                        setTimeout(startRecognitionSafely, 100);
+                        setTimeout(() => {
+                            if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                                startRecognitionSafely();
+                            }
+                        }, 250);
                     }
                 }
             });
@@ -415,9 +426,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!prompt || prompt.length < 2) return;
 
+        // Abort STT immediately to purge any pending buffered recognition events
+        if (speechRecognition) {
+            try { speechRecognition.abort(); } catch (e) {}
+            isRecognizing = false;
+        }
+
         const now = Date.now();
-        // Prevent duplicate voice submissions within 2.0s
-        if (prompt.toLowerCase() === lastCommittedText.toLowerCase() && (now - lastCommittedTime < 2000)) {
+        // Prevent duplicate voice submissions within 3.0s
+        if (prompt.toLowerCase() === lastCommittedText.toLowerCase() && (now - lastCommittedTime < 3000)) {
             console.log('Filtered duplicate voice input:', prompt);
             return;
         }
@@ -523,13 +540,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             speechRecognition.onend = () => {
                 isRecognizing = false;
-                if (!isCallActive) return;
-                const delay = isAiSpeaking ? 600 : 150;
+                if (!isCallActive || isAiSpeaking || isAiThinking || isProcessingUtterance) return;
                 setTimeout(() => {
-                    if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                    if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
                         startRecognitionSafely();
                     }
-                }, delay);
+                }, 200);
             };
 
             speechRecognition.start();
