@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    SONARA VOICE AI - Modern Futuristic Dark Theme & Glassmorphism Styling
    ========================================================================== */
 
@@ -310,6 +310,13 @@ body.dark-theme {
     background: radial-gradient(circle at 35% 35%, #ff0080 0%, #7928ca 45%, #4facfe 90%);
     box-shadow: 0 0 70px rgba(255, 0, 128, 0.7), inset 0 0 35px rgba(255, 255, 255, 0.9);
     transform: scale(1.14);
+}
+
+.orb-core.state-paused {
+    background: radial-gradient(circle at 35% 35%, #eab308 0%, #ca8a04 40%, #854d0e 80%);
+    box-shadow: 0 0 50px rgba(234, 179, 8, 0.6), inset 0 0 25px rgba(255, 255, 255, 0.7);
+    transform: scale(0.96);
+    filter: grayscale(0.2);
 }
 
 @keyframes orbIdlePulse {

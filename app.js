@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSpeechText = '';
     let isAiThinking = false;
     let isAiSpeaking = false;
+    let isSessionPaused = false;
     let turnStartTime = 0;
 
     // Show/hide token fields dynamically based on provider
@@ -196,6 +197,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dot) dot.classList.add('active-speaking');
             if (orbStateIcon) orbStateIcon.className = 'fa-solid fa-volume-high';
             if (btnInterrupt) btnInterrupt.disabled = false;
+        } else if (state === 'paused') {
+            orbCore.classList.add('state-paused');
+            if (dot) dot.classList.add('active-thinking');
+            if (orbStateIcon) orbStateIcon.className = 'fa-solid fa-pause';
+            if (btnInterrupt) btnInterrupt.disabled = true;
         } else {
             if (orbStateIcon) orbStateIcon.className = 'fa-solid fa-microphone-slash';
             if (btnInterrupt) btnInterrupt.disabled = true;
@@ -643,9 +649,76 @@ document.addEventListener('DOMContentLoaded', () => {
         currentSpeechText = '';
         lastInterimText = '';
 
+        const cleanCmd = userPrompt.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+
+        // 1. VOICE COMMAND: "Stop" / "Ruko" / "Chup" / "Stop speaking"
+        if (cleanCmd === 'stop' || cleanCmd === 'stop it' || cleanCmd === 'stop speaking' || cleanCmd === 'ruko' || cleanCmd === 'chup' || cleanCmd === 'stop now') {
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            if (ttsEngine) ttsEngine.interrupt();
+            isAiSpeaking = false;
+            isAiThinking = false;
+            const stopMsg = "Stopped. I am listening.";
+            appendChatMessage('assistant', stopMsg);
+            if (ttsEngine) ttsEngine.speak(stopMsg);
+            setAgentState('listening', 'Stopped • Ready for next question');
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // 2. VOICE COMMAND: "Pause" / "Hold on" / "Wait"
+        if (cleanCmd === 'pause' || cleanCmd === 'pause it' || cleanCmd === 'pause session' || cleanCmd === 'hold on' || cleanCmd === 'wait' || cleanCmd === 'ruko thoda') {
+            isSessionPaused = true;
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            if (ttsEngine) ttsEngine.interrupt();
+            isAiSpeaking = false;
+            isAiThinking = false;
+            const pauseMsg = 'Session paused. Say "Resume" or "Continue" whenever you are ready.';
+            appendChatMessage('assistant', pauseMsg);
+            if (ttsEngine) ttsEngine.speak('Session paused. Say resume when you are ready.');
+            setAgentState('paused', 'Session Paused • Say "Resume" to continue');
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // 3. VOICE COMMAND: "Resume" / "Continue" / "Shuru karo"
+        if (cleanCmd === 'resume' || cleanCmd === 'continue' || cleanCmd === 'unpause' || cleanCmd === 'start again' || cleanCmd === 'chalo shuru karo') {
+            isSessionPaused = false;
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            if (ttsEngine) ttsEngine.interrupt();
+            isAiSpeaking = false;
+            isAiThinking = false;
+            const resumeMsg = "Resumed! What would you like to ask or discuss next?";
+            appendChatMessage('assistant', resumeMsg);
+            if (ttsEngine) ttsEngine.speak("Resumed! What would you like to ask next?");
+            setAgentState('listening', 'Resumed & Listening to you...');
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // If session is paused and user didn't say resume/continue, remind them
+        if (isSessionPaused) {
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            const pausedHint = 'Session is paused. Say "Resume" or "Continue" to proceed.';
+            appendChatMessage('assistant', pausedHint);
+            if (ttsEngine) ttsEngine.speak('Session is paused. Say resume to continue.');
+            isAiThinking = false;
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // 4. VOICE COMMAND: "Next Question" / "Agla Sawal"
+        let effectivePrompt = userPrompt;
+        if (cleanCmd === 'next question' || cleanCmd === 'next' || cleanCmd === 'agla sawal' || cleanCmd === 'ask me next question' || cleanCmd === 'another question' || cleanCmd === 'ask me a question') {
+            effectivePrompt = "Ask me an engaging, fun trivia or test question across science, history, coding, or general knowledge.";
+        }
+
         turnStartTime = performance.now();
         appendChatMessage('user', userPrompt);
-        conversationHistory.push({ role: 'user', content: userPrompt });
+        conversationHistory.push({ role: 'user', content: effectivePrompt });
         const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
