@@ -35,6 +35,9 @@ export class SileroVAD {
 
     setAiSpeakingState(isSpeaking) {
         this.aiIsSpeaking = !!isSpeaking;
+        if (isSpeaking) {
+            this.aiSpeechStartTime = performance.now();
+        }
     }
 
     /**
@@ -109,12 +112,13 @@ export class SileroVAD {
                 this.speakingStartTime = now;
                 this.onSpeechStart();
 
-                // If AI is speaking while user started talking, trigger BARGE-IN!
-                if (this.aiIsSpeaking) {
+                // If AI is speaking, ignore initial acoustic speaker echo.
+                // Require high confidence (>0.75) and sustained speech (>600ms after AI start)
+                if (this.aiIsSpeaking && prob >= 0.75 && (now - this.aiSpeechStartTime > 800)) {
                     this.onBargeIn();
                 }
             } else {
-                if (this.aiIsSpeaking && (now - this.speakingStartTime > 180)) {
+                if (this.aiIsSpeaking && prob >= 0.75 && (now - this.speakingStartTime > 600) && (now - this.aiSpeechStartTime > 800)) {
                     this.onBargeIn();
                 }
             }

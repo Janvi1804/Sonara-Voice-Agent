@@ -225,8 +225,8 @@ export class KokoroTTS {
                     complete();
                 };
 
-                // Watchdog timeout to prevent speech synthesis hang
-                const maxTimeoutMs = Math.max(3000, text.length * 150);
+                // Watchdog timeout to prevent speech synthesis hang (safe generous threshold)
+                const maxTimeoutMs = Math.max(8000, text.length * 200);
                 setTimeout(complete, maxTimeoutMs);
 
                 window.speechSynthesis.speak(utterance);
