@@ -105,8 +105,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings from LocalStorage
     const loadSettings = () => {
         if (localStorage.getItem('sonara_llm_api_key')) txtLlmApiKey.value = localStorage.getItem('sonara_llm_api_key');
-        if (localStorage.getItem('sonara_hf_token') && txtHfToken) txtHfToken.value = localStorage.getItem('sonara_hf_token');
-        if (localStorage.getItem('sonara_llm_model')) selLlmModel.value = localStorage.getItem('sonara_llm_model');
+        if (localStorage.getItem('sonara_llm_model')) {
+            const savedModel = localStorage.getItem('sonara_llm_model');
+            if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound')) {
+                selLlmModel.value = 'llama-3.3-70b-versatile';
+                localStorage.setItem('sonara_llm_model', 'llama-3.3-70b-versatile');
+            } else {
+                selLlmModel.value = savedModel;
+            }
+        }
         if (localStorage.getItem('sonara_llm_provider')) {
             selLlmProvider.value = localStorage.getItem('sonara_llm_provider');
         } else {
@@ -1058,16 +1065,19 @@ CUSTOMER SUPPORT & INTENT HANDLING RULES:
             } else if (apiKey && provider === 'groq') {
                 // --- GROQ CLOUD: Sub-100ms Ultra-Fast Intelligence ---
                 const groqModelMap = {
-                    'openai/gpt-oss-120b': 'openai/gpt-oss-120b',
-                    'openai/gpt-oss-20b': 'openai/gpt-oss-20b',
-                    'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
-                    'groq/compound-mini': 'openai/gpt-oss-120b',
-                    'groq/compound': 'openai/gpt-oss-120b',
-                    'gemma2-9b-it': 'openai/gpt-oss-120b',
-                    'gemma-3-12b-it': 'openai/gpt-oss-120b',
-                    'gemini-1.5-flash': 'openai/gpt-oss-120b'
+                    'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile',
+                    'llama-3.1-8b-instant': 'llama-3.1-8b-instant',
+                    'mixtral-8x7b-32768': 'mixtral-8x7b-32768',
+                    'openai/gpt-oss-120b': 'llama-3.3-70b-versatile',
+                    'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
+                    'qwen/qwen3.6-27b': 'llama-3.3-70b-versatile',
+                    'groq/compound-mini': 'llama-3.3-70b-versatile',
+                    'groq/compound': 'llama-3.3-70b-versatile',
+                    'gemma2-9b-it': 'llama-3.3-70b-versatile',
+                    'gemma-3-12b-it': 'llama-3.3-70b-versatile',
+                    'gemini-1.5-flash': 'llama-3.3-70b-versatile'
                 };
-                const groqModel = groqModelMap[model] || 'openai/gpt-oss-120b';
+                const groqModel = groqModelMap[model] || 'llama-3.3-70b-versatile';
 
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
@@ -1081,8 +1091,8 @@ CUSTOMER SUPPORT & INTENT HANDLING RULES:
                             { role: 'system', content: systemPrompt },
                             ...conversationHistory
                         ],
-                        temperature: 0.7,
-                        max_tokens: 250
+                        temperature: 0.65,
+                        max_tokens: 300
                     })
                 });
 
