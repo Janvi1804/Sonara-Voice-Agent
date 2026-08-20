@@ -646,6 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             model: hfModelId,
                             messages,
                             hfToken,
+                            apiKey,
                             ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
                             customUrl: txtCustomRagUrl ? txtCustomRagUrl.value.trim() : ''
                         })

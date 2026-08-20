@@ -242,9 +242,10 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
             messages = [],
-            model = 'google/gemma-3-12b-it',
+            model = 'groq/compound-mini',
             hfToken: clientHfToken,
-            provider = 'huggingface',
+            apiKey: clientApiKey,
+            provider = 'groq',
             customUrl = '',
             ragEnabled = true,
             temperature = 0.65,
@@ -252,6 +253,7 @@ export default async function handler(req, res) {
         } = body;
 
         const hfToken = clientHfToken || process.env.VITE_HF_TOKEN || process.env.HF_TOKEN || '';
+        const groqApiKey = clientApiKey || process.env.VITE_API_KEY || process.env.GROQ_API_KEY || '';
 
         // Get latest user prompt for context enrichment
         const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
@@ -262,10 +264,10 @@ export default async function handler(req, res) {
 
         // System prompt with broad intelligence + RAG awareness
         const enhancedSystemPrompt = 
-            `You are SONARA, a versatile, ultra-intelligent, and friendly real-time voice AI assistant powered by Google Gemma. ` +
+            `You are SONARA, a versatile, ultra-intelligent, and friendly real-time voice AI assistant. ` +
             `You possess comprehensive general knowledge across science, technology, coding, math, history, philosophy, health, lifestyle, and casual conversation. ` +
             `You can answer ANY question on any topic naturally with human warmth, clarity, brevity, and charisma. ` +
-            `When the user asks about ConverseAI (theconverseai.com), voice agents, WhatsApp automation, or case studies, utilize the verified ConverseAI knowledge base below. ` +
+            `When the user asks about ConverseAI (theconverseai.com), voice agents, WhatsApp automation, or case studies, note that it is an enterprise platform by Revti Digital based in India (StyleMart 3x revenue, CareFirst 55% no-show drop). ` +
             `Keep your responses concise (1 to 2 spoken sentences) suited for natural spoken dialogue. ` +
             `CRITICAL RULE: NEVER output template placeholder brackets like [weather condition], [insert name], or [high temperature]. Always speak in full, realistic, natural sentences. ` +
             `\n${realTimeContext}${ragContext}`;
@@ -279,6 +281,45 @@ export default async function handler(req, res) {
         });
         if (!enrichedMessages.some(m => m.role === 'system')) {
             enrichedMessages.unshift({ role: 'system', content: enhancedSystemPrompt });
+        }
+
+        // --- 1. Groq Cloud Engine ---
+        if ((provider === 'groq' || !hfToken) && groqApiKey) {
+            const groqModelMap = {
+                'groq/compound-mini': 'groq/compound-mini',
+                'groq/compound': 'groq/compound',
+                'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
+                'gemma2-9b-it': 'groq/compound-mini',
+                'gemma-3-12b-it': 'groq/compound-mini'
+            };
+            const targetGroq = groqModelMap[model] || 'groq/compound-mini';
+            try {
+                const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${groqApiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: targetGroq,
+                        messages: enrichedMessages,
+                        max_tokens,
+                        temperature
+                    })
+                });
+
+                if (groqRes.ok) {
+                    const gData = await groqRes.json();
+                    let rawText = gData.choices?.[0]?.message?.content?.trim() || '';
+                    rawText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                    const text = sanitizeAiResponse(rawText);
+                    if (text) {
+                        return res.status(200).json({ text, model: targetGroq, provider: 'groq' });
+                    }
+                }
+            } catch (e) {
+                console.warn('Groq serverless error:', e.message);
+            }
         }
 
         // --- HuggingFace Google Gemma on Router ---
