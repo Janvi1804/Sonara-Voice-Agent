@@ -800,11 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fullResponse = sanitizeAiResponse(fullResponse);
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
-                // Word-by-word TTS streaming for natural pacing
-                const hfWords = fullResponse.split(' ');
-                for (const w of hfWords) {
-                    if (ttsEngine) ttsEngine.feedToken(w + ' ');
-                }
+                if (ttsEngine) ttsEngine.speak(fullResponse);
 
             } else if (apiKey && provider === 'groq') {
                 // --- GROQ CLOUD: Sub-100ms Ultra-Fast Streaming ---
@@ -861,11 +857,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 markFirstToken();
                                 fullResponse += token;
                                 aiMessageBubble.textContent = fullResponse;
-                                if (ttsEngine) ttsEngine.feedToken(token);
                             }
                         } catch (e) {}
                     }
                 }
+
+                fullResponse = sanitizeAiResponse(fullResponse);
+                aiMessageBubble.textContent = fullResponse;
+                if (ttsEngine) ttsEngine.speak(fullResponse);
 
             } else if (apiKey && provider === 'gemini') {
                 // --- GOOGLE GEMINI API ---
@@ -889,12 +888,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 fullResponse = sanitizeAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I'm here to help!");
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
-                if (ttsEngine) ttsEngine.feedToken(fullResponse);
+                if (ttsEngine) ttsEngine.speak(fullResponse);
 
             } else {
                 // --- FREE FALLBACK: Pollinations.AI ---
-                // Reached when: no HF token, no Groq/Gemini key, or unknown provider.
-                // Show one-time hint if user selected HuggingFace but forgot to add token.
                 if (provider === 'huggingface' && !hfToken) {
                     appendSystemMessage('ℹ️ HuggingFace token nahi mila. ⚙️ Settings me HF Token add karo ya neeche Pollinations AI se jawab aa raha hai (free).');
                 }
@@ -932,14 +929,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
-                // Stream token word-by-word into TTS for natural pacing
-                const words = fullResponse.split(' ');
-                for (const word of words) {
-                    if (ttsEngine) ttsEngine.feedToken(word + ' ');
-                }
+                if (ttsEngine) ttsEngine.speak(fullResponse);
             }
 
-            if (ttsEngine) ttsEngine.flush();
             conversationHistory.push({ role: 'assistant', content: fullResponse });
 
         } catch (err) {

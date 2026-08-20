@@ -173,6 +173,22 @@ export class KokoroTTS {
     }
 
     /**
+     * Speak full text smoothly in one natural continuous utterance
+     */
+    speak(fullText) {
+        if (!fullText) return;
+        const clean = fullText.trim();
+        if (!clean) return;
+        this.isInterrupted = false;
+        this.queue = [];
+        this.textBuffer = '';
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        this.enqueueSentence(clean);
+    }
+
+    /**
      * Synthesize and play sentence with strictly consistent locked voice
      */
     speakSentence(text) {
@@ -192,6 +208,9 @@ export class KokoroTTS {
                 }
 
                 const utterance = new SpeechSynthesisUtterance(text);
+                // Keep strong reference to prevent Chromium garbage collection mid-speech
+                this._activeUtterance = utterance;
+
                 const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
                 const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
 
@@ -213,6 +232,7 @@ export class KokoroTTS {
                 const complete = () => {
                     if (!isCompleted) {
                         isCompleted = true;
+                        this._activeUtterance = null;
                         resolve();
                     }
                 };
@@ -226,7 +246,7 @@ export class KokoroTTS {
                 };
 
                 // Watchdog timeout to prevent speech synthesis hang (safe generous threshold)
-                const maxTimeoutMs = Math.max(8000, text.length * 200);
+                const maxTimeoutMs = Math.max(10000, text.length * 250);
                 setTimeout(complete, maxTimeoutMs);
 
                 window.speechSynthesis.speak(utterance);
