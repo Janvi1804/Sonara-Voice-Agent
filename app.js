@@ -595,18 +595,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Sanitize any bracketed placeholders like [weather condition] or [high temperature]
+    // Sanitize LaTeX math formulas, markdown formatting, and bracket placeholders for natural speech
     const sanitizeAiResponse = (text) => {
         if (!text) return '';
-        return text
-            .replace(/\[\s*weather\s*condition\s*\]/gi, 'pleasant')
+        let s = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        // Convert fractions \frac{a}{b} -> a over b
+        s = s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/gi, (match, num, den) => {
+            const cleanNum = num.replace(/\\([a-zA-Z]+)/g, '$1 ').trim();
+            const cleanDen = den.replace(/\\([a-zA-Z]+)/g, '$1 ').trim();
+            return `${cleanNum} over ${cleanDen}`;
+        });
+        // Convert Greek & math functions into spoken words
+        s = s.replace(/\\(sin|cos|tan|cot|sec|csc|log|ln|exp)\b/gi, '$1 ');
+        s = s.replace(/\\(theta|alpha|beta|gamma|delta|pi|lambda|omega|sigma|mu|phi)\b/gi, ' $1 ');
+        s = s.replace(/\\sqrt\{([^}]+)\}/gi, 'square root of $1');
+        s = s.replace(/\\(cdot|times)\b/gi, ' times ');
+        s = s.replace(/\\(approx|sim)\b/gi, ' approximately ');
+        s = s.replace(/\\(le|leq)\b/gi, ' less than or equal to ');
+        s = s.replace(/\\(ge|geq)\b/gi, ' greater than or equal to ');
+        s = s.replace(/\\(pm)\b/gi, ' plus or minus ');
+        s = s.replace(/\\(displaystyle|text|mathrm|mathbf)\b/gi, '');
+        s = s.replace(/\\\(|\\\)|\\\[|\\\]|\$\$|\$/g, '');
+        s = s.replace(/\\[a-zA-Z]+/g, ' ');
+        s = s.replace(/[{}]/g, '');
+        s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
+        s = s.replace(/\*([^*]+)\*/g, '$1');
+        s = s.replace(/`([^`]+)`/g, '$1');
+        s = s.replace(/#{1,6}\s+/g, '');
+        // Bracket placeholders
+        s = s.replace(/\[\s*weather\s*condition\s*\]/gi, 'pleasant')
             .replace(/\[\s*high\s*temperature\s*\]/gi, '32°C')
             .replace(/\[\s*low\s*temperature\s*\]/gi, '24°C')
             .replace(/\[\s*activity\s*suggestion\s*\]/gi, 'a nice walk outside')
             .replace(/\[\s*adjective\s*[^\]]*\]/gi, 'great')
-            .replace(/\[[^\]]{1,40}\]/g, '')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
+            .replace(/\[[^\]]{1,40}\]/g, '');
+        return s.replace(/\s{2,}/g, ' ').trim();
     };
 
     /**
@@ -670,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
         const basePersona = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an ultra-intelligent, friendly, concise real-time voice AI assistant.';
-        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}\nCRITICAL: Answer weather queries using the Live Local Weather info above. NEVER say you don't have access to live weather when it is provided. NEVER use template placeholder brackets like [weather] or [temperature]. Speak in full natural sentences.`;
+        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}\nCRITICAL FOR SPOKEN VOICE:\n1. Answer weather queries using the Live Local Weather info above.\n2. NEVER output LaTeX notation (no \\frac, no \\sin, no \\theta, no \\displaystyle, no backslashes). Always speak math, equations, and science in plain human words (e.g. 'sine theta divided by cosine theta equals tangent theta').\n3. Keep responses to 1-2 spoken sentences suited for voice dialogue.`;
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
 
