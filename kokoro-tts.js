@@ -211,11 +211,32 @@ export class KokoroTTS {
                 // Keep strong reference to prevent Chromium garbage collection mid-speech
                 this._activeUtterance = utterance;
 
+                const isHindi = /[\u0900-\u097F]/.test(text);
                 const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
                 const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
 
-                if (targetVoice) {
-                    utterance.voice = targetVoice;
+                if (isHindi) {
+                    utterance.lang = 'hi-IN';
+                    const available = window.speechSynthesis.getVoices();
+                    const hindiVoice = available.find(v => 
+                        v.lang.startsWith('hi') || 
+                        v.name.toLowerCase().includes('hindi') || 
+                        v.name.toLowerCase().includes('swara') || 
+                        v.name.toLowerCase().includes('madhur') || 
+                        v.name.toLowerCase().includes('kalpana') || 
+                        v.name.toLowerCase().includes('google हिन्दी') ||
+                        v.name.toLowerCase().includes('hemant')
+                    );
+                    if (hindiVoice) {
+                        utterance.voice = hindiVoice;
+                    } else if (targetVoice) {
+                        utterance.voice = targetVoice;
+                    }
+                } else {
+                    utterance.lang = voiceConfig.lang || 'en-US';
+                    if (targetVoice) {
+                        utterance.voice = targetVoice;
+                    }
                 }
 
                 // Strict pitch lock based on gender so tone never shifts
@@ -226,7 +247,6 @@ export class KokoroTTS {
                 }
 
                 utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
-                utterance.lang = voiceConfig.lang || 'en-US';
 
                 let isCompleted = false;
                 const complete = () => {
