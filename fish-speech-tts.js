@@ -20,6 +20,15 @@ export class FishSpeechTTS {
         this.isInterrupted = false;
         this.activeSource = null;
         this.currentAbortController = null;
+
+        // Visualizer audio nodes
+        this.gainNode = this.audioContext ? this.audioContext.createGain() : null;
+        this.analyser = this.audioContext ? this.audioContext.createAnalyser() : null;
+        if (this.gainNode && this.analyser) {
+            this.analyser.fftSize = 256;
+            this.gainNode.connect(this.analyser);
+            this.analyser.connect(this.audioContext.destination);
+        }
     }
 
     setApiKey(key) {
@@ -39,6 +48,10 @@ export class FishSpeechTTS {
         if (this.fallbackEngine) {
             this.fallbackEngine.setSpeed(spd);
         }
+    }
+
+    getAnalyser() {
+        return this.analyser || (this.fallbackEngine && typeof this.fallbackEngine.getAnalyser === 'function' ? this.fallbackEngine.getAnalyser() : null);
     }
 
     /**
@@ -116,7 +129,11 @@ export class FishSpeechTTS {
             this.activeSource.buffer = audioBuffer;
             this.activeSource.playbackRate.value = this.speed;
 
-            this.activeSource.connect(this.audioContext.destination);
+            if (this.gainNode) {
+                this.activeSource.connect(this.gainNode);
+            } else {
+                this.activeSource.connect(this.audioContext.destination);
+            }
 
             this.activeSource.onended = () => {
                 this.activeSource = null;

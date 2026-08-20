@@ -1253,8 +1253,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (audioLevelLabel) audioLevelLabel.textContent = `${db} dB`;
             }
 
-            if (ttsEngine && ttsEngine.getAnalyser()) {
-                ttsEngine.getAnalyser().getByteFrequencyData(outputDataArray);
+            if (ttsEngine && typeof ttsEngine.getAnalyser === 'function') {
+                const node = ttsEngine.getAnalyser();
+                if (node) node.getByteFrequencyData(outputDataArray);
             }
 
             visualizerAngle += 0.02;
