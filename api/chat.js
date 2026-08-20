@@ -207,10 +207,14 @@ async function retrieveRAGContext(query = '', customUrl = '') {
            `\n(If the question is about ConverseAI, use the above verified facts to answer accurately. For general questions, answer using your broad world knowledge.)`;
 }
 
-// Clean any bracketed placeholders like [insert temperature]
+// Clean any bracketed placeholders and think tags
 function sanitizeAiResponse(text) {
     if (!text) return '';
-    return text
+    let s = text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+    if (!s || s.length < 2) {
+        return "Aapko Converse AI ke case studies, brochure ya free AI audit ki details chahiye? Aap apna requirement bata sakte hain, main turant help karungi!";
+    }
+    return s
         .replace(/\[\s*weather\s*condition\s*\]/gi, 'pleasant')
         .replace(/\[\s*high\s*temperature\s*\]/gi, '32°C')
         .replace(/\[\s*low\s*temperature\s*\]/gi, '24°C')
@@ -242,14 +246,14 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
             messages = [],
-            model = 'groq/compound-mini',
+            model = 'llama-3.3-70b-versatile',
             hfToken: clientHfToken,
             apiKey: clientApiKey,
             provider = 'groq',
             customUrl = '',
             ragEnabled = true,
             temperature = 0.65,
-            max_tokens = 250
+            max_tokens = 300
         } = body;
 
         const hfToken = clientHfToken || process.env.VITE_HF_TOKEN || process.env.HF_TOKEN || '';
@@ -264,12 +268,12 @@ export default async function handler(req, res) {
 
         // System prompt with broad intelligence + RAG awareness
         const enhancedSystemPrompt = 
-            `You are SONARA, a versatile, ultra-intelligent, and friendly real-time voice AI assistant. ` +
-            `You possess comprehensive general knowledge across science, technology, coding, math, history, philosophy, health, lifestyle, and casual conversation. ` +
-            `You can answer ANY question on any topic naturally with human warmth, clarity, brevity, and charisma. ` +
-            `When the user asks about ConverseAI (theconverseai.com), voice agents, WhatsApp automation, or case studies, note that it is an enterprise platform by Revti Digital based in India (StyleMart 3x revenue, CareFirst 55% no-show drop). ` +
-            `Keep your responses concise (1 to 2 spoken sentences) suited for natural spoken dialogue. ` +
-            `CRITICAL RULE: NEVER output template placeholder brackets like [weather condition], [insert name], or [high temperature]. Always speak in full, realistic, natural sentences. ` +
+            `You are Sonara, the official Customer Support & Solutions Specialist for Converse AI (theconverseai.com by Revti Digital based in India). ` +
+            `You help businesses automate customer support and sales through AI voice agents, WhatsApp chatbots, and unified omnichannel systems. ` +
+            `Verified Results: StyleMart India (3x repeat purchase revenue, 65% support cost reduction), LearnSphere (doubled enrolments in 90 days), CareFirst Clinics (55% drop in no-shows). ` +
+            `If the user query is broken, incomplete, or off-topic, politely clarify and ask if they need case studies or a free AI audit. ` +
+            `Keep your responses concise (1 to 2 spoken sentences) suited for natural spoken dialogue in English or Hinglish. ` +
+            `CRITICAL RULE: NEVER output <think> tags, internal thoughts, or placeholder brackets. Always speak in full, natural human sentences. ` +
             `\n${realTimeContext}${ragContext}`;
 
         // Inject enhanced system prompt
@@ -286,15 +290,18 @@ export default async function handler(req, res) {
         // --- 1. Groq Cloud Engine ---
         if ((provider === 'groq' || !hfToken) && groqApiKey) {
             const groqModelMap = {
-                'openai/gpt-oss-120b': 'openai/gpt-oss-120b',
-                'openai/gpt-oss-20b': 'openai/gpt-oss-20b',
-                'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
-                'groq/compound-mini': 'openai/gpt-oss-120b',
-                'groq/compound': 'openai/gpt-oss-120b',
-                'gemma2-9b-it': 'openai/gpt-oss-120b',
-                'gemma-3-12b-it': 'openai/gpt-oss-120b'
+                'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile',
+                'llama-3.1-8b-instant': 'llama-3.1-8b-instant',
+                'mixtral-8x7b-32768': 'mixtral-8x7b-32768',
+                'openai/gpt-oss-120b': 'llama-3.3-70b-versatile',
+                'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
+                'qwen/qwen3.6-27b': 'llama-3.3-70b-versatile',
+                'groq/compound-mini': 'llama-3.3-70b-versatile',
+                'groq/compound': 'llama-3.3-70b-versatile',
+                'gemma2-9b-it': 'llama-3.3-70b-versatile',
+                'gemma-3-12b-it': 'llama-3.3-70b-versatile'
             };
-            const targetGroq = groqModelMap[model] || 'openai/gpt-oss-120b';
+            const targetGroq = groqModelMap[model] || 'llama-3.3-70b-versatile';
             try {
                 const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
@@ -313,7 +320,6 @@ export default async function handler(req, res) {
                 if (groqRes.ok) {
                     const gData = await groqRes.json();
                     let rawText = gData.choices?.[0]?.message?.content?.trim() || '';
-                    rawText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                     const text = sanitizeAiResponse(rawText);
                     if (text) {
                         return res.status(200).json({ text, model: targetGroq, provider: 'groq' });
