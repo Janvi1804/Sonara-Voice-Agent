@@ -242,10 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     isAiSpeaking = true;
                     if (vadEngine) vadEngine.setAiSpeakingState(true);
                     setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
-                    if (speechRecognition) {
-                        try { speechRecognition.abort(); } catch (e) {}
-                        isRecognizing = false;
-                    }
                 },
                 onEnd: () => {
                     isAiSpeaking = false;
@@ -433,12 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!prompt || prompt.length < 2) return;
 
-        // Abort STT immediately to purge any pending buffered recognition events
-        if (speechRecognition) {
-            try { speechRecognition.abort(); } catch (e) {}
-            isRecognizing = false;
-        }
-
         const now = Date.now();
         // Prevent duplicate voice submissions within 3.0s
         if (prompt.toLowerCase() === lastCommittedText.toLowerCase() && (now - lastCommittedTime < 3000)) {
@@ -452,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const startRecognitionSafely = () => {
-        if (!isCallActive || isAiSpeaking || isAiThinking || isProcessingUtterance) return;
+        if (!isCallActive) return;
         if (!speechRecognition) {
             initSpeechRecognition();
             return;
@@ -497,12 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             speechRecognition.onresult = (event) => {
-                if (isAiSpeaking || isAiThinking || isProcessingUtterance) {
-                    currentSpeechText = '';
-                    lastInterimText = '';
-                    return;
-                }
-
                 let finalChunk = '';
                 let interimChunk = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -513,6 +497,61 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                const rawTranscript = (finalChunk + ' ' + interimChunk).toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+
+                // ⚡ Instant Live Voice Commands (Stop / Pause / Resume) — active at ANY moment!
+                if (rawTranscript.includes('stop') || rawTranscript.includes('ruko') || rawTranscript.includes('chup')) {
+                    console.log('🛑 Voice Stop Triggered!');
+                    if (ttsEngine) ttsEngine.interrupt();
+                    isAiSpeaking = false;
+                    isAiThinking = false;
+                    isProcessingUtterance = false;
+                    currentSpeechText = '';
+                    lastInterimText = '';
+                    setAgentState('listening', 'Stopped • Ready for next question');
+                    appendChatMessage('user', 'Stop');
+                    appendChatMessage('assistant', 'Stopped. I am listening.');
+                    if (ttsEngine) ttsEngine.speak('Stopped.');
+                    return;
+                }
+
+                if (rawTranscript.includes('pause') || rawTranscript.includes('hold on') || rawTranscript.includes('wait')) {
+                    console.log('⏸️ Voice Pause Triggered!');
+                    if (ttsEngine) ttsEngine.interrupt();
+                    isAiSpeaking = false;
+                    isAiThinking = false;
+                    isProcessingUtterance = false;
+                    isSessionPaused = true;
+                    currentSpeechText = '';
+                    lastInterimText = '';
+                    setAgentState('paused', 'Session Paused • Say "Resume" to continue');
+                    appendChatMessage('user', 'Pause');
+                    appendChatMessage('assistant', 'Session paused. Say "Resume" or "Continue" whenever you are ready.');
+                    if (ttsEngine) ttsEngine.speak('Session paused.');
+                    return;
+                }
+
+                if (rawTranscript.includes('resume') || rawTranscript.includes('continue') || rawTranscript.includes('unpause') || rawTranscript.includes('shuru')) {
+                    console.log('▶️ Voice Resume Triggered!');
+                    if (ttsEngine) ttsEngine.interrupt();
+                    isAiSpeaking = false;
+                    isAiThinking = false;
+                    isProcessingUtterance = false;
+                    isSessionPaused = false;
+                    currentSpeechText = '';
+                    lastInterimText = '';
+                    setAgentState('listening', 'Resumed & Listening to you...');
+                    appendChatMessage('user', 'Resume');
+                    appendChatMessage('assistant', 'Resumed! What would you like to ask next?');
+                    if (ttsEngine) ttsEngine.speak('Resumed.');
+                    return;
+                }
+
+                // If AI is speaking or thinking and it was not a control command, ignore background echo
+                if (isAiSpeaking || isAiThinking || isProcessingUtterance) {
+                    return;
+                }
+
                 if (finalChunk.trim()) {
                     currentSpeechText = (currentSpeechText + ' ' + finalChunk.trim()).trim();
                     lastInterimText = '';
@@ -521,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const liveHeard = (currentSpeechText + ' ' + lastInterimText).trim();
-                if (liveHeard && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
+                if (liveHeard) {
                     setAgentState('listening', `Hearing: "${liveHeard}"`);
                 }
 
