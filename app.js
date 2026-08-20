@@ -939,16 +939,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ttsEngine) ttsEngine.speak(fullResponse);
 
             } else if (apiKey && provider === 'groq') {
-                // --- GROQ CLOUD: Sub-100ms Ultra-Fast Streaming ---
+                // --- GROQ CLOUD: Sub-100ms Ultra-Fast Intelligence ---
                 const groqModelMap = {
-                    'groq/compound-mini': 'groq/compound-mini',
-                    'groq/compound': 'groq/compound',
+                    'openai/gpt-oss-120b': 'openai/gpt-oss-120b',
+                    'openai/gpt-oss-20b': 'openai/gpt-oss-20b',
                     'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
-                    'gemma2-9b-it': 'groq/compound-mini',
-                    'gemma-3-12b-it': 'groq/compound-mini',
-                    'gemini-1.5-flash': 'groq/compound-mini'
+                    'groq/compound-mini': 'openai/gpt-oss-120b',
+                    'groq/compound': 'openai/gpt-oss-120b',
+                    'gemma2-9b-it': 'openai/gpt-oss-120b',
+                    'gemma-3-12b-it': 'openai/gpt-oss-120b',
+                    'gemini-1.5-flash': 'openai/gpt-oss-120b'
                 };
-                const groqModel = groqModelMap[model] || 'groq/compound-mini';
+                const groqModel = groqModelMap[model] || 'openai/gpt-oss-120b';
 
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
@@ -962,9 +964,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             { role: 'system', content: systemPrompt },
                             ...conversationHistory
                         ],
-                        temperature: 0.65,
-                        max_tokens: 300,
-                        stream: true
+                        temperature: 0.7,
+                        max_tokens: 250
                     })
                 });
 
@@ -973,32 +974,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(errJson.error?.message || `Groq HTTP ${res.status}`);
                 }
 
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let buffer = '';
+                const data = await res.json();
+                fullResponse = data.choices?.[0]?.message?.content?.trim() || data.choices?.[0]?.message?.reasoning?.trim() || '';
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop();
-                    for (const line of lines) {
-                        const cleanLine = line.replace(/^data:\s*/, '').trim();
-                        if (!cleanLine || cleanLine === '[DONE]') continue;
-                        try {
-                            const parsed = JSON.parse(cleanLine);
-                            const token = parsed.choices[0]?.delta?.content || '';
-                            if (token) {
-                                markFirstToken();
-                                fullResponse += token;
-                                aiMessageBubble.textContent = fullResponse;
-                            }
-                        } catch (e) {}
-                    }
+                if (!fullResponse) {
+                    fullResponse = "Hello! How can I help you today?";
                 }
 
                 fullResponse = sanitizeAiResponse(fullResponse);
+                markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 if (ttsEngine) ttsEngine.speak(fullResponse);
 
