@@ -616,34 +616,57 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn('/api/chat unavailable, attempting direct fallback:', apiErr.message);
                 }
 
-                // 2. Direct fallback to HuggingFace Router if /api/chat was not reachable
+                // 2. Direct fallback to HuggingFace Router or Pollinations AI
                 if (!serverSuccess) {
-                    const routerUrl = 'https://router.huggingface.co/v1/chat/completions';
-                    const hfRes = await fetch(routerUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${hfToken}`
-                        },
-                        body: JSON.stringify({
-                            model: hfModelId,
-                            messages,
-                            max_tokens: 250,
-                            temperature: 0.65
-                        })
-                    });
+                    try {
+                        const routerUrl = 'https://router.huggingface.co/v1/chat/completions';
+                        const hfRes = await fetch(routerUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${hfToken}`
+                            },
+                            body: JSON.stringify({
+                                model: hfModelId,
+                                messages,
+                                max_tokens: 250,
+                                temperature: 0.65
+                            })
+                        });
 
-                    if (hfRes.ok) {
-                        const hfData = await hfRes.json();
-                        fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
-                    } else {
-                        const errData = await hfRes.json().catch(() => ({}));
-                        const errMsg = errData.error?.message || `HuggingFace API error (${hfRes.status})`;
-                        throw new Error(errMsg);
+                        if (hfRes.ok) {
+                            const hfData = await hfRes.json();
+                            fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
+                        }
+                    } catch (e) {
+                        console.warn('Direct HF attempt failed:', e.message);
+                    }
+
+                    // 3. Resilient universal client fallback if HF had quota limits (402/429)
+                    if (!fullResponse) {
+                        try {
+                            const pollRes = await fetch('https://text.pollinations.ai/openai', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    model: 'openai-fast',
+                                    messages,
+                                    max_tokens: 200,
+                                    temperature: 0.7,
+                                    private: true
+                                })
+                            });
+                            if (pollRes.ok) {
+                                const pollData = await pollRes.json();
+                                fullResponse = pollData.choices?.[0]?.message?.content || (typeof pollData === 'string' ? pollData : '');
+                            }
+                        } catch (e) {
+                            console.warn('Pollinations fallback failed:', e.message);
+                        }
                     }
                 }
 
-                if (!fullResponse) throw new Error('Gemma returned empty response. Please try again.');
+                if (!fullResponse) throw new Error('AI engine is warming up. Please speak again.');
 
                 fullResponse = sanitizeAiResponse(fullResponse);
                 markFirstToken();

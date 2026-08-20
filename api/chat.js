@@ -332,9 +332,10 @@ export default async function handler(req, res) {
                         }
                     } else {
                         const errData = await hfRes.json().catch(() => ({}));
-                        lastErr = errData.error?.message || `HF Error (${hfRes.status})`;
-                        if (hfRes.status === 429) {
-                            console.warn('HF Router rate limit reached, switching to fallback engine...');
+                        lastErr = errData.error?.message || errData.error || `HF Error (${hfRes.status})`;
+                        // If quota exhausted (402), rate limited (429), or unauthorized, break and fallback immediately
+                        if (hfRes.status === 402 || hfRes.status === 429 || hfRes.status === 401 || hfRes.status === 403) {
+                            console.warn(`HF Router returned ${hfRes.status} (${lastErr}), switching to resilient universal engine...`);
                             break;
                         }
                     }
@@ -342,10 +343,10 @@ export default async function handler(req, res) {
                     lastErr = e.message;
                 }
             }
-            console.warn('HuggingFace primary unavailable, engaging resilient fallback:', lastErr);
+            console.warn('HuggingFace primary unavailable, engaging resilient universal fallback:', lastErr);
         }
 
-        // --- Resilient Universal Fallback: Pollinations AI ---
+        // --- Resilient Universal Fallback: Pollinations AI (Zero Downtime / Free) ---
         const pollRes = await fetch('https://text.pollinations.ai/openai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -372,7 +373,7 @@ export default async function handler(req, res) {
             }
         }
 
-        return res.status(500).json({ error: 'All inference backends failed. Please try again.' });
+        return res.status(500).json({ error: 'Inference backend temporarily unavailable. Please try again.' });
     } catch (err) {
         console.error('API Error:', err);
         return res.status(500).json({ error: err.message });
