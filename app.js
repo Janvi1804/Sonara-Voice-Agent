@@ -237,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (vadEngine) vadEngine.setAiSpeakingState(false);
                     if (isCallActive) {
                         setAgentState('listening', 'Listening with Silero VAD...');
+                        setTimeout(startRecognitionSafely, 100);
                     }
                 }
             });
@@ -316,17 +317,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    let sttCommitTimer = null;
-    const commitUserVoiceInput = () => {
-        clearTimeout(sttCommitTimer);
-        if (isAiThinking || isAiSpeaking) return;
-        const prompt = currentSpeechText.trim();
-        currentSpeechText = '';
-        if (prompt.length >= 2) {
-            processUserUtterance(prompt);
-        }
-    };
-
     const stopAudioPipeline = () => {
         clearTimeout(sttCommitTimer);
         if (ttsEngine) ttsEngine.interrupt();
@@ -351,8 +341,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    let lastInterimText = '';
+    let isRecognizing = false;
+    let sttWatchdogTimer = null;
+    let sttCommitTimer = null;
+
+    const commitUserVoiceInput = () => {
+        clearTimeout(sttCommitTimer);
+        if (isAiThinking || isAiSpeaking) return;
+        const prompt = (currentSpeechText + ' ' + lastInterimText).trim();
+        currentSpeechText = '';
+        lastInterimText = '';
+        if (prompt.length >= 2) {
+            processUserUtterance(prompt);
+        }
+    };
+
+    const startRecognitionSafely = () => {
+        if (!isCallActive || isAiSpeaking || isAiThinking) return;
+        if (!speechRecognition) {
+            initSpeechRecognition();
+            return;
+        }
+        try {
+            if (!isRecognizing) {
+                speechRecognition.start();
+            }
+        } catch (err) {
+            if (err.name === 'InvalidStateError') {
+                isRecognizing = true;
+            } else {
+                console.warn('STT Recovery recreation:', err.message);
+                initSpeechRecognition();
+            }
+        }
+    };
+
     /**
-     * Speech Recognition
+     * Speech Recognition (Auto-Healing & Continuous)
      */
     const initSpeechRecognition = () => {
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -362,10 +388,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            if (speechRecognition) {
+                try { speechRecognition.abort(); } catch (e) {}
+            }
+
             speechRecognition = new SpeechRec();
             speechRecognition.continuous = true;
             speechRecognition.interimResults = true;
+            speechRecognition.maxAlternatives = 1;
             speechRecognition.lang = (selLanguage && selLanguage.value === 'hi') ? 'hi-IN' : 'en-US';
+
+            speechRecognition.onstart = () => {
+                isRecognizing = true;
+            };
 
             speechRecognition.onresult = (event) => {
                 let finalChunk = '';
@@ -380,23 +415,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (finalChunk.trim()) {
                     currentSpeechText = (currentSpeechText + ' ' + finalChunk.trim()).trim();
+                    lastInterimText = '';
+                } else if (interimChunk.trim()) {
+                    lastInterimText = interimChunk.trim();
                 }
 
-                const liveHeard = (currentSpeechText + ' ' + interimChunk.trim()).trim();
+                const liveHeard = (currentSpeechText + ' ' + lastInterimText).trim();
                 if (liveHeard && !isAiSpeaking && !isAiThinking) {
                     setAgentState('listening', `Hearing: "${liveHeard}"`);
                 }
 
-                // Dual Trigger: If user finishes a sentence, debounce 750ms and commit
+                // Dual Trigger: When user pauses speech, debounce and commit
                 if (finalChunk.trim() || interimChunk.trim()) {
                     clearTimeout(sttCommitTimer);
                     sttCommitTimer = setTimeout(() => {
                         if (isCallActive && !isAiSpeaking && !isAiThinking) {
-                            const fullSaid = (currentSpeechText + ' ' + interimChunk.trim()).trim();
-                            if (fullSaid.length >= 2) {
-                                currentSpeechText = '';
-                                processUserUtterance(fullSaid);
-                            }
+                            commitUserVoiceInput();
                         }
                     }, 850);
                 }
@@ -405,20 +439,25 @@ document.addEventListener('DOMContentLoaded', () => {
             speechRecognition.onerror = (e) => {
                 if (e.error === 'no-speech' || e.error === 'aborted') return;
                 console.warn('STT Note:', e.error);
+                isRecognizing = false;
+                if (isCallActive && !isAiSpeaking) {
+                    setTimeout(startRecognitionSafely, 300);
+                }
             };
 
-            let sttRestartTimer = null;
             speechRecognition.onend = () => {
+                isRecognizing = false;
                 if (!isCallActive) return;
-                const delay = isAiSpeaking ? 800 : 100;
-                clearTimeout(sttRestartTimer);
-                sttRestartTimer = setTimeout(() => {
-                    if (!isCallActive) return;
-                    try { speechRecognition.start(); } catch (e) {}
+                const delay = isAiSpeaking ? 600 : 150;
+                setTimeout(() => {
+                    if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                        startRecognitionSafely();
+                    }
                 }, delay);
             };
 
             speechRecognition.start();
+            isRecognizing = true;
         } catch (e) {
             console.warn('SpeechRecognition init error:', e);
         }
