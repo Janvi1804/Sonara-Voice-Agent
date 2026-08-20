@@ -286,13 +286,15 @@ export default async function handler(req, res) {
         // --- 1. Groq Cloud Engine ---
         if ((provider === 'groq' || !hfToken) && groqApiKey) {
             const groqModelMap = {
-                'groq/compound-mini': 'groq/compound-mini',
-                'groq/compound': 'groq/compound',
+                'openai/gpt-oss-120b': 'openai/gpt-oss-120b',
+                'openai/gpt-oss-20b': 'openai/gpt-oss-20b',
                 'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
-                'gemma2-9b-it': 'groq/compound-mini',
-                'gemma-3-12b-it': 'groq/compound-mini'
+                'groq/compound-mini': 'openai/gpt-oss-120b',
+                'groq/compound': 'openai/gpt-oss-120b',
+                'gemma2-9b-it': 'openai/gpt-oss-120b',
+                'gemma-3-12b-it': 'openai/gpt-oss-120b'
             };
-            const targetGroq = groqModelMap[model] || 'groq/compound-mini';
+            const targetGroq = groqModelMap[model] || 'openai/gpt-oss-120b';
             try {
                 const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
