@@ -1,72 +1,56 @@
 [
   {
-    "id": "converse-ai-overview",
-    "title": "Converse AI Platform Overview",
-    "category": "Platform",
-    "keywords": ["converse ai", "what is converse ai", "overview", "platform", "definition", "introduction"],
-    "content": "Converse AI is an advanced enterprise conversational AI and voice agent platform designed to deliver natural, human-like, full-duplex conversations. It combines ultra-low latency speech-to-text, state-of-the-art LLM reasoning (such as Google Gemma and Gemini), and expressive neural text-to-speech (Kokoro-82M) to automate customer service, sales, and complex workflows."
+    "id": "theconverseai-overview",
+    "title": "ConverseAI (theconverseai.com) Official Overview",
+    "keywords": ["theconverseai", "converseai", "converse ai", "overview", "what is converseai", "about", "introduction", "who are you", "revti digital"],
+    "content": "ConverseAI (theconverseai.com) is an enterprise Agentic AI and customer engagement platform powered by Revti Digital. We scope problems, build bespoke AI agents, and run them in production across Voice, WhatsApp, and automated workflows with zero AI team required on your end."
   },
   {
-    "id": "converse-ai-architecture",
-    "title": "Converse AI Full-Duplex Architecture",
-    "category": "Architecture",
-    "keywords": ["architecture", "full duplex", "streaming", "how it works", "pipeline", "stack", "vad"],
-    "content": "The Converse AI architecture operates on a full-duplex streaming loop: 1) Client captures audio with Acoustic Echo Cancellation (AEC). 2) Silero VAD detects speech boundaries in 16kHz frames. 3) Whisper Large v3 Turbo transcribes audio in sub-150ms. 4) LLM reasoning stream tokens via sliding-window attention. 5) Kokoro-82M TTS streams audio chunks sentence-by-sentence with zero latency."
+    "id": "theconverseai-location-contact",
+    "title": "ConverseAI Location & Contact Details",
+    "keywords": ["where is it located", "location", "address", "contact", "phone", "email", "office", "headquarters", "india", "reach out"],
+    "content": "ConverseAI is based in India (associated with Revti Digital) and serves global clients with DPDP, GDPR, and CCPA compliant cloud infrastructure. You can reach out via email at contact@theconverseai.com or by phone at +91-9982323333 and +91-7023084065."
   },
   {
-    "id": "converse-ai-barge-in",
-    "title": "Barge-in and Interruption Handling",
-    "category": "Voice Features",
-    "keywords": ["barge in", "barge-in", "interrupt", "interruption", "stop talking", "cut off"],
-    "content": "Converse AI features real-time barge-in interruption. When the AI is actively speaking and the user begins to talk, Silero VAD detects user voice activity within 80ms, immediately halts the TTS audio buffer on the client, cancels ongoing token generation, and seamlessly pivots to listening to the user's new prompt."
+    "id": "theconverseai-products",
+    "title": "ConverseAI Core Products Suite",
+    "keywords": ["products", "services", "chatbot", "live chat", "whatsapp ai", "omni channel", "analytics", "what do you offer", "tools"],
+    "content": "ConverseAI provides 6 core products: 1) AI Chatbot with 24/7 lead qualification, 2) Live Chat with smart routing, 3) WhatsApp AI automation with 98% open rates, 4) Omni-Channel unified inbox across Web/WhatsApp/Email, 5) Analytics Suite with live CSAT monitoring, and 6) Team Capacity Management."
   },
   {
-    "id": "converse-ai-chatflow",
-    "title": "Chatflow Workflow Automation & Integrations",
-    "category": "Workflow",
-    "keywords": ["chatflow", "workflows", "integrations", "salesforce", "slack", "tools", "crm", "zapier", "webhooks"],
-    "content": "Converse AI Chatflow is a no-code and low-code visual workflow orchestrator that connects voice and chat agents to external enterprise systems such as Salesforce, HubSpot, Zendesk, Slack, Google Workspace, and custom REST APIs via secure webhooks and JSON action dispatchers."
+    "id": "theconverseai-agentic-services",
+    "title": "ConverseAI Agentic AI Services",
+    "keywords": ["agentic ai", "services", "voice agents", "ai voice agents", "rag", "custom ai", "sales intelligence", "audit", "integration"],
+    "content": "ConverseAI builds done-for-you agentic systems: AI Strategy & Readiness Audits, Agentic Process Automation, Inbound/Outbound Multilingual AI Voice Agents for sales and support, Custom AI Agent Development (client owns IP), CRM/ERP Integrations, Document & Knowledge Intelligence (Enterprise RAG), and AI Sales Outreach."
   },
   {
-    "id": "converse-ai-rag",
-    "title": "Retrieval-Augmented Generation (RAG) in Converse AI",
-    "category": "RAG & Knowledge",
-    "keywords": ["rag", "retrieval", "vector database", "knowledge base", "custom data", "embeddings", "search"],
-    "content": "Converse AI incorporates a high-speed RAG engine that indexes website documentation, PDFs, and company FAQs into vector embeddings. When a user asks a question, the top relevant chunks are retrieved in under 20ms and injected into the LLM context, ensuring 100% factual accuracy with zero hallucinations."
+    "id": "theconverseai-casestudies-all",
+    "title": "ConverseAI Real Case Studies & Results",
+    "keywords": ["case study", "case studies", "real results", "examples", "stylemart", "learnsphere", "carefirst", "techflow", "clients"],
+    "content": "ConverseAI has 3 major verified case studies: 1) StyleMart India (Retail): 3x revenue growth in repeat purchases, 65% support cost reduction, and <30s response time. 2) LearnSphere (EdTech): Doubled course enrolments in 90 days and cut lead response time by 80%. 3) CareFirst Clinics (Healthcare): Reduced appointment no-shows by 55% and boosted patient satisfaction by +28 NPS points."
   },
   {
-    "id": "converse-ai-latency",
-    "title": "Sub-200ms Latency Optimization",
-    "category": "Performance",
-    "keywords": ["latency", "speed", "fast", "sub 200ms", "ttft", "time to first token", "performance"],
-    "content": "Converse AI achieves sub-200ms end-to-end voice latency through speculative execution, Web Audio ScriptProcessor frame resampling, Groq/HuggingFace token streaming, and sentence-boundary parallel TTS generation, mimicking the pacing of natural human dialogue."
+    "id": "theconverseai-casestudy-stylemart",
+    "title": "Case Study 1: StyleMart India (Retail & E-Commerce)",
+    "keywords": ["stylemart", "retail case study", "ecommerce case study", "whatsapp case study"],
+    "content": "In retail, StyleMart India deployed ConverseAI's WhatsApp AI Chatbot, achieving a 3x increase in repeat purchase revenue, a 65% reduction in customer support costs, an average response time under 30 seconds, and a 94% CSAT score."
   },
   {
-    "id": "converse-ai-multilingual",
-    "title": "Multilingual and Hinglish Support",
-    "category": "Languages",
-    "keywords": ["languages", "hindi", "hinglish", "multilingual", "spanish", "french", "accents"],
-    "content": "Converse AI supports over 30 global languages including English, Hindi, Hinglish, Spanish, French, German, and Japanese with automatic accent adaptation and natural phoneme pronunciation across diverse cultural dialects."
+    "id": "theconverseai-casestudy-learnsphere",
+    "title": "Case Study 2: LearnSphere (EdTech Lead Gen)",
+    "keywords": ["learnsphere", "edtech case study", "education case study", "lead generation case study"],
+    "content": "In EdTech, LearnSphere used ConverseAI's conversational lead qualification bot to cut response times by 80%, qualify 500+ leads daily automatically, decrease cost per qualified lead by 45%, and double course enrolments within 90 days."
   },
   {
-    "id": "converse-ai-security",
-    "title": "Enterprise Security and Privacy",
-    "category": "Security",
-    "keywords": ["security", "privacy", "gdpr", "soc2", "encryption", "data protection", "enterprise"],
-    "content": "Converse AI adheres to enterprise-grade security protocols including SOC2 Type II compliance, GDPR alignment, end-to-end TLS 1.3 encryption, client-side token masking, and zero-data retention policies for sensitive user interactions."
+    "id": "theconverseai-casestudy-carefirst",
+    "title": "Case Study 3: CareFirst Clinics (Healthcare Omnichannel)",
+    "keywords": ["carefirst", "healthcare case study", "clinic case study", "hospital case study", "doctor appointment"],
+    "content": "In healthcare, CareFirst Clinics unified communication over WhatsApp, web chat, and SMS with ConverseAI, slashing appointment no-shows by 55%, saving 120 admin hours per month, and achieving a 91% appointment fill rate with a +28 point NPS boost."
   },
   {
-    "id": "converse-ai-deployment",
-    "title": "Deployment Options and SDKs",
-    "category": "Deployment",
-    "keywords": ["deploy", "deployment", "sdk", "api", "vercel", "cloud", "docker", "on premise"],
-    "content": "Converse AI can be deployed serverlessly on Vercel, in Docker containers on AWS/GCP, or embedded directly into web and mobile apps using lightweight JavaScript, Python, and React SDKs."
-  },
-  {
-    "id": "converse-ai-pricing",
-    "title": "Pricing and Plans",
-    "category": "Pricing",
-    "keywords": ["pricing", "cost", "plans", "free tier", "subscription", "enterprise price"],
-    "content": "Converse AI offers a generous Free Tier for developers with up to 1,000 voice minutes per month, a Pro Tier at $49/month for growing teams with custom RAG indexing, and custom Enterprise licensing with dedicated SLA and private model hosting."
+    "id": "theconverseai-stats",
+    "title": "ConverseAI Key Metrics & Performance",
+    "keywords": ["metrics", "stats", "performance", "numbers", "messages automated", "open rate", "csat"],
+    "content": "ConverseAI has automated over 50 Million messages for 500+ businesses worldwide, delivering a 98% WhatsApp open rate, 60% faster response times, and an average CSAT score of 94% across 100+ supported languages."
   }
 ]

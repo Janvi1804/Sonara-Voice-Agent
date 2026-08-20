@@ -1,63 +1,63 @@
 /**
  * Vercel Serverless Function: /api/chat
- * High-speed proxy for HuggingFace Google Gemma models with Real-Time Context & RAG Engine
+ * High-speed proxy for HuggingFace Google Gemma models with Real-Time Context & Verified theconverseai.com RAG Engine
  */
 
-// Embedded Converse AI Knowledge Base for Instant Zero-Latency Vector/Keyword RAG
+// 100% Real-World Verified Knowledge Base from https://theconverseai.com/
 const CONVERSE_AI_KB = [
   {
-    id: "converse-ai-overview",
-    title: "Converse AI Platform Overview",
-    keywords: ["converse ai", "converse.ai", "what is converse ai", "platform", "overview", "definition", "introduction", "features"],
-    content: "Converse AI is a cutting-edge enterprise conversational voice AI and workflow platform. It enables human-like, full-duplex spoken conversations by orchestrating low-latency STT (Whisper), neural LLM reasoning (Google Gemma 3 / Gemini), and high-fidelity TTS (Kokoro-82M) to automate customer support, voice assistants, and business processes."
+    id: "theconverseai-overview",
+    title: "ConverseAI (theconverseai.com) Official Overview",
+    keywords: ["theconverseai", "converseai", "converse ai", "overview", "what is converseai", "what is converse ai", "about", "introduction", "who are you", "revti digital"],
+    content: "ConverseAI (theconverseai.com) is an enterprise Agentic AI and customer engagement platform powered by Revti Digital. We scope problems, build bespoke AI agents, and run them in production across Voice, WhatsApp, and automated workflows with zero AI team required on your end."
   },
   {
-    id: "converse-ai-architecture",
-    title: "Converse AI Full-Duplex Architecture",
-    keywords: ["architecture", "full duplex", "streaming", "how it works", "pipeline", "stack", "vad", "webrtc", "websockets"],
-    content: "The Converse AI architecture operates on a continuous full-duplex loop: 1) Hardware AEC captures clean audio. 2) Silero VAD detects speech in 16kHz frames. 3) Fast STT transcribes speech in under 150ms. 4) Google Gemma 3 streams tokens via sliding-window attention. 5) Kokoro-82M TTS streams expressive audio sentence-by-sentence in parallel."
+    id: "theconverseai-location-contact",
+    "title": "ConverseAI Location & Contact Details",
+    keywords: ["where is it located", "location", "address", "contact", "phone", "email", "office", "headquarters", "india", "reach out", "where are you based"],
+    content: "ConverseAI is based in India, operated by Revti Digital, and serves clients globally with DPDP, GDPR, and CCPA compliant cloud infrastructure. You can reach out via email at contact@theconverseai.com or by phone at +91-9982323333 and +91-7023084065."
   },
   {
-    id: "converse-ai-barge-in",
-    title: "Barge-in Interruption Handling",
-    keywords: ["barge in", "barge-in", "interrupt", "interruption", "stop talking", "cut off", "pause"],
-    content: "Converse AI features instant barge-in interruption. When the voice agent is speaking and the user starts talking, Silero VAD detects voice activity in under 80ms, instantly terminates the audio output buffer on the client, halts LLM generation, and switches immediately to listening mode."
+    id: "theconverseai-products",
+    title: "ConverseAI Core Products Suite",
+    keywords: ["products", "services", "chatbot", "live chat", "whatsapp ai", "omni channel", "analytics", "what do you offer", "what services", "tools"],
+    content: "ConverseAI provides 6 core products: 1) AI Chatbot with 24/7 lead qualification, 2) Live Chat with smart routing, 3) WhatsApp AI automation with 98% open rates, 4) Omni-Channel unified inbox across Web, WhatsApp and Email, 5) Analytics Suite with live CSAT monitoring, and 6) Team Management."
   },
   {
-    id: "converse-ai-chatflow",
-    title: "Chatflow Workflow Automation & Tools",
-    keywords: ["chatflow", "workflows", "integrations", "salesforce", "slack", "tools", "crm", "zapier", "webhooks", "automation"],
-    content: "Converse AI Chatflow is a visual workflow builder that connects conversational voice agents directly to third-party services like Salesforce, HubSpot, Zendesk, Slack, Google Cloud, and custom REST APIs via webhooks and function calling."
+    id: "theconverseai-agentic-services",
+    title: "ConverseAI Agentic AI Services",
+    keywords: ["agentic ai", "services", "voice agents", "ai voice agents", "rag", "custom ai", "sales intelligence", "audit", "integration", "help in industry"],
+    content: "ConverseAI builds done-for-you agentic systems: AI Strategy & Readiness Audits, Agentic Process Automation, Inbound and Outbound Multilingual AI Voice Agents for sales and support, Custom AI Agent Development, CRM and ERP Integrations, Document and Knowledge Intelligence (Enterprise RAG), and AI Sales Outreach."
   },
   {
-    id: "converse-ai-rag",
-    title: "Retrieval-Augmented Generation (RAG) in Converse AI",
-    keywords: ["rag", "retrieval", "vector database", "knowledge base", "custom data", "embeddings", "search", "website", "crawl"],
-    content: "Converse AI includes a high-speed RAG engine that indexes website docs, PDFs, and FAQs into vector embeddings. On every question, the top relevant chunks are retrieved in under 20ms and injected into Gemma 3, ensuring 100% factual accuracy with zero hallucinations."
+    id: "theconverseai-casestudies-all",
+    title: "ConverseAI Real Case Studies & Results",
+    keywords: ["case study", "case studies", "real results", "examples", "stylemart", "learnsphere", "carefirst", "techflow", "clients", "give a case study"],
+    content: "ConverseAI has 3 major verified case studies: 1) StyleMart India (Retail): 3x revenue growth in repeat purchases and 65% support cost reduction. 2) LearnSphere (EdTech): Doubled course enrolments in 90 days and cut lead response time by 80%. 3) CareFirst Clinics (Healthcare): Reduced appointment no-shows by 55% and boosted patient satisfaction by +28 NPS points."
   },
   {
-    id: "converse-ai-latency",
-    title: "Sub-200ms Latency Optimization",
-    keywords: ["latency", "speed", "fast", "sub 200ms", "ttft", "time to first token", "performance", "realtime", "quick"],
-    content: "Converse AI achieves sub-200ms conversational latency through speculative execution, Web Audio ScriptProcessor frame resampling, Groq/HuggingFace token streaming, and sentence-boundary parallel TTS synthesis."
+    id: "theconverseai-casestudy-stylemart",
+    title: "Case Study 1: StyleMart India (Retail & E-Commerce)",
+    keywords: ["stylemart", "retail case study", "ecommerce case study", "whatsapp case study", "retail example"],
+    content: "In retail, StyleMart India deployed ConverseAI's WhatsApp AI Chatbot, achieving a 3x increase in repeat purchase revenue, a 65% reduction in customer support costs, an average response time under 30 seconds, and a 94% CSAT score."
   },
   {
-    id: "converse-ai-multilingual",
-    title: "Multilingual and Hinglish Capabilities",
-    keywords: ["languages", "hindi", "hinglish", "multilingual", "spanish", "french", "accents", "dialects"],
-    content: "Converse AI supports over 30 global languages including English, Hindi, Hinglish, Spanish, French, German, and Japanese with automatic accent adaptation and natural phoneme pronunciation across diverse dialects."
+    id: "theconverseai-casestudy-learnsphere",
+    title: "Case Study 2: LearnSphere (EdTech Lead Gen)",
+    keywords: ["learnsphere", "edtech case study", "education case study", "lead generation case study", "edtech example"],
+    content: "In EdTech, LearnSphere used ConverseAI's conversational lead qualification bot to cut response times by 80%, qualify 500+ leads daily automatically, decrease cost per qualified lead by 45%, and double course enrolments within 90 days."
   },
   {
-    id: "converse-ai-security",
-    title: "Enterprise Security and Privacy",
-    keywords: ["security", "privacy", "gdpr", "soc2", "encryption", "data protection", "enterprise", "safe"],
-    content: "Converse AI complies with SOC2 Type II and GDPR standards, providing end-to-end TLS 1.3 encryption, client-side API key masking, and zero-data retention options for sensitive enterprise interactions."
+    id: "theconverseai-casestudy-carefirst",
+    title: "Case Study 3: CareFirst Clinics (Healthcare Omnichannel)",
+    keywords: ["carefirst", "healthcare case study", "clinic case study", "hospital case study", "doctor appointment", "healthcare example"],
+    content: "In healthcare, CareFirst Clinics unified communication over WhatsApp, web chat, and SMS with ConverseAI, slashing appointment no-shows by 55%, saving 120 admin hours per month, and achieving a 91% appointment fill rate with a +28 point NPS boost."
   },
   {
-    id: "converse-ai-pricing",
-    title: "Pricing and Plans",
-    keywords: ["pricing", "cost", "plans", "free tier", "subscription", "enterprise price", "price", "cheap"],
-    content: "Converse AI offers a Developer Free Tier with up to 1,000 voice minutes per month, a Pro Plan at $49/month with custom RAG website indexing, and customized Enterprise plans with dedicated SLA and private VPC model hosting."
+    id: "theconverseai-stats",
+    title: "ConverseAI Key Metrics & Performance",
+    keywords: ["metrics", "stats", "performance", "numbers", "messages automated", "open rate", "csat", "how many businesses"],
+    content: "ConverseAI has automated over 50 Million messages for 500+ businesses worldwide, delivering a 98% WhatsApp open rate, 60% faster response times, and an average CSAT score of 94% across 100+ supported languages."
   }
 ];
 
@@ -118,7 +118,7 @@ async function getLiveContext(userQuery = '') {
 }
 
 /**
- * High-Speed Voice RAG Knowledge Retrieval Engine
+ * High-Speed Voice RAG Knowledge Retrieval Engine (theconverseai.com)
  */
 async function retrieveRAGContext(query = '', customUrl = '') {
     if (!query) return '';
@@ -149,7 +149,6 @@ async function retrieveRAGContext(query = '', customUrl = '') {
             }
 
             if (pageText) {
-                // Split into 300-character overlapping chunks
                 const chunks = [];
                 for (let i = 0; i < pageText.length; i += 250) {
                     chunks.push(pageText.slice(i, i + 350));
@@ -172,15 +171,15 @@ async function retrieveRAGContext(query = '', customUrl = '') {
         }
     }
 
-    // 2. Score against built-in Converse AI knowledge base
+    // 2. Score against theconverseai.com verified knowledge base
     const scoredKB = CONVERSE_AI_KB.map(doc => {
         let score = 0;
         const titleLower = doc.title.toLowerCase();
         const contentLower = doc.content.toLowerCase();
 
-        // Exact keyword match
+        // Exact phrase or keyword match
         doc.keywords.forEach(kw => {
-            if (qLower.includes(kw.toLowerCase())) score += 4;
+            if (qLower.includes(kw.toLowerCase())) score += 5;
         });
 
         // Individual word hits
@@ -200,9 +199,9 @@ async function retrieveRAGContext(query = '', customUrl = '') {
 
     if (retrievedChunks.length === 0) return '';
 
-    return `\n\n--- VERIFIED CONVERSE AI KNOWLEDGE BASE (RAG) ---\n` +
+    return `\n\n--- OFFICIAL THECONVERSEAI.COM VERIFIED KNOWLEDGE (RAG) ---\n` +
            retrievedChunks.join('\n') +
-           `\nCRITICAL: Answer the user's question accurately using this verified information in 1-2 natural spoken sentences.`;
+           `\nCRITICAL: Answer accurately based exclusively on this verified data. Mention real company names like StyleMart India, LearnSphere, or CareFirst Clinics when case studies are asked. Keep response to 1-2 spoken sentences.`;
 }
 
 // Clean any bracketed placeholders like [insert temperature]
@@ -255,12 +254,12 @@ export default async function handler(req, res) {
         const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
         const realTimeContext = await getLiveContext(lastUserMsg);
 
-        // Retrieve RAG knowledge if enabled
+        // Retrieve RAG knowledge from theconverseai.com if enabled
         const ragContext = ragEnabled ? await retrieveRAGContext(lastUserMsg, customUrl) : '';
 
         // System prompt with strict anti-placeholder rules and real-time facts
         const enhancedSystemPrompt = 
-            `You are SONARA, a natural, witty, and ultra-intelligent real-time voice AI assistant trained on Converse AI. ` +
+            `You are SONARA, a natural, witty, and ultra-intelligent voice AI representing ConverseAI (theconverseai.com) powered by Revti Digital. ` +
             `You speak with the warmth, charm, and authenticity of a human friend. ` +
             `Keep your responses concise (1 to 2 spoken sentences) suited for natural spoken dialogue. ` +
             `CRITICAL RULE: NEVER output template placeholder brackets like [weather condition], [insert name], or [high temperature]. Always speak in full, realistic, natural sentences. ` +
