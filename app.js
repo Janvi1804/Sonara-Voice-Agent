@@ -308,9 +308,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            // Initialize Kokoro-82M Core Engine
+            // Initialize Kokoro-82M Core Engine (Default: Heart Warm Natural Female)
             kokoroEngine = new KokoroTTS(audioContext, {
-                voice: selTtsVoice ? selTtsVoice.value : 'am_adam',
+                voice: selTtsVoice ? selTtsVoice.value : 'af_heart',
                 speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
                 onStart: () => handleTtsStart('Kokoro-82M'),
                 onEnd: handleTtsEnd
