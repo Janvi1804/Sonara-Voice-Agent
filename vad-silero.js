@@ -102,7 +102,13 @@ export class SileroVAD {
 
         const now = performance.now();
 
-        // 2. Speech State Classifier & Barge-in Logic
+        // If AI is actively speaking, ignore mic audio completely to prevent speaker acoustic feedback from cutting AI off
+        if (this.aiIsSpeaking) {
+            this.isSpeaking = false;
+            return { prob: 0, isSpeaking: false };
+        }
+
+        // 2. Speech State Classifier
         if (prob >= this.threshold) {
             this.lastSpeechTime = now;
 
@@ -111,16 +117,6 @@ export class SileroVAD {
                 this.isSpeaking = true;
                 this.speakingStartTime = now;
                 this.onSpeechStart();
-
-                // If AI is speaking, ignore initial acoustic speaker echo.
-                // Require high confidence (>0.75) and sustained speech (>600ms after AI start)
-                if (this.aiIsSpeaking && prob >= 0.75 && (now - this.aiSpeechStartTime > 800)) {
-                    this.onBargeIn();
-                }
-            } else {
-                if (this.aiIsSpeaking && prob >= 0.75 && (now - this.speakingStartTime > 600) && (now - this.aiSpeechStartTime > 800)) {
-                    this.onBargeIn();
-                }
             }
         } else {
             // Below threshold
