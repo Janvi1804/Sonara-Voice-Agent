@@ -47,6 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const chkAec = document.getElementById('chkAec');
     const chkNoiseSuppression = document.getElementById('chkNoiseSuppression');
     const chkAutoGain = document.getElementById('chkAutoGain');
+    const chkRagEnabled = document.getElementById('chkRagEnabled');
+    const txtCustomRagUrl = document.getElementById('txtCustomRagUrl');
     const rngVadThreshold = document.getElementById('rngVadThreshold');
     const lblVadThreshold = document.getElementById('lblVadThreshold');
     const rngSilenceDuration = document.getElementById('rngSilenceDuration');
@@ -102,6 +104,12 @@ document.addEventListener('DOMContentLoaded', () => {
             rngSilenceDuration.value = localStorage.getItem('sonara_silence_dur');
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         }
+        if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
+            chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
+        }
+        if (txtCustomRagUrl && localStorage.getItem('sonara_custom_rag_url')) {
+            txtCustomRagUrl.value = localStorage.getItem('sonara_custom_rag_url');
+        }
         updateProviderFields();
     };
 
@@ -115,6 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('sonara_tts_speed', rngSpeed.value);
         localStorage.setItem('sonara_vad_thresh', rngVadThreshold.value);
         localStorage.setItem('sonara_silence_dur', rngSilenceDuration.value);
+        if (chkRagEnabled) localStorage.setItem('sonara_rag_enabled', chkRagEnabled.checked);
+        if (txtCustomRagUrl) localStorage.setItem('sonara_custom_rag_url', txtCustomRagUrl.value.trim());
 
         if (vadEngine) {
             vadEngine.setThreshold(parseFloat(rngVadThreshold.value));
@@ -539,7 +549,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             provider: 'huggingface',
                             model: hfModelId,
                             messages,
-                            hfToken
+                            hfToken,
+                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
+                            customUrl: txtCustomRagUrl ? txtCustomRagUrl.value.trim() : ''
                         })
                     });
 

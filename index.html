@@ -240,6 +240,19 @@
                         </div>
                     </div>
 
+                    <!-- RAG Knowledge Base Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-book-bookmark"></i> RAG Website & Knowledge Engine</label>
+                        <div class="form-row checkbox-row">
+                            <label><input type="checkbox" id="chkRagEnabled" checked /> Enable RAG Grounding (Converse AI Docs & Custom URL)</label>
+                        </div>
+                        <div class="form-row">
+                            <label>Custom Website / Docs URL to Index (Optional)</label>
+                            <input type="url" id="txtCustomRagUrl" class="form-input" placeholder="https://converseai.com/docs or any website URL" />
+                            <small class="helper-text">Agent automatically crawls and retrieves live knowledge chunks during voice chats.</small>
+                        </div>
+                    </div>
+
                     <!-- VAD & DSP Configuration -->
                     <div class="settings-group">
                         <label class="group-title"><i class="fa-solid fa-sliders"></i> Silero VAD & Audio DSP</label>

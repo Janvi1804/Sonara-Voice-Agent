@@ -1,0 +1,72 @@
+[
+  {
+    "id": "converse-ai-overview",
+    "title": "Converse AI Platform Overview",
+    "category": "Platform",
+    "keywords": ["converse ai", "what is converse ai", "overview", "platform", "definition", "introduction"],
+    "content": "Converse AI is an advanced enterprise conversational AI and voice agent platform designed to deliver natural, human-like, full-duplex conversations. It combines ultra-low latency speech-to-text, state-of-the-art LLM reasoning (such as Google Gemma and Gemini), and expressive neural text-to-speech (Kokoro-82M) to automate customer service, sales, and complex workflows."
+  },
+  {
+    "id": "converse-ai-architecture",
+    "title": "Converse AI Full-Duplex Architecture",
+    "category": "Architecture",
+    "keywords": ["architecture", "full duplex", "streaming", "how it works", "pipeline", "stack", "vad"],
+    "content": "The Converse AI architecture operates on a full-duplex streaming loop: 1) Client captures audio with Acoustic Echo Cancellation (AEC). 2) Silero VAD detects speech boundaries in 16kHz frames. 3) Whisper Large v3 Turbo transcribes audio in sub-150ms. 4) LLM reasoning stream tokens via sliding-window attention. 5) Kokoro-82M TTS streams audio chunks sentence-by-sentence with zero latency."
+  },
+  {
+    "id": "converse-ai-barge-in",
+    "title": "Barge-in and Interruption Handling",
+    "category": "Voice Features",
+    "keywords": ["barge in", "barge-in", "interrupt", "interruption", "stop talking", "cut off"],
+    "content": "Converse AI features real-time barge-in interruption. When the AI is actively speaking and the user begins to talk, Silero VAD detects user voice activity within 80ms, immediately halts the TTS audio buffer on the client, cancels ongoing token generation, and seamlessly pivots to listening to the user's new prompt."
+  },
+  {
+    "id": "converse-ai-chatflow",
+    "title": "Chatflow Workflow Automation & Integrations",
+    "category": "Workflow",
+    "keywords": ["chatflow", "workflows", "integrations", "salesforce", "slack", "tools", "crm", "zapier", "webhooks"],
+    "content": "Converse AI Chatflow is a no-code and low-code visual workflow orchestrator that connects voice and chat agents to external enterprise systems such as Salesforce, HubSpot, Zendesk, Slack, Google Workspace, and custom REST APIs via secure webhooks and JSON action dispatchers."
+  },
+  {
+    "id": "converse-ai-rag",
+    "title": "Retrieval-Augmented Generation (RAG) in Converse AI",
+    "category": "RAG & Knowledge",
+    "keywords": ["rag", "retrieval", "vector database", "knowledge base", "custom data", "embeddings", "search"],
+    "content": "Converse AI incorporates a high-speed RAG engine that indexes website documentation, PDFs, and company FAQs into vector embeddings. When a user asks a question, the top relevant chunks are retrieved in under 20ms and injected into the LLM context, ensuring 100% factual accuracy with zero hallucinations."
+  },
+  {
+    "id": "converse-ai-latency",
+    "title": "Sub-200ms Latency Optimization",
+    "category": "Performance",
+    "keywords": ["latency", "speed", "fast", "sub 200ms", "ttft", "time to first token", "performance"],
+    "content": "Converse AI achieves sub-200ms end-to-end voice latency through speculative execution, Web Audio ScriptProcessor frame resampling, Groq/HuggingFace token streaming, and sentence-boundary parallel TTS generation, mimicking the pacing of natural human dialogue."
+  },
+  {
+    "id": "converse-ai-multilingual",
+    "title": "Multilingual and Hinglish Support",
+    "category": "Languages",
+    "keywords": ["languages", "hindi", "hinglish", "multilingual", "spanish", "french", "accents"],
+    "content": "Converse AI supports over 30 global languages including English, Hindi, Hinglish, Spanish, French, German, and Japanese with automatic accent adaptation and natural phoneme pronunciation across diverse cultural dialects."
+  },
+  {
+    "id": "converse-ai-security",
+    "title": "Enterprise Security and Privacy",
+    "category": "Security",
+    "keywords": ["security", "privacy", "gdpr", "soc2", "encryption", "data protection", "enterprise"],
+    "content": "Converse AI adheres to enterprise-grade security protocols including SOC2 Type II compliance, GDPR alignment, end-to-end TLS 1.3 encryption, client-side token masking, and zero-data retention policies for sensitive user interactions."
+  },
+  {
+    "id": "converse-ai-deployment",
+    "title": "Deployment Options and SDKs",
+    "category": "Deployment",
+    "keywords": ["deploy", "deployment", "sdk", "api", "vercel", "cloud", "docker", "on premise"],
+    "content": "Converse AI can be deployed serverlessly on Vercel, in Docker containers on AWS/GCP, or embedded directly into web and mobile apps using lightweight JavaScript, Python, and React SDKs."
+  },
+  {
+    "id": "converse-ai-pricing",
+    "title": "Pricing and Plans",
+    "category": "Pricing",
+    "keywords": ["pricing", "cost", "plans", "free tier", "subscription", "enterprise price"],
+    "content": "Converse AI offers a generous Free Tier for developers with up to 1,000 voice minutes per month, a Pro Tier at $49/month for growing teams with custom RAG indexing, and custom Enterprise licensing with dedicated SLA and private model hosting."
+  }
+]
