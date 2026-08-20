@@ -129,7 +129,13 @@ document.addEventListener('DOMContentLoaded', () => {
             txtFishVoiceId.value = localStorage.getItem('sonara_fish_voice_id');
         }
 
-        if (localStorage.getItem('sonara_tts_voice')) selTtsVoice.value = localStorage.getItem('sonara_tts_voice');
+        const savedTtsVoice = localStorage.getItem('sonara_tts_voice');
+        if (savedTtsVoice && !savedTtsVoice.startsWith('am_') && !savedTtsVoice.startsWith('bm_')) {
+            selTtsVoice.value = savedTtsVoice;
+        } else {
+            selTtsVoice.value = 'af_heart';
+            localStorage.setItem('sonara_tts_voice', 'af_heart');
+        }
         if (localStorage.getItem('sonara_tts_speed')) {
             rngSpeed.value = localStorage.getItem('sonara_tts_speed');
             lblSpeed.textContent = `${rngSpeed.value}x`;

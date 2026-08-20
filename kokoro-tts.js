@@ -71,36 +71,53 @@ export class KokoroTTS {
         const config = this.voices[this.voice] || this.voices['af_heart'];
         const isFemale = config.gender === 'female';
 
-        // 1. Match by name & keywords
-        let match = available.find(v => {
-            const name = v.name.toLowerCase();
-            if (isFemale) {
+        if (isFemale) {
+            // Strictly match female voice on Windows, Mac, Android, and Chrome (Excluding all male voices)
+            match = available.find(v => {
+                const n = v.name.toLowerCase();
+                if (n.includes('david') || n.includes('mark') || n.includes('george') || n.includes('guy') || n.includes('ravi') || n.includes('hemant') || n.includes('madhur') || (n.includes('male') && !n.includes('female'))) {
+                    return false;
+                }
                 return (
-                    name.includes('female') ||
-                    name.includes('zira') ||
-                    name.includes('samantha') ||
-                    name.includes('jenny') ||
-                    name.includes('kavya') ||
-                    name.includes('google us english') ||
-                    name.includes('google uk english female') ||
-                    name.includes('aria') ||
-                    name.includes('eva')
+                    n.includes('zira') ||
+                    n.includes('female') ||
+                    n.includes('jenny') ||
+                    n.includes('swara') ||
+                    n.includes('kalpana') ||
+                    n.includes('samantha') ||
+                    n.includes('aria') ||
+                    n.includes('eva') ||
+                    n.includes('victoria') ||
+                    n.includes('karen') ||
+                    n.includes('moira') ||
+                    n.includes('tessa') ||
+                    n.includes('kavya') ||
+                    n.includes('google uk english female') ||
+                    n.includes('google हिन्दी')
                 );
-            } else {
-                return (
-                    (name.includes('male') && !name.includes('female')) ||
-                    name.includes('david') ||
-                    name.includes('mark') ||
-                    name.includes('george') ||
-                    name.includes('guy') ||
-                    name.includes('google uk english male')
-                );
-            }
-        });
+            });
 
-        // 2. Language match fallback
-        if (!match) {
-            match = available.find(v => v.lang.startsWith(config.lang.slice(0, 2))) || available[0];
+            if (!match) {
+                // Secondary check: any voice without male/david keywords
+                match = available.find(v => {
+                    const n = v.name.toLowerCase();
+                    return !n.includes('david') && !n.includes('mark') && !n.includes('george') && !(n.includes('male') && !n.includes('female'));
+                }) || available[0];
+            }
+        } else {
+            match = available.find(v => {
+                const n = v.name.toLowerCase();
+                return (
+                    (n.includes('male') && !n.includes('female')) ||
+                    n.includes('david') ||
+                    n.includes('mark') ||
+                    n.includes('george') ||
+                    n.includes('guy') ||
+                    n.includes('madhur') ||
+                    n.includes('hemant') ||
+                    n.includes('google uk english male')
+                );
+            }) || available[0];
         }
 
         this.resolvedVoice = match;
