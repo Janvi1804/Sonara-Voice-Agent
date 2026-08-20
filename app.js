@@ -139,7 +139,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ttsEngine.setSpeed(parseFloat(rngSpeed.value));
         }
         settingsModal.classList.remove('active');
-        appendSystemMessage("✅ Configuration saved! HuggingFace Gemma 2 is now active.");
+        const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : selLlmModel.value;
+        appendSystemMessage(`✅ Configuration saved! Active Engine: ${activeModelName}`);
     };
 
     // Range input listeners
@@ -982,7 +983,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const author = document.createElement('div');
         author.className = 'message-author';
-        author.textContent = role === 'user' ? 'YOU (Mic / STT)' : `SONARA (${selLlmModel ? selLlmModel.value : 'Gemma 2'})`;
+        const provLabel = selLlmProvider ? selLlmProvider.value.toUpperCase() : 'AI';
+        author.textContent = role === 'user' ? 'YOU (Mic / STT)' : `SONARA (${provLabel})`;
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
