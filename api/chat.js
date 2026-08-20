@@ -172,23 +172,25 @@ export default async function handler(req, res) {
                         const rawText = data.choices?.[0]?.message?.content?.trim() || '';
                         const text = sanitizeAiResponse(rawText);
                         if (text) {
-                            return res.status(200).json({ text, model: candModel });
+                            return res.status(200).json({ text, model: candModel, provider: 'huggingface' });
                         }
                     } else {
                         const errData = await hfRes.json().catch(() => ({}));
                         lastErr = errData.error?.message || `HF Error (${hfRes.status})`;
+                        // If rate limited (429), break and use fallback immediately
+                        if (hfRes.status === 429) {
+                            console.warn('HF Router rate limit reached, switching to fallback engine...');
+                            break;
+                        }
                     }
                 } catch (e) {
                     lastErr = e.message;
                 }
             }
-
-            return res.status(502).json({
-                error: lastErr || 'HuggingFace Gemma models did not respond. Check your HF token permissions.'
-            });
+            console.warn('HuggingFace primary unavailable, engaging resilient fallback:', lastErr);
         }
 
-        // --- Fallback: Pollinations AI ---
+        // --- Resilient Universal Fallback: Pollinations AI ---
         const pollRes = await fetch('https://text.pollinations.ai/openai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -205,10 +207,12 @@ export default async function handler(req, res) {
             const pollData = await pollRes.json();
             const rawText = pollData.choices?.[0]?.message?.content || '';
             const text = sanitizeAiResponse(rawText);
-            return res.status(200).json({ text });
+            if (text) {
+                return res.status(200).json({ text, provider: 'fallback' });
+            }
         }
 
-        return res.status(500).json({ error: 'Backend error' });
+        return res.status(500).json({ error: 'All inference backends failed. Please try again.' });
     } catch (err) {
         console.error('API Error:', err);
         return res.status(500).json({ error: err.message });

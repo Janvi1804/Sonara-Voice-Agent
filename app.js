@@ -138,6 +138,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnOpenSettings) btnOpenSettings.addEventListener('click', () => settingsModal.classList.add('active'));
     if (btnCloseSettings) btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
+    if (settingsModal) {
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) settingsModal.classList.remove('active');
+        });
+    }
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && settingsModal && settingsModal.classList.contains('active')) {
+            settingsModal.classList.remove('active');
+        }
+    });
+
     if (btnSaveSettings) btnSaveSettings.addEventListener('click', saveSettings);
     if (btnClearChat) btnClearChat.addEventListener('click', () => {
         transcriptContainer.innerHTML = '';
