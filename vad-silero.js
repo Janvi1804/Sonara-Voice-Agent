@@ -67,22 +67,26 @@ export class SileroVAD {
         } else {
             this.noiseFloor = 0.999 * this.noiseFloor + 0.001 * rms;
         }
-        this.noiseFloor = Math.max(0.001, Math.min(0.08, this.noiseFloor));
+        this.noiseFloor = Math.max(0.0005, Math.min(0.04, this.noiseFloor));
 
         // Signal-to-Noise Ratio (SNR) in dB
         const snr = Math.max(0, 20 * Math.log10((rms + 1e-6) / (this.noiseFloor + 1e-6)));
 
-        // Silero VAD Neural Logistic Approximation
-        const snrFactor = 1 / (1 + Math.exp(-0.35 * (snr - 14)));
-        const zcrFactor = (zcr > 0.03 && zcr < 0.55) ? 1.0 : 0.3;
-        const energyConfidence = Math.min(1.0, rms / 0.035);
+        // Silero VAD Neural Logistic Approximation (Calibrated for real-world microphones)
+        const snrFactor = 1 / (1 + Math.exp(-0.45 * (snr - 6)));
+        const zcrFactor = (zcr > 0.015 && zcr < 0.65) ? 1.0 : 0.35;
+        const energyConfidence = Math.min(1.0, rms / 0.015);
 
         // Combined speech probability
-        const rawProb = Math.min(1.0, Math.max(0.0, (snrFactor * 0.7 + energyConfidence * 0.3) * zcrFactor));
+        const rawProb = Math.min(1.0, Math.max(0.0, (snrFactor * 0.75 + energyConfidence * 0.25) * zcrFactor));
 
-        // Exponential smoothing
-        this.smoothedProb = 0.65 * this.smoothedProb + 0.35 * rawProb;
-        const prob = this.smoothedProb;
+        // Asymmetric Smoothing: Fast attack (0.6) so speech registers instantly, smooth release (0.85) so confidence is visually visible
+        if (rawProb > this.smoothedProb) {
+            this.smoothedProb = 0.4 * this.smoothedProb + 0.6 * rawProb;
+        } else {
+            this.smoothedProb = 0.85 * this.smoothedProb + 0.15 * rawProb;
+        }
+        const prob = Math.round(this.smoothedProb * 1000) / 1000;
 
         // Notify frame stats
         const dbLevel = Math.max(-60, Math.min(0, Math.round(20 * Math.log10(rms + 1e-5))));
