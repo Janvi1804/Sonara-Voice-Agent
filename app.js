@@ -808,16 +808,26 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('LLM Error:', err);
             let errMsg;
-            if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+            if (err.message && (err.message.includes('402') || err.message.includes('credits') || err.message.includes('depleted') || err.message.includes('budget'))) {
+                errMsg = '⚠️ HuggingFace free monthly credits exhaust ho gaye hain. Naya free token add karein (huggingface.co/settings/tokens) ya ⚙️ Settings me free Groq (console.groq.com) / Gemini API key select karein.';
+                if (ttsEngine) {
+                    ttsEngine.feedToken("Hugging Face free credits exhausted. Please update your token or switch to Groq in settings.");
+                    ttsEngine.flush();
+                }
+            } else if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
                 errMsg = 'Network error — AI server tak nahi pahucha. ⚙️ Settings me HuggingFace token daalo (hf_...) ya internet check karo.';
+                if (ttsEngine) {
+                    ttsEngine.feedToken("I had a connection issue. Please check your settings and try again.");
+                    ttsEngine.flush();
+                }
             } else {
                 errMsg = `⚠️ ${err.message}`;
+                if (ttsEngine) {
+                    ttsEngine.feedToken("I encountered an issue. Please try again.");
+                    ttsEngine.flush();
+                }
             }
             aiMessageBubble.textContent = errMsg;
-            if (ttsEngine) {
-                ttsEngine.feedToken("I had a connection issue. Please check your settings and try again.");
-                ttsEngine.flush();
-            }
         } finally {
             isAiThinking = false;
         }

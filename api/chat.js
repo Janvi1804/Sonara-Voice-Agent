@@ -373,7 +373,9 @@ export default async function handler(req, res) {
             }
         }
 
-        return res.status(500).json({ error: 'Inference backend temporarily unavailable. Please try again.' });
+        return res.status(402).json({ 
+            error: 'HuggingFace free monthly credits exhausted for this token. Generate a new free token at huggingface.co/settings/tokens or use free Groq / Gemini API in Settings.' 
+        });
     } catch (err) {
         console.error('API Error:', err);
         return res.status(500).json({ error: err.message });
