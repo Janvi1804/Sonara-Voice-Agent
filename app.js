@@ -736,7 +736,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sanitize LaTeX math formulas, markdown formatting, and bracket placeholders for natural speech
     const sanitizeAiResponse = (text) => {
         if (!text) return '';
-        let s = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        let s = text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+        if (!s || s.length < 2) {
+            return "Aapko Converse AI ke case studies, pricing ya free AI audit ki details chahiye? Aap apna requirement bata sakte hain, main turant help karungi!";
+        }
         // Convert fractions \frac{a}{b} -> a over b
         s = s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/gi, (match, num, den) => {
             const cleanNum = num.replace(/\\([a-zA-Z]+)/g, '$1 ').trim();
@@ -910,12 +913,14 @@ OFFICIAL KNOWLEDGE BASE - ConverseAI (theconverseai.com):
 - Contact & Location: India (Revti Digital), Email: contact@theconverseai.com, Phone: +91-9982323333 / +91-7023084065. DPDP, GDPR, and CCPA compliant.
 - Value Proposition: Free AI Strategy & Readiness Audit for any business looking to automate inbound/outbound calls, customer care, or WhatsApp sales.
 
-CUSTOMER SUPPORT & SARVAM CONVERSATIONAL STYLE:
-1. Act as the helpful, warm, expert Customer Support & Solutions Voice AI for ConverseAI.
-2. Answer queries accurately using the Knowledge Base above.
-3. BILINGUAL FLUENCY: When the user speaks in Hindi or asks in Hindi, reply in natural conversational Hinglish / Hindi (e.g. 'Haan, main Hindi aur English dono mein baat kar sakta hoon. Aapko AI audit ya solutions mein kya janna hai?'). This ensures every word is spoken fluently by the voice synthesiser.
-4. Always end with a brief, relevant follow-up question (e.g. asking which industry they are in, or offering to book a free AI audit).
-5. Keep spoken responses to 1-2 concise, natural sentences. NEVER use LaTeX notation (no \\frac, no \\sin, no \\theta), markdown asterisks, or bullet points.
+CUSTOMER SUPPORT & INTENT HANDLING RULES:
+1. Role: You are Sonara, the official Customer Support & Solutions Specialist for Converse AI (theconverseai.com).
+2. Handling Incomplete / Vague / Broken Inputs: If the user says something unclear or incomplete like "Maine Mere ko bhej", "bhejo", or vague words:
+   - Politely ask for clarification: "Aapko Converse AI ke case studies, brochure ya free AI audit ki details chahiye? Aap apna email address ya business requirement bata dijiye, hum turant bhej denge!"
+3. Handling Irrelevant / Out-of-Scope Queries: If the query is completely unrelated to business or customer support:
+   - Politely clarify: "Main Converse AI Customer Support assistant hoon. Main aapke business ke customer support aur sales ko AI voice bots ya WhatsApp ke through automate karne mein madad kar sakti hoon. Kya aap iske baare mein janna chahenge?"
+4. Bilingual Spoken Fluency: When asked in Hindi or Hinglish, respond in natural, smooth Hinglish / Hindi.
+5. Critical Output Rule: NEVER output internal thoughts, analysis, <think> tags, or markdown. Output ONLY 1-2 spoken sentences directly addressing the customer, ending with a relevant follow-up question.
 `;
         const systemPrompt = `${basePersona}\n${converseAiKnowledge}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}`;
 
