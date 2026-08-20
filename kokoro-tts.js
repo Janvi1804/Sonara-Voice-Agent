@@ -73,36 +73,46 @@ export class KokoroTTS {
         let match = null;
 
         if (isFemale) {
-            // Strictly match female voice on Windows, Mac, Android, and Chrome (Excluding all male voices)
+            // Priority 1: High-fidelity Indian Female Voices (Natural pronunciation for Hindi, Hinglish, and Indian English)
             match = available.find(v => {
                 const n = v.name.toLowerCase();
-                if (n.includes('david') || n.includes('mark') || n.includes('george') || n.includes('guy') || n.includes('ravi') || n.includes('hemant') || n.includes('madhur') || (n.includes('male') && !n.includes('female'))) {
-                    return false;
-                }
+                const l = (v.lang || '').toLowerCase();
+                if (n.includes('male') || n.includes('david') || n.includes('madhur') || n.includes('hemant') || n.includes('ravi') || n.includes('george')) return false;
                 return (
-                    n.includes('zira') ||
-                    n.includes('female') ||
-                    n.includes('jenny') ||
+                    n.includes('heera') ||
+                    n.includes('neerja') ||
                     n.includes('swara') ||
                     n.includes('kalpana') ||
-                    n.includes('samantha') ||
-                    n.includes('aria') ||
-                    n.includes('eva') ||
-                    n.includes('victoria') ||
-                    n.includes('karen') ||
-                    n.includes('moira') ||
-                    n.includes('tessa') ||
                     n.includes('kavya') ||
-                    n.includes('google uk english female') ||
-                    n.includes('google हिन्दी')
+                    n.includes('google हिन्दी') ||
+                    n.includes('india') ||
+                    l === 'en-in' ||
+                    l === 'hi-in'
                 );
             });
 
+            // Priority 2: Natural Global Female voices
             if (!match) {
-                // Secondary check: any voice without male/david keywords
                 match = available.find(v => {
                     const n = v.name.toLowerCase();
-                    return !n.includes('david') && !n.includes('mark') && !n.includes('george') && !(n.includes('male') && !n.includes('female'));
+                    if (n.includes('male') || n.includes('david') || n.includes('madhur') || n.includes('hemant') || n.includes('george')) return false;
+                    return (
+                        n.includes('zira') ||
+                        n.includes('jenny') ||
+                        n.includes('samantha') ||
+                        n.includes('aria') ||
+                        n.includes('eva') ||
+                        n.includes('google uk english female') ||
+                        n.includes('female')
+                    );
+                });
+            }
+
+            // Priority 3: Fallback to any non-male voice
+            if (!match) {
+                match = available.find(v => {
+                    const n = v.name.toLowerCase();
+                    return !n.includes('david') && !n.includes('male') && !n.includes('george');
                 }) || available[0];
             }
         } else {
@@ -229,46 +239,31 @@ export class KokoroTTS {
                 // Keep strong reference to prevent Chromium garbage collection mid-speech
                 this._activeUtterance = utterance;
 
-                const isHindi = /[\u0900-\u097F]/.test(text);
-                const voiceConfig = this.voices[this.voice] || this.voices['am_adam'];
+                const isDevanagari = /[\u0900-\u097F]/.test(text);
+                const isHinglish = /(\b(hai|hain|nahi|kya|aap|tum|hum|kaise|karo|batao|chahiye|bol|raha|rahi|shukriya|namaste|hoga|karna|baat|bhejo|suno|karein|denge|lekin|aur)\b)/i.test(text);
+                const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
                 const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
                 const isMale = voiceConfig.gender === 'male';
 
-                if (isHindi) {
+                if (isDevanagari) {
                     utterance.lang = 'hi-IN';
                     const available = window.speechSynthesis.getVoices();
-                    
-                    // Filter all Hindi voices available on system
                     const hindiVoices = available.filter(v => 
                         v.lang.startsWith('hi') || 
                         v.name.toLowerCase().includes('hindi') || 
                         v.name.toLowerCase().includes('swara') || 
-                        v.name.toLowerCase().includes('madhur') || 
                         v.name.toLowerCase().includes('kalpana') || 
-                        v.name.toLowerCase().includes('google हिन्दी') ||
-                        v.name.toLowerCase().includes('hemant')
+                        v.name.toLowerCase().includes('heera') || 
+                        v.name.toLowerCase().includes('google हिन्दी')
                     );
-
-                    let matchedVoice = null;
-                    if (isMale) {
-                        // Strict Male Hindi Voice Matching: Madhur, Hemant, Male
-                        matchedVoice = hindiVoices.find(v => {
-                            const n = v.name.toLowerCase();
-                            return n.includes('madhur') || n.includes('hemant') || (n.includes('male') && !n.includes('female'));
-                        });
-                    } else {
-                        // Strict Female Hindi Voice Matching: Swara, Kalpana, Female
-                        matchedVoice = hindiVoices.find(v => {
-                            const n = v.name.toLowerCase();
-                            return n.includes('swara') || n.includes('kalpana') || n.includes('female') || n.includes('google हिन्दी');
-                        });
+                    utterance.voice = hindiVoices.find(v => !v.name.toLowerCase().includes('male')) || targetVoice;
+                } else if (isHinglish) {
+                    utterance.lang = 'en-IN';
+                    if (targetVoice) {
+                        utterance.voice = targetVoice;
                     }
-
-                    // Fallback to any Hindi voice, or pitch-locked target voice
-                    utterance.voice = matchedVoice || hindiVoices[0] || targetVoice;
-
                 } else {
-                    utterance.lang = voiceConfig.lang || 'en-US';
+                    utterance.lang = voiceConfig.lang || 'en-IN';
                     if (targetVoice) {
                         utterance.voice = targetVoice;
                     }
