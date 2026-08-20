@@ -54,6 +54,12 @@ export class FishSpeechTTS {
         return this.analyser || (this.fallbackEngine && typeof this.fallbackEngine.getAnalyser === 'function' ? this.fallbackEngine.getAnalyser() : null);
     }
 
+    feedToken(token) {
+        if (this.fallbackEngine && typeof this.fallbackEngine.feedToken === 'function') {
+            this.fallbackEngine.feedToken(token);
+        }
+    }
+
     /**
      * Speak text using Fish Speech API with automatic graceful fallback
      */

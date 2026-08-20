@@ -70,6 +70,7 @@ export class KokoroTTS {
 
         const config = this.voices[this.voice] || this.voices['af_heart'];
         const isFemale = config.gender === 'female';
+        let match = null;
 
         if (isFemale) {
             // Strictly match female voice on Windows, Mac, Android, and Chrome (Excluding all male voices)

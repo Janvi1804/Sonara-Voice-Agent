@@ -1065,19 +1065,17 @@ CUSTOMER SUPPORT & INTENT HANDLING RULES:
             } else if (apiKey && provider === 'groq') {
                 // --- GROQ CLOUD: Sub-100ms Ultra-Fast Intelligence ---
                 const groqModelMap = {
-                    'llama-3.3-70b-versatile': 'llama-3.3-70b-versatile',
-                    'llama-3.1-8b-instant': 'llama-3.1-8b-instant',
-                    'mixtral-8x7b-32768': 'mixtral-8x7b-32768',
-                    'openai/gpt-oss-120b': 'llama-3.3-70b-versatile',
-                    'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
-                    'qwen/qwen3.6-27b': 'llama-3.3-70b-versatile',
-                    'groq/compound-mini': 'llama-3.3-70b-versatile',
-                    'groq/compound': 'llama-3.3-70b-versatile',
-                    'gemma2-9b-it': 'llama-3.3-70b-versatile',
-                    'gemma-3-12b-it': 'llama-3.3-70b-versatile',
-                    'gemini-1.5-flash': 'llama-3.3-70b-versatile'
+                    'openai/gpt-oss-120b': 'openai/gpt-oss-120b',
+                    'openai/gpt-oss-20b': 'openai/gpt-oss-20b',
+                    'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
+                    'groq/compound-mini': 'openai/gpt-oss-120b',
+                    'groq/compound': 'openai/gpt-oss-120b',
+                    'gemma2-9b-it': 'openai/gpt-oss-120b',
+                    'gemma-3-12b-it': 'openai/gpt-oss-120b',
+                    'gemini-1.5-flash': 'openai/gpt-oss-120b',
+                    'llama-3.3-70b-versatile': 'openai/gpt-oss-120b'
                 };
-                const groqModel = groqModelMap[model] || 'llama-3.3-70b-versatile';
+                const groqModel = groqModelMap[model] || 'openai/gpt-oss-120b';
 
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
@@ -1092,7 +1090,7 @@ CUSTOMER SUPPORT & INTENT HANDLING RULES:
                             ...conversationHistory
                         ],
                         temperature: 0.65,
-                        max_tokens: 300
+                        max_completion_tokens: 450
                     })
                 });
 
@@ -1102,10 +1100,10 @@ CUSTOMER SUPPORT & INTENT HANDLING RULES:
                 }
 
                 const data = await res.json();
-                fullResponse = data.choices?.[0]?.message?.content?.trim() || data.choices?.[0]?.message?.reasoning?.trim() || '';
+                fullResponse = data.choices?.[0]?.message?.content?.trim() || '';
 
                 if (!fullResponse) {
-                    fullResponse = "Hello! How can I help you today?";
+                    fullResponse = "Aapko Converse AI ke case studies, pricing ya free AI audit ki details chahiye? Aap apna requirement bata sakte hain, main turant help karungi!";
                 }
 
                 fullResponse = sanitizeAiResponse(fullResponse);
