@@ -400,22 +400,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let lastInterimText = '';
     let isRecognizing = false;
+    let isProcessingUtterance = false;
+    let lastCommittedText = '';
+    let lastCommittedTime = 0;
     let sttWatchdogTimer = null;
     let sttCommitTimer = null;
 
     const commitUserVoiceInput = () => {
         clearTimeout(sttCommitTimer);
-        if (isAiThinking || isAiSpeaking) return;
+        if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
         const prompt = (currentSpeechText + ' ' + lastInterimText).trim();
         currentSpeechText = '';
         lastInterimText = '';
-        if (prompt.length >= 2) {
-            processUserUtterance(prompt);
+
+        if (!prompt || prompt.length < 2) return;
+
+        const now = Date.now();
+        // Prevent duplicate voice submissions within 2.0s
+        if (prompt.toLowerCase() === lastCommittedText.toLowerCase() && (now - lastCommittedTime < 2000)) {
+            console.log('Filtered duplicate voice input:', prompt);
+            return;
         }
+
+        lastCommittedText = prompt;
+        lastCommittedTime = now;
+        processUserUtterance(prompt);
     };
 
     const startRecognitionSafely = () => {
-        if (!isCallActive || isAiSpeaking || isAiThinking) return;
+        if (!isCallActive || isAiSpeaking || isAiThinking || isProcessingUtterance) return;
         if (!speechRecognition) {
             initSpeechRecognition();
             return;
@@ -460,6 +473,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             speechRecognition.onresult = (event) => {
+                if (isAiSpeaking || isAiThinking || isProcessingUtterance) {
+                    currentSpeechText = '';
+                    lastInterimText = '';
+                    return;
+                }
+
                 let finalChunk = '';
                 let interimChunk = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -478,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const liveHeard = (currentSpeechText + ' ' + lastInterimText).trim();
-                if (liveHeard && !isAiSpeaking && !isAiThinking) {
+                if (liveHeard && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
                     setAgentState('listening', `Hearing: "${liveHeard}"`);
                 }
 
@@ -486,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (finalChunk.trim() || interimChunk.trim()) {
                     clearTimeout(sttCommitTimer);
                     sttCommitTimer = setTimeout(() => {
-                        if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                        if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
                             commitUserVoiceInput();
                         }
                     }, 850);
@@ -577,13 +596,16 @@ document.addEventListener('DOMContentLoaded', () => {
      * Process User Utterance -> Google Gemma 2 / Gemini -> Kokoro TTS
      */
     const processUserUtterance = async (userPrompt) => {
-        if (!userPrompt || userPrompt.trim().length === 0 || isAiThinking) return;
+        if (!userPrompt || userPrompt.trim().length === 0 || isAiThinking || isProcessingUtterance) return;
+        isProcessingUtterance = true;
+        isAiThinking = true;
+        clearTimeout(sttCommitTimer);
+        currentSpeechText = '';
+        lastInterimText = '';
 
         turnStartTime = performance.now();
         appendChatMessage('user', userPrompt);
         conversationHistory.push({ role: 'user', content: userPrompt });
-
-        isAiThinking = true;
         const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
@@ -929,6 +951,11 @@ document.addEventListener('DOMContentLoaded', () => {
             aiMessageBubble.textContent = errMsg;
         } finally {
             isAiThinking = false;
+            setTimeout(() => {
+                isProcessingUtterance = false;
+                currentSpeechText = '';
+                lastInterimText = '';
+            }, 600);
         }
     };
 
