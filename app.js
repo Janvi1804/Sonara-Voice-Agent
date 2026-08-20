@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // High-Performance Synchronous DSP Resampler & VAD Pipeline
+            // High-Performance Audio Pipeline: Modern AudioWorkletNode with graceful ScriptProcessor fallback
             const nativeSampleRate = audioContext.sampleRate;
             const targetSampleRate = 16000;
             const resampleRatio = targetSampleRate / nativeSampleRate;
@@ -291,22 +291,75 @@ document.addEventListener('DOMContentLoaded', () => {
             silentSink.gain.value = 0;
             silentSink.connect(audioContext.destination);
 
-            const spNode = audioContext.createScriptProcessor(1024, 1, 1);
-            spNode.onaudioprocess = (e) => {
-                if (!isCallActive || !vadEngine) return;
-                const inputData = e.inputBuffer.getChannelData(0);
-                const outputLength = Math.floor(inputData.length * resampleRatio);
-                const pcm16k = new Float32Array(outputLength);
-                for (let i = 0; i < outputLength; i++) {
-                    pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
+            let workletSuccess = false;
+            if (audioContext.audioWorklet) {
+                try {
+                    const workletCode = `
+                        class SonaraVadProcessor extends AudioWorkletProcessor {
+                            constructor() {
+                                super();
+                                this._buffer = [];
+                                this._frameSize = 512;
+                            }
+                            process(inputs) {
+                                const input = inputs[0];
+                                if (!input || !input[0]) return true;
+                                const channel = input[0];
+                                for (let i = 0; i < channel.length; i++) {
+                                    this._buffer.push(channel[i]);
+                                }
+                                while (this._buffer.length >= this._frameSize) {
+                                    const frame = new Float32Array(this._buffer.splice(0, this._frameSize));
+                                    this.port.postMessage(frame, [frame.buffer]);
+                                }
+                                return true;
+                            }
+                        }
+                        registerProcessor('sonara-vad-processor', SonaraVadProcessor);
+                    `;
+                    const blob = new Blob([workletCode], { type: 'application/javascript' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    await audioContext.audioWorklet.addModule(blobUrl);
+                    URL.revokeObjectURL(blobUrl);
+
+                    const workletNode = new AudioWorkletNode(audioContext, 'sonara-vad-processor');
+                    workletNode.port.onmessage = (event) => {
+                        if (!isCallActive || !vadEngine) return;
+                        const pcmData = event.data;
+                        const outputLength = Math.floor(pcmData.length * resampleRatio);
+                        const pcm16k = new Float32Array(outputLength);
+                        for (let i = 0; i < outputLength; i++) {
+                            pcm16k[i] = pcmData[Math.floor(i / resampleRatio)];
+                        }
+                        vadEngine.processFrame(pcm16k);
+                    };
+                    micSource.connect(workletNode);
+                    workletNode.connect(silentSink);
+                    scriptProcessor = workletNode;
+                    workletSuccess = true;
+                } catch (e) {
+                    console.warn('AudioWorklet init fallback:', e.message);
                 }
-                for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                    vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                }
-            };
-            micSource.connect(spNode);
-            spNode.connect(silentSink);
-            scriptProcessor = spNode;
+            }
+
+            if (!workletSuccess) {
+                const spNode = audioContext.createScriptProcessor(1024, 1, 1);
+                spNode.onaudioprocess = (e) => {
+                    if (!isCallActive || !vadEngine) return;
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const outputLength = Math.floor(inputData.length * resampleRatio);
+                    const pcm16k = new Float32Array(outputLength);
+                    for (let i = 0; i < outputLength; i++) {
+                        pcm16k[i] = inputData[Math.floor(i / resampleRatio)];
+                    }
+                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
+                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
+                    }
+                };
+                micSource.connect(spNode);
+                spNode.connect(silentSink);
+                scriptProcessor = spNode;
+            }
 
             initSpeechRecognition();
             return true;
