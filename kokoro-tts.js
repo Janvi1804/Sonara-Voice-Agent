@@ -212,13 +212,16 @@ export class KokoroTTS {
                 this._activeUtterance = utterance;
 
                 const isHindi = /[\u0900-\u097F]/.test(text);
-                const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
+                const voiceConfig = this.voices[this.voice] || this.voices['am_adam'];
                 const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
+                const isMale = voiceConfig.gender === 'male';
 
                 if (isHindi) {
                     utterance.lang = 'hi-IN';
                     const available = window.speechSynthesis.getVoices();
-                    const hindiVoice = available.find(v => 
+                    
+                    // Filter all Hindi voices available on system
+                    const hindiVoices = available.filter(v => 
                         v.lang.startsWith('hi') || 
                         v.name.toLowerCase().includes('hindi') || 
                         v.name.toLowerCase().includes('swara') || 
@@ -227,11 +230,25 @@ export class KokoroTTS {
                         v.name.toLowerCase().includes('google हिन्दी') ||
                         v.name.toLowerCase().includes('hemant')
                     );
-                    if (hindiVoice) {
-                        utterance.voice = hindiVoice;
-                    } else if (targetVoice) {
-                        utterance.voice = targetVoice;
+
+                    let matchedVoice = null;
+                    if (isMale) {
+                        // Strict Male Hindi Voice Matching: Madhur, Hemant, Male
+                        matchedVoice = hindiVoices.find(v => {
+                            const n = v.name.toLowerCase();
+                            return n.includes('madhur') || n.includes('hemant') || (n.includes('male') && !n.includes('female'));
+                        });
+                    } else {
+                        // Strict Female Hindi Voice Matching: Swara, Kalpana, Female
+                        matchedVoice = hindiVoices.find(v => {
+                            const n = v.name.toLowerCase();
+                            return n.includes('swara') || n.includes('kalpana') || n.includes('female') || n.includes('google हिन्दी');
+                        });
                     }
+
+                    // Fallback to any Hindi voice, or pitch-locked target voice
+                    utterance.voice = matchedVoice || hindiVoices[0] || targetVoice;
+
                 } else {
                     utterance.lang = voiceConfig.lang || 'en-US';
                     if (targetVoice) {
@@ -240,10 +257,10 @@ export class KokoroTTS {
                 }
 
                 // Strict pitch lock based on gender so tone never shifts
-                if (voiceConfig.gender === 'female') {
-                    utterance.pitch = voiceConfig.pitch || 1.15;
-                } else {
+                if (isMale) {
                     utterance.pitch = voiceConfig.pitch || 0.85;
+                } else {
+                    utterance.pitch = voiceConfig.pitch || 1.15;
                 }
 
                 utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
