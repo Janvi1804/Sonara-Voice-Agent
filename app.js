@@ -688,6 +688,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (callBtnText) callBtnText.textContent = 'End Voice Session';
                     setAgentState('listening', 'Connected & Listening (Silero VAD)');
                     startVisualizerLoop();
+
+                    // 🎙️ Sarvam AI Style: Proactive welcome greeting & follow-up question on connect
+                    setTimeout(() => {
+                        triggerProactiveWelcome();
+                    }, 450);
                 }
             } else {
                 isCallActive = false;
@@ -699,6 +704,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    /**
+     * Proactive Sarvam AI Style Welcome Greeting
+     */
+    const triggerProactiveWelcome = () => {
+        const welcomeText = "Namaste! Welcome to Converse AI Support. I'm Sonara, your voice AI assistant. How can I help you automate your customer support, voice bots, or WhatsApp lead generation today?";
+        appendChatMessage('assistant', welcomeText);
+        conversationHistory.push({ role: 'assistant', content: welcomeText });
+        if (ttsEngine) {
+            ttsEngine.speak(welcomeText);
+        }
+    };
 
     if (btnInterrupt) {
         btnInterrupt.addEventListener('click', () => {
@@ -874,8 +891,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
         const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-        const basePersona = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an ultra-intelligent, friendly, concise real-time voice AI assistant.';
-        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}\nCRITICAL FOR SPOKEN VOICE:\n1. Answer weather queries using the Live Local Weather info above.\n2. NEVER output LaTeX notation (no \\frac, no \\sin, no \\theta, no \\displaystyle, no backslashes). Always speak math, equations, and science in plain human words (e.g. 'sine theta divided by cosine theta equals tangent theta').\n3. Keep responses to 1-2 spoken sentences suited for voice dialogue.`;
+
+        const basePersona = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, the official Customer Support & Solutions Voice AI for ConverseAI (theconverseai.com by Revti Digital).';
+        const converseAiKnowledge = `
+OFFICIAL KNOWLEDGE BASE - ConverseAI (theconverseai.com):
+- Enterprise Platform: ConverseAI (theconverseai.com) is an enterprise Agentic AI & Customer Engagement platform powered by Revti Digital, based in India. We scope, build, and deploy bespoke AI voice agents, WhatsApp chatbots, and unified omni-channel support systems with zero internal AI team needed on your end.
+- Verified Case Studies:
+  1. StyleMart India (Retail): 3x revenue growth in repeat purchases, 65% reduction in customer support costs, average response time under 30 seconds, 94% CSAT.
+  2. LearnSphere (EdTech): Doubled course enrolments in 90 days, 500+ daily qualified leads automatically, 45% drop in cost per qualified lead, 80% cut in response time.
+  3. CareFirst Clinics (Healthcare): 55% reduction in appointment no-shows, 120 admin hours saved per month, 91% appointment fill rate, +28 NPS increase.
+- Global Track Record: 50M+ messages automated, 500+ businesses worldwide, 98% WhatsApp open rate, 94% average CSAT across 100+ languages.
+- Contact & Location: India (Revti Digital), Email: contact@theconverseai.com, Phone: +91-9982323333 / +91-7023084065. DPDP, GDPR, and CCPA compliant.
+- Value Proposition: Free AI Strategy & Readiness Audit for any business looking to automate inbound/outbound calls, customer care, or WhatsApp sales.
+
+CUSTOMER SUPPORT & SARVAM CONVERSATIONAL STYLE:
+1. Act as the helpful, warm, expert Customer Support & Solutions Voice AI for ConverseAI.
+2. Answer queries accurately using the Knowledge Base above.
+3. Always end with a brief, relevant follow-up question (e.g. asking which industry they are in, or offering to book a free AI audit).
+4. Keep spoken responses to 1-2 concise, natural sentences. NEVER use LaTeX notation (no \\frac, no \\sin, no \\theta), markdown asterisks, or bullet points.
+`;
+        const systemPrompt = `${basePersona}\n${converseAiKnowledge}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}`;
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
 
