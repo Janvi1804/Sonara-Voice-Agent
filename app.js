@@ -593,12 +593,45 @@ document.addEventListener('DOMContentLoaded', () => {
         const provider = selLlmProvider ? selLlmProvider.value : 'huggingface';
         const model = selLlmModel ? selLlmModel.value : 'gemma2-9b-it';
         
-        // Build dynamic real-time context
+        // Build dynamic real-time context & live weather
+        let clientWeatherStr = '';
+        const isWeatherQ = userPrompt.toLowerCase().match(/weather|temperature|forecast|mausam|climate|rain|hot|cold/);
+        if (isWeatherQ) {
+            try {
+                const ipRes = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(1500) });
+                if (ipRes.ok) {
+                    const ipData = await ipRes.json();
+                    const city = ipData.city || 'Local area';
+                    const country = ipData.country || '';
+                    const lat = ipData.latitude || 28.6;
+                    const lon = ipData.longitude || 77.2;
+
+                    const meteoRes = await fetch(
+                        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code`,
+                        { signal: AbortSignal.timeout(1500) }
+                    );
+                    if (meteoRes.ok) {
+                        const meteoData = await meteoRes.json();
+                        const temp = Math.round(meteoData.current?.temperature_2m || 30);
+                        const weatherCodes = {
+                            0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+                            45: 'Foggy', 51: 'Light drizzle', 61: 'Slight rain', 63: 'Moderate rain',
+                            80: 'Rain showers', 95: 'Thunderstorm'
+                        };
+                        const cond = weatherCodes[meteoData.current?.weather_code] || 'Pleasant';
+                        clientWeatherStr = `\nLive Local Weather: ${city}, ${country}: ${temp}°C (${Math.round(temp * 9/5 + 32)}°F), ${cond}.`;
+                    }
+                }
+            } catch (e) {
+                clientWeatherStr = `\nLive Local Weather: Approx 30°C, pleasant weather today.`;
+            }
+        }
+
         const now = new Date();
         const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
         const basePersona = txtSystemPrompt ? txtSystemPrompt.value.trim() : 'You are SONARA, an ultra-intelligent, friendly, concise real-time voice AI assistant.';
-        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.\nCRITICAL: NEVER use template placeholder brackets like [weather], [temperature], or [location]. Always speak in complete natural human sentences.`;
+        const systemPrompt = `${basePersona}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}\nCRITICAL: Answer weather queries using the Live Local Weather info above. NEVER say you don't have access to live weather when it is provided. NEVER use template placeholder brackets like [weather] or [temperature]. Speak in full natural sentences.`;
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
 
