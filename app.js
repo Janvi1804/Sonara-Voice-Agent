@@ -88,7 +88,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem('sonara_llm_api_key')) txtLlmApiKey.value = localStorage.getItem('sonara_llm_api_key');
         if (localStorage.getItem('sonara_hf_token') && txtHfToken) txtHfToken.value = localStorage.getItem('sonara_hf_token');
         if (localStorage.getItem('sonara_llm_model')) selLlmModel.value = localStorage.getItem('sonara_llm_model');
-        if (localStorage.getItem('sonara_llm_provider')) selLlmProvider.value = localStorage.getItem('sonara_llm_provider');
+        if (localStorage.getItem('sonara_llm_provider')) {
+            selLlmProvider.value = localStorage.getItem('sonara_llm_provider');
+        } else {
+            selLlmProvider.value = 'groq';
+        }
         if (localStorage.getItem('sonara_system_prompt')) txtSystemPrompt.value = localStorage.getItem('sonara_system_prompt');
         if (localStorage.getItem('sonara_tts_voice')) selTtsVoice.value = localStorage.getItem('sonara_tts_voice');
         if (localStorage.getItem('sonara_tts_speed')) {
@@ -731,8 +735,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } else if (apiKey && provider === 'groq') {
-                // --- GROQ CLOUD: Gemma 2 / Llama (Sub-100ms TTFT, Streaming) ---
-                const groqModel = (model === 'gemini-1.5-flash' || model === 'gemini-1.5-pro') ? 'gemma2-9b-it' : model;
+                // --- GROQ CLOUD: Sub-100ms Ultra-Fast Streaming ---
+                const groqModelMap = {
+                    'groq/compound-mini': 'groq/compound-mini',
+                    'groq/compound': 'groq/compound',
+                    'qwen/qwen3.6-27b': 'qwen/qwen3.6-27b',
+                    'gemma2-9b-it': 'groq/compound-mini',
+                    'gemma-3-12b-it': 'groq/compound-mini',
+                    'gemini-1.5-flash': 'groq/compound-mini'
+                };
+                const groqModel = groqModelMap[model] || 'groq/compound-mini';
 
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
