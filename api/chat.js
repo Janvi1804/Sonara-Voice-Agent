@@ -171,37 +171,40 @@ async function retrieveRAGContext(query = '', customUrl = '') {
         }
     }
 
-    // 2. Score against theconverseai.com verified knowledge base
-    const scoredKB = CONVERSE_AI_KB.map(doc => {
-        let score = 0;
-        const titleLower = doc.title.toLowerCase();
-        const contentLower = doc.content.toLowerCase();
+    // 2. Only match Converse AI knowledge base if query is actually related to Converse AI / Voice Agents / Services
+    const converseKeywords = ['converse', 'theconverseai', 'stylemart', 'learnsphere', 'carefirst', 'revti', 'whatsapp bot', 'whatsapp ai', 'voice agent', 'chatflow', 'omni channel', 'omnichannel', 'case study', 'case studies'];
+    const isConverseRelated = converseKeywords.some(kw => qLower.includes(kw));
 
-        // Exact phrase or keyword match
-        doc.keywords.forEach(kw => {
-            if (qLower.includes(kw.toLowerCase())) score += 5;
-        });
+    if (isConverseRelated) {
+        const scoredKB = CONVERSE_AI_KB.map(doc => {
+            let score = 0;
+            const titleLower = doc.title.toLowerCase();
+            const contentLower = doc.content.toLowerCase();
 
-        // Individual word hits
-        qWords.forEach(w => {
-            if (titleLower.includes(w)) score += 3;
-            if (contentLower.includes(w)) score += 1;
-        });
+            doc.keywords.forEach(kw => {
+                if (qLower.includes(kw.toLowerCase())) score += 5;
+            });
 
-        return { doc, score };
-    }).filter(item => item.score >= 2).sort((a, b) => b.score - a.score);
+            qWords.forEach(w => {
+                if (titleLower.includes(w)) score += 3;
+                if (contentLower.includes(w)) score += 1;
+            });
 
-    if (scoredKB.length > 0) {
-        scoredKB.slice(0, 2).forEach(item => {
-            retrievedChunks.push(`[${item.doc.title}]: ${item.doc.content}`);
-        });
+            return { doc, score };
+        }).filter(item => item.score >= 3).sort((a, b) => b.score - a.score);
+
+        if (scoredKB.length > 0) {
+            scoredKB.slice(0, 2).forEach(item => {
+                retrievedChunks.push(`[${item.doc.title}]: ${item.doc.content}`);
+            });
+        }
     }
 
     if (retrievedChunks.length === 0) return '';
 
     return `\n\n--- OFFICIAL THECONVERSEAI.COM VERIFIED KNOWLEDGE (RAG) ---\n` +
            retrievedChunks.join('\n') +
-           `\nCRITICAL: Answer accurately based exclusively on this verified data. Mention real company names like StyleMart India, LearnSphere, or CareFirst Clinics when case studies are asked. Keep response to 1-2 spoken sentences.`;
+           `\n(If the question is about ConverseAI, use the above verified facts to answer accurately. For general questions, answer using your broad world knowledge.)`;
 }
 
 // Clean any bracketed placeholders like [insert temperature]
@@ -257,10 +260,12 @@ export default async function handler(req, res) {
         // Retrieve RAG knowledge from theconverseai.com if enabled
         const ragContext = ragEnabled ? await retrieveRAGContext(lastUserMsg, customUrl) : '';
 
-        // System prompt with strict anti-placeholder rules and real-time facts
+        // System prompt with broad intelligence + RAG awareness
         const enhancedSystemPrompt = 
-            `You are SONARA, a natural, witty, and ultra-intelligent voice AI representing ConverseAI (theconverseai.com) powered by Revti Digital. ` +
-            `You speak with the warmth, charm, and authenticity of a human friend. ` +
+            `You are SONARA, a versatile, ultra-intelligent, and friendly real-time voice AI assistant powered by Google Gemma. ` +
+            `You possess comprehensive general knowledge across science, technology, coding, math, history, philosophy, health, lifestyle, and casual conversation. ` +
+            `You can answer ANY question on any topic naturally with human warmth, clarity, brevity, and charisma. ` +
+            `When the user asks about ConverseAI (theconverseai.com), voice agents, WhatsApp automation, or case studies, utilize the verified ConverseAI knowledge base below. ` +
             `Keep your responses concise (1 to 2 spoken sentences) suited for natural spoken dialogue. ` +
             `CRITICAL RULE: NEVER output template placeholder brackets like [weather condition], [insert name], or [high temperature]. Always speak in full, realistic, natural sentences. ` +
             `\n${realTimeContext}${ragContext}`;
@@ -354,8 +359,13 @@ export default async function handler(req, res) {
         });
 
         if (pollRes.ok) {
-            const pollData = await pollRes.json();
-            const rawText = pollData.choices?.[0]?.message?.content || '';
+            let rawText = '';
+            try {
+                const pollData = await pollRes.json();
+                rawText = pollData.choices?.[0]?.message?.content || (typeof pollData === 'string' ? pollData : '');
+            } catch (e) {
+                rawText = await pollRes.text().catch(() => '');
+            }
             const text = sanitizeAiResponse(rawText);
             if (text) {
                 return res.status(200).json({ text, provider: 'fallback' });
