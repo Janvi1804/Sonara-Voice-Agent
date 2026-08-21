@@ -900,3 +900,191 @@ body.dark-theme {
         height: 260px;
     }
 }
+
+/* Human Escalation Alert Banner */
+.human-handoff-banner {
+    width: 100%;
+    max-width: 800px;
+    margin: 10px auto;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25));
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    border-radius: var(--radius-md);
+    padding: 12px 18px;
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.2);
+    animation: pulse-border 2s infinite;
+}
+
+.handoff-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.handoff-icon {
+    font-size: 20px;
+    color: #ef4444;
+}
+
+.handoff-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.handoff-text strong {
+    color: #fca5a5;
+}
+
+.handoff-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.handoff-btn {
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.wa-btn {
+    background: #25D366;
+    color: #fff;
+}
+.wa-btn:hover {
+    background: #20ba59;
+    transform: scale(1.03);
+}
+
+.call-btn {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.call-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.03);
+}
+
+/* Database Modal & Tables */
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.tab-btn.active {
+    background: rgba(0, 240, 255, 0.15);
+    color: var(--accent-cyan);
+    border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.tab-btn:hover:not(.active) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.table-responsive {
+    overflow-x: auto;
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    text-align: left;
+}
+
+.data-table th {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 10px 12px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.data-table tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.btn-action {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-main);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.btn-action:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.btn-action.small {
+    padding: 4px 10px;
+    font-size: 11px;
+}
+
+.btn-action.danger {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+}
+
+.btn-action.danger:hover {
+    background: rgba(239, 68, 68, 0.35);
+}
+
+/* Tool execution badges */
+.tool-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(0, 240, 255, 0.1);
+    border: 1px solid rgba(0, 240, 255, 0.3);
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    color: var(--accent-cyan);
+    margin-top: 6px;
+    font-weight: 600;
+}
+

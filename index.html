@@ -41,11 +41,32 @@
                     <span>VAD:</span>
                     <strong id="vadStatus">SILENCE</strong>
                 </div>
+                <button id="btnReindex" class="icon-btn" title="Re-index theconverseai.com to PostgreSQL + pgvector">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+                <button id="btnOpenDbModal" class="icon-btn" title="View Customer DB, Appointments & Logs">
+                    <i class="fa-solid fa-database"></i>
+                </button>
                 <button id="btnOpenSettings" class="icon-btn" title="Model & API Configuration">
                     <i class="fa-solid fa-sliders"></i>
                 </button>
             </div>
         </header>
+
+        <!-- Human Escalation Alert Banner -->
+        <div id="humanHandoffBanner" class="human-handoff-banner" style="display:none;">
+            <div class="handoff-content">
+                <div class="handoff-icon"><i class="fa-solid fa-headset"></i></div>
+                <div class="handoff-text">
+                    <strong>Human Specialist Escalation Active</strong>
+                    <span id="handoffReason">Customer requested live agent support.</span>
+                </div>
+                <div class="handoff-actions">
+                    <a href="https://wa.me/919982323333" target="_blank" class="handoff-btn wa-btn"><i class="fa-brands fa-whatsapp"></i> Chat on WhatsApp</a>
+                    <a href="tel:+919982323333" class="handoff-btn call-btn"><i class="fa-solid fa-phone"></i> Call +91-9982323333</a>
+                </div>
+            </div>
+        </div>
 
         <!-- Main Visualizer & Interaction Stage -->
         <main class="main-stage">
@@ -261,16 +282,31 @@
                         </div>
                     </div>
 
+                    <!-- PostgreSQL + pgvector Configuration -->
+                    <div class="settings-group">
+                        <label class="group-title"><i class="fa-solid fa-database"></i> 🐘 PostgreSQL + pgvector Vector Store</label>
+                        <div class="form-row">
+                            <label>PostgreSQL Connection URL (Optional)</label>
+                            <input type="password" id="txtPostgresUrl" class="form-input" placeholder="postgres://user:password@host:5432/dbname" />
+                            <small class="helper-text">Supports Supabase, Neon, AWS RDS, Render, or Self-hosted Postgres. (Leaves empty for local zero-setup store).</small>
+                        </div>
+                        <div class="form-row" style="display:flex;gap:10px;margin-top:10px;">
+                            <button type="button" id="btnModalReindex" class="btn-action" style="flex:1;">
+                                <i class="fa-solid fa-arrows-rotate"></i> Re-index theconverseai.com
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- RAG Knowledge Base Configuration -->
                     <div class="settings-group">
                         <label class="group-title"><i class="fa-solid fa-book-bookmark"></i> RAG Website & Knowledge Engine</label>
                         <div class="form-row checkbox-row">
-                            <label><input type="checkbox" id="chkRagEnabled" checked /> Enable RAG Grounding (Converse AI Docs & Custom URL)</label>
+                            <label><input type="checkbox" id="chkRagEnabled" checked /> Enable RAG Grounding (theconverseai.com pgvector)</label>
                         </div>
                         <div class="form-row">
                             <label>Custom Website / Docs URL to Index (Optional)</label>
-                            <input type="url" id="txtCustomRagUrl" class="form-input" placeholder="https://converseai.com/docs or any website URL" />
-                            <small class="helper-text">Agent automatically crawls and retrieves live knowledge chunks during voice chats.</small>
+                            <input type="url" id="txtCustomRagUrl" class="form-input" placeholder="https://theconverseai.com or any website URL" />
+                            <small class="helper-text">Agent automatically retrieves verified knowledge chunks during voice chats.</small>
                         </div>
                     </div>
 
@@ -298,6 +334,72 @@
                 <button class="save-settings-btn" id="btnSaveSettings">
                     <i class="fa-solid fa-check"></i> Save & Apply Configuration
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database, Appointments & Telemetry Modal -->
+    <div class="settings-modal-backdrop" id="dbModalBackdrop">
+        <div class="settings-modal" style="max-width: 780px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fa-solid fa-database text-cyan"></i>
+                    <h2>Enterprise Database & Telemetry Logs</h2>
+                </div>
+                <button class="close-btn" id="btnCloseDbModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex;gap:12px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:10px;">
+                    <button id="tabBtnAppts" class="tab-btn active"><i class="fa-solid fa-calendar-check"></i> Appointments (<span id="countAppts">0</span>)</button>
+                    <button id="tabBtnCusts" class="tab-btn"><i class="fa-solid fa-users"></i> Customers (<span id="countCusts">0</span>)</button>
+                    <button id="tabBtnLogs" class="tab-btn"><i class="fa-solid fa-list-check"></i> Conversation Logs (<span id="countLogs">0</span>)</button>
+                </div>
+
+                <!-- Appointments Tab -->
+                <div id="tabContentAppts" class="db-tab-content">
+                    <div class="table-responsive">
+                        <table class="data-table" id="tableAppointments">
+                            <thead>
+                                <tr><th>ID</th><th>Customer</th><th>Phone</th><th>Service</th><th>Date & Time</th><th>Status</th></tr>
+                            </thead>
+                            <tbody><tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">No appointments booked yet.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Customers Tab -->
+                <div id="tabContentCusts" class="db-tab-content" style="display:none;">
+                    <div class="table-responsive">
+                        <table class="data-table" id="tableCustomers">
+                            <thead>
+                                <tr><th>Name</th><th>Phone</th><th>Email</th><th>Company</th><th>Created</th></tr>
+                            </thead>
+                            <tbody><tr><td colspan="5" style="text-align:center;padding:20px;color:#888;">No customer profiles recorded yet.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Conversation Logs Tab -->
+                <div id="tabContentLogs" class="db-tab-content" style="display:none;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <span style="font-size:0.85rem;color:#aaa;">Real-time turn latencies and speech transcripts</span>
+                        <div style="display:flex;gap:8px;">
+                            <button id="btnExportJson" class="btn-action small"><i class="fa-solid fa-file-code"></i> Export JSON</button>
+                            <button id="btnExportCsv" class="btn-action small"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
+                            <button id="btnClearLogs" class="btn-action small danger"><i class="fa-solid fa-trash"></i> Clear</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="tableLogs">
+                            <thead>
+                                <tr><th>#</th><th>User Speech</th><th>AI Response</th><th>Total Latency</th><th>Time</th></tr>
+                            </thead>
+                            <tbody><tr><td colspan="5" style="text-align:center;padding:20px;color:#888;">No conversation logs recorded yet.</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

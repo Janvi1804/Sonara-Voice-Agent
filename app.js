@@ -1,10 +1,19 @@
 /**
  * SONARA VOICE AI - Main Application & Full Duplex Orchestrator
- * Integrates Silero VAD, WebRTC/Web Audio DSP, Whisper v3 Turbo, Gemma 2, Kokoro-82M, and Fish Speech.
+ * Integrates Silero VAD, WebRTC/Web Audio DSP, Whisper v3 Turbo, Gemma 2, Kokoro-82M, Fish Speech,
+ * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
 import { SileroVAD } from './vad-silero.js';
 import { KokoroTTS } from './kokoro-tts.js';
 import { FishSpeechTTS } from './fish-speech-tts.js';
+import { RAGEngine } from './rag.js';
+import { ConversationMemory } from './memory.js';
+import { CustomerDB } from './customer-db.js';
+import { AppointmentDB } from './appointment-db.js';
+import { ToolCallingEngine } from './tool-calling.js';
+import { HumanHandoffManager } from './human-handoff.js';
+import { ReindexerEngine } from './reindexer.js';
+import { ConversationLogger } from './logger.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     // UI Elements
@@ -88,6 +97,36 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSessionPaused = false;
     let turnStartTime = 0;
 
+    // Enterprise Architecture Modules (PostgreSQL + pgvector, Memory, DBs, Tool Calling, Logger)
+    const customerDB = new CustomerDB();
+    const appointmentDB = new AppointmentDB();
+    const memory = new ConversationMemory();
+    const ragEngine = new RAGEngine();
+    const reindexer = new ReindexerEngine({ vectorStore: ragEngine.vectorStore });
+    const logger = new ConversationLogger();
+    const humanHandoff = new HumanHandoffManager({
+        onEscalate: (details) => {
+            const banner = document.getElementById('humanHandoffBanner');
+            const reason = document.getElementById('handoffReason');
+            if (banner) banner.style.display = 'block';
+            if (reason) reason.textContent = details.reason;
+        }
+    });
+    const toolEngine = new ToolCallingEngine({
+        appointmentDB,
+        customerDB,
+        onHumanHandoff: (h) => humanHandoff.escalate(h.reason, conversationHistory),
+        onToolExecuted: (toolResult) => {
+            console.log('⚡ Tool Executed:', toolResult);
+        }
+    });
+
+    // Auto-init background stores
+    ragEngine.init().catch(e => console.warn('RAG init:', e));
+    customerDB.init().catch(() => {});
+    appointmentDB.init().catch(() => {});
+    logger.init().catch(() => {});
+
     // Show/hide token fields dynamically based on provider & TTS engine
     const updateProviderFields = () => {
         const prov = selLlmProvider ? selLlmProvider.value : 'groq';
@@ -108,8 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');
             if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound')) {
-                selLlmModel.value = 'llama-3.3-70b-versatile';
-                localStorage.setItem('sonara_llm_model', 'llama-3.3-70b-versatile');
+                selLlmModel.value = 'openai/gpt-oss-120b';
+                localStorage.setItem('sonara_llm_model', 'openai/gpt-oss-120b');
             } else {
                 selLlmModel.value = savedModel;
             }
@@ -121,6 +160,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_system_prompt')) txtSystemPrompt.value = localStorage.getItem('sonara_system_prompt');
         
+        // PostgreSQL URL
+        const txtPostgresUrl = document.getElementById('txtPostgresUrl');
+        if (txtPostgresUrl && localStorage.getItem('sonara_postgres_url')) {
+            txtPostgresUrl.value = localStorage.getItem('sonara_postgres_url');
+            ragEngine.vectorStore.setPostgresUrl(txtPostgresUrl.value);
+            customerDB.setPostgresUrl(txtPostgresUrl.value);
+            appointmentDB.setPostgresUrl(txtPostgresUrl.value);
+            logger.setPostgresUrl(txtPostgresUrl.value);
+        }
+
         // TTS Settings
         if (selTtsEngine && localStorage.getItem('sonara_tts_engine')) {
             selTtsEngine.value = localStorage.getItem('sonara_tts_engine');
@@ -172,6 +221,16 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
         localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
 
+        // Postgres URL
+        const txtPostgresUrl = document.getElementById('txtPostgresUrl');
+        if (txtPostgresUrl) {
+            localStorage.setItem('sonara_postgres_url', txtPostgresUrl.value.trim());
+            ragEngine.vectorStore.setPostgresUrl(txtPostgresUrl.value.trim());
+            customerDB.setPostgresUrl(txtPostgresUrl.value.trim());
+            appointmentDB.setPostgresUrl(txtPostgresUrl.value.trim());
+            logger.setPostgresUrl(txtPostgresUrl.value.trim());
+        }
+
         // TTS
         if (selTtsEngine) localStorage.setItem('sonara_tts_engine', selTtsEngine.value);
         if (txtFishApiKey) localStorage.setItem('sonara_fish_api_key', txtFishApiKey.value.trim());
@@ -208,6 +267,153 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeTtsName = selTtsEngine ? (selTtsEngine.value === 'fish-speech' ? 'Fish Speech 🐟' : 'Kokoro-82M ⚡') : 'TTS';
         appendSystemMessage(`✅ Configuration saved! Active Engine: ${activeModelName} • TTS: ${activeTtsName}`);
     };
+
+    // Re-index handlers
+    const handleReindex = async () => {
+        setAgentState('thinking', 'Re-indexing theconverseai.com...');
+        const res = await reindexer.reindex(txtCustomRagUrl?.value.trim());
+        if (res.success) {
+            setAgentState('idle', `Indexed ${res.chunksCount} chunks`);
+            appendSystemMessage(`🔄 ${res.message}`);
+        } else {
+            appendSystemMessage(`❌ Re-indexing failed: ${res.error}`);
+        }
+    };
+    const btnReindex = document.getElementById('btnReindex');
+    const btnModalReindex = document.getElementById('btnModalReindex');
+    if (btnReindex) btnReindex.addEventListener('click', handleReindex);
+    if (btnModalReindex) btnModalReindex.addEventListener('click', handleReindex);
+
+    // Database & Logs Modal Handlers
+    const dbModalBackdrop = document.getElementById('dbModalBackdrop');
+    const btnOpenDbModal = document.getElementById('btnOpenDbModal');
+    const btnCloseDbModal = document.getElementById('btnCloseDbModal');
+    const tabBtnAppts = document.getElementById('tabBtnAppts');
+    const tabBtnCusts = document.getElementById('tabBtnCusts');
+    const tabBtnLogs = document.getElementById('tabBtnLogs');
+    const tabContentAppts = document.getElementById('tabContentAppts');
+    const tabContentCusts = document.getElementById('tabContentCusts');
+    const tabContentLogs = document.getElementById('tabContentLogs');
+
+    const refreshDbModal = async () => {
+        const appts = await appointmentDB.getAllAppointments();
+        const custs = await customerDB.getAllCustomers();
+        const logs = await logger.getAllLogs();
+
+        const countAppts = document.getElementById('countAppts');
+        const countCusts = document.getElementById('countCusts');
+        const countLogs = document.getElementById('countLogs');
+        if (countAppts) countAppts.textContent = appts.length;
+        if (countCusts) countCusts.textContent = custs.length;
+        if (countLogs) countLogs.textContent = logs.length;
+
+        // Render Appointments Table
+        const apptTbody = document.querySelector('#tableAppointments tbody');
+        if (apptTbody) {
+            if (appts.length === 0) {
+                apptTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">No appointments booked yet.</td></tr>';
+            } else {
+                apptTbody.innerHTML = appts.map(a => `
+                    <tr>
+                        <td><span class="tool-badge">${a.id}</span></td>
+                        <td><strong>${a.customer_name}</strong></td>
+                        <td>${a.phone}</td>
+                        <td>${a.service}</td>
+                        <td>${a.slot_date} @ ${a.slot_time}</td>
+                        <td><span style="color:${a.status === 'confirmed' ? '#4ade80' : '#f87171'}">${a.status}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Render Customers Table
+        const custTbody = document.querySelector('#tableCustomers tbody');
+        if (custTbody) {
+            if (custs.length === 0) {
+                custTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#888;">No customer profiles recorded yet.</td></tr>';
+            } else {
+                custTbody.innerHTML = custs.map(c => `
+                    <tr>
+                        <td><strong>${c.name}</strong></td>
+                        <td>${c.phone}</td>
+                        <td>${c.email || '-'}</td>
+                        <td>${c.company || '-'}</td>
+                        <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Render Logs Table
+        const logsTbody = document.querySelector('#tableLogs tbody');
+        if (logsTbody) {
+            if (logs.length === 0) {
+                logsTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#888;">No conversation logs recorded yet.</td></tr>';
+            } else {
+                logsTbody.innerHTML = logs.slice(-20).reverse().map(l => `
+                    <tr>
+                        <td>${l.turn_index}</td>
+                        <td>${l.user_input}</td>
+                        <td>${l.ai_response}</td>
+                        <td><span style="color:#38bdf8">${l.total_latency_ms} ms</span></td>
+                        <td>${new Date(l.created_at).toLocaleTimeString()}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+    };
+
+    if (btnOpenDbModal) {
+        btnOpenDbModal.addEventListener('click', () => {
+            refreshDbModal();
+            if (dbModalBackdrop) dbModalBackdrop.classList.add('active');
+        });
+    }
+    if (btnCloseDbModal) {
+        btnCloseDbModal.addEventListener('click', () => {
+            if (dbModalBackdrop) dbModalBackdrop.classList.remove('active');
+        });
+    }
+
+    const switchTab = (activeTab) => {
+        [tabBtnAppts, tabBtnCusts, tabBtnLogs].forEach(b => b?.classList.remove('active'));
+        [tabContentAppts, tabContentCusts, tabContentLogs].forEach(c => { if (c) c.style.display = 'none'; });
+
+        if (activeTab === 'appts') {
+            tabBtnAppts?.classList.add('active');
+            if (tabContentAppts) tabContentAppts.style.display = 'block';
+        } else if (activeTab === 'custs') {
+            tabBtnCusts?.classList.add('active');
+            if (tabContentCusts) tabContentCusts.style.display = 'block';
+        } else if (activeTab === 'logs') {
+            tabBtnLogs?.classList.add('active');
+            if (tabContentLogs) tabContentLogs.style.display = 'block';
+        }
+    };
+    if (tabBtnAppts) tabBtnAppts.addEventListener('click', () => switchTab('appts'));
+    if (tabBtnCusts) tabBtnCusts.addEventListener('click', () => switchTab('custs'));
+    if (tabBtnLogs) tabBtnLogs.addEventListener('click', () => switchTab('logs'));
+
+    document.getElementById('btnExportJson')?.addEventListener('click', () => {
+        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(logger.exportAsJSON());
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute('href', dataStr);
+        dlAnchor.setAttribute('download', `converseai_logs_${Date.now()}.json`);
+        dlAnchor.click();
+    });
+    document.getElementById('btnExportCsv')?.addEventListener('click', () => {
+        const dataStr = 'data:text/csv;charset=utf-8,' + encodeURIComponent(logger.exportAsCSV());
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute('href', dataStr);
+        dlAnchor.setAttribute('download', `converseai_logs_${Date.now()}.csv`);
+        dlAnchor.click();
+    });
+    document.getElementById('btnClearLogs')?.addEventListener('click', async () => {
+        if (confirm('Clear all local conversation logs?')) {
+            await logger.clearLogs();
+            refreshDbModal();
+        }
+    });
 
     // Range input listeners
     if (rngSpeed) rngSpeed.addEventListener('input', (e) => lblSpeed.textContent = `${e.target.value}x`);
@@ -861,6 +1067,24 @@ document.addEventListener('DOMContentLoaded', () => {
         turnStartTime = performance.now();
         appendChatMessage('user', userPrompt);
         conversationHistory.push({ role: 'user', content: effectivePrompt });
+
+        // 1. Multi-Turn Conversation Memory & Entity Extraction
+        memory.addTurn('user', userPrompt);
+
+        // 2. Automated Tool Calling (availability check, booking, cancel, escalate)
+        const toolResult = await toolEngine.detectAndExecute(userPrompt, memory);
+        let toolContext = '';
+        if (toolResult) {
+            toolContext = `\n[ACTION TAKEN / TOOL RESULT]: ${JSON.stringify(toolResult)}\n`;
+            if (toolResult.tool === 'book_appointment' && toolResult.success) {
+                memory.entities.appointmentId = toolResult.appointmentId;
+            }
+        }
+
+        // 3. PostgreSQL + pgvector RAG Context Retrieval
+        const ragContext = (chkRagEnabled && chkRagEnabled.checked) ? await ragEngine.retrieveContext(userPrompt) : '';
+        const memoryPrompt = memory.getMemoryPrompt();
+
         const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
@@ -944,9 +1168,15 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
 5. BREATH-LENGTH PACING: Strictly 1-2 punchy spoken sentences, ending with a warm, relevant follow-up question.
 6. NO MARKDOWN / NO THINK TAGS: Output ONLY the spoken words aloud.
 `;
-        const systemPrompt = `${basePersona}\n${converseAiKnowledge}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}`;
+        const systemPrompt = `${basePersona}\n${converseAiKnowledge}\n${ragContext}\n${memoryPrompt}\n${toolContext}\nReal-Time Context: ${dateStr}, ${timeStr}.${clientWeatherStr}`;
 
         const aiMessageBubble = appendChatMessage('assistant', '...', true);
+        if (toolResult) {
+            const badge = document.createElement('div');
+            badge.className = 'tool-badge';
+            badge.innerHTML = `<i class="fa-solid fa-bolt"></i> ${toolResult.tool}: ${toolResult.message || 'Executed'}`;
+            aiMessageBubble.appendChild(badge);
+        }
 
 
         try {
@@ -1193,6 +1423,15 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
             }
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
+            memory.addTurn('assistant', fullResponse);
+            const totalDuration = Math.round(performance.now() - turnStartTime);
+            logger.logTurn({
+                userInput: userPrompt,
+                aiResponse: fullResponse,
+                latencyTtftMs: firstTokenTime ? Math.round(firstTokenTime - turnStartTime) : 0,
+                latencyTtsMs: totalDuration,
+                toolCalls: toolResult ? [toolResult] : []
+            }).catch(() => {});
 
         } catch (err) {
             console.error('LLM Error:', err);
