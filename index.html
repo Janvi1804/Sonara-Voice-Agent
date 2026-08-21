@@ -68,100 +68,103 @@
             </div>
         </div>
 
-        <!-- Main Visualizer & Interaction Stage -->
-        <main class="main-stage">
-            <!-- Center Glowing Voice Orb & Canvas -->
-            <div class="orb-wrapper">
-                <canvas id="visualizerCanvas" width="560" height="560"></canvas>
-                <div class="orb-core" id="orbCore">
-                    <div class="orb-ring ring-1"></div>
-                    <div class="orb-ring ring-2"></div>
-                    <div class="orb-ring ring-3"></div>
-                    <div class="orb-center-icon">
-                        <i id="orbStateIcon" class="fa-solid fa-microphone-slash"></i>
+        <!-- Responsive Main Content Layout (Split View on Desktop, Stacked on Mobile) -->
+        <div class="main-content-layout">
+            <!-- Main Visualizer & Interaction Stage -->
+            <main class="main-stage">
+                <!-- Center Glowing Voice Orb & Canvas -->
+                <div class="orb-wrapper">
+                    <canvas id="visualizerCanvas" width="560" height="560"></canvas>
+                    <div class="orb-core" id="orbCore">
+                        <div class="orb-ring ring-1"></div>
+                        <div class="orb-ring ring-2"></div>
+                        <div class="orb-ring ring-3"></div>
+                        <div class="orb-center-icon">
+                            <i id="orbStateIcon" class="fa-solid fa-microphone-slash"></i>
+                        </div>
+                    </div>
+
+                    <!-- Floating Status Badge -->
+                    <div class="agent-status-tag" id="agentStatusTag">
+                        <span class="status-dot"></span>
+                        <span class="status-label" id="agentStatusText">Agent Inactive &bull; Click to Start</span>
                     </div>
                 </div>
 
-                <!-- Floating Status Badge -->
-                <div class="agent-status-tag" id="agentStatusTag">
-                    <span class="status-dot"></span>
-                    <span class="status-label" id="agentStatusText">Agent Inactive &bull; Click to Start</span>
-                </div>
-            </div>
-
-            <!-- Real-time Speech Probability & Audio Level Bar -->
-            <div class="audio-metrics-bar">
-                <div class="metric-item">
-                    <div class="metric-header">
-                        <span><i class="fa-solid fa-shield-halved"></i> Silero VAD Confidence</span>
-                        <span id="vadConfidenceLabel">0%</span>
+                <!-- Real-time Speech Probability & Audio Level Bar -->
+                <div class="audio-metrics-bar">
+                    <div class="metric-item">
+                        <div class="metric-header">
+                            <span><i class="fa-solid fa-shield-halved"></i> Silero VAD Confidence</span>
+                            <span id="vadConfidenceLabel">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill vad-fill" id="vadConfidenceBar" style="width: 0%;"></div>
+                            <div class="threshold-marker" id="vadThresholdMarker" style="left: 45%;" title="Silence/Speech Threshold (45%)"></div>
+                        </div>
                     </div>
-                    <div class="progress-track">
-                        <div class="progress-fill vad-fill" id="vadConfidenceBar" style="width: 0%;"></div>
-                        <div class="threshold-marker" id="vadThresholdMarker" style="left: 45%;" title="Silence/Speech Threshold (45%)"></div>
-                    </div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-header">
-                        <span><i class="fa-solid fa-volume-high"></i> DSP Audio Input Level (AEC + NS)</span>
-                        <span id="audioLevelLabel">0 dB</span>
-                    </div>
-                    <div class="progress-track">
-                        <div class="progress-fill audio-fill" id="audioLevelBar" style="width: 0%;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Action Controls -->
-            <div class="stage-controls">
-                <button id="btnToggleVoice" class="primary-call-btn">
-                    <div class="btn-glow"></div>
-                    <i class="fa-solid fa-phone" id="callBtnIcon"></i>
-                    <span id="callBtnText">Start Real-Time Voice</span>
-                </button>
-                <button id="btnInterrupt" class="action-pill-btn" title="Barge-in / Interrupt Agent" disabled>
-                    <i class="fa-solid fa-hand"></i> Interrupt (Barge-in)
-                </button>
-                <button id="btnClearChat" class="action-pill-btn" title="Clear Conversation Transcript">
-                    <i class="fa-solid fa-trash-can"></i> Clear Log
-                </button>
-            </div>
-        </main>
-
-        <!-- Live Streaming Conversation Drawer -->
-        <section class="transcript-section">
-            <div class="transcript-header">
-                <div class="transcript-title">
-                    <i class="fa-solid fa-comments"></i>
-                    <span>Live Duplex Transcript</span>
-                </div>
-                <div class="model-tags-bar">
-                    <span class="tag-chip"><i class="fa-solid fa-bolt"></i> Whisper v3 Turbo</span>
-                    <span class="tag-chip"><i class="fa-solid fa-microchip"></i> Gemma 2 (27B)</span>
-                    <span class="tag-chip"><i class="fa-solid fa-music"></i> Kokoro-82M (af_heart)</span>
-                </div>
-            </div>
-
-            <div class="transcript-body" id="transcriptContainer">
-                <div class="chat-message system">
-                    <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
-                    <div class="message-content">
-                        <div class="message-author">CONVERSE AI SUPPORT &bull; System Ready</div>
-                        <div class="message-bubble">
-                            Welcome to <strong>ConverseAI Voice Support</strong>! I am <strong>SONARA</strong>, your conversational AI assistant. Click <strong>"Start Real-Time Voice"</strong> to explore automated voice bots, WhatsApp lead generation, and enterprise case studies!
+                    <div class="metric-item">
+                        <div class="metric-header">
+                            <span><i class="fa-solid fa-volume-high"></i> DSP Audio Input Level (AEC + NS)</span>
+                            <span id="audioLevelLabel">0 dB</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill audio-fill" id="audioLevelBar" style="width: 0%;"></div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Manual Text Input for Hybrid Testing -->
-            <div class="chat-input-bar">
-                <input type="text" id="manualTextInput" placeholder="Type a question about Converse AI, case studies, or voice bots..." />
-                <button id="btnSendText" class="send-btn" title="Send Text">
-                    <i class="fa-solid fa-paper-plane"></i>
-                </button>
-            </div>
-        </section>
+                <!-- Quick Action Controls -->
+                <div class="stage-controls">
+                    <button id="btnToggleVoice" class="primary-call-btn">
+                        <div class="btn-glow"></div>
+                        <i class="fa-solid fa-phone" id="callBtnIcon"></i>
+                        <span id="callBtnText">Start Real-Time Voice</span>
+                    </button>
+                    <button id="btnInterrupt" class="action-pill-btn" title="Barge-in / Interrupt Agent" disabled>
+                        <i class="fa-solid fa-hand"></i> Interrupt (Barge-in)
+                    </button>
+                    <button id="btnClearChat" class="action-pill-btn" title="Clear Conversation Transcript">
+                        <i class="fa-solid fa-trash-can"></i> Clear Log
+                    </button>
+                </div>
+            </main>
+
+            <!-- Live Streaming Conversation Drawer -->
+            <section class="transcript-section">
+                <div class="transcript-header">
+                    <div class="transcript-title">
+                        <i class="fa-solid fa-comments"></i>
+                        <span>Live Duplex Transcript</span>
+                    </div>
+                    <div class="model-tags-bar">
+                        <span class="tag-chip"><i class="fa-solid fa-bolt"></i> Whisper v3 Turbo</span>
+                        <span class="tag-chip"><i class="fa-solid fa-microchip"></i> Gemma 2 (27B)</span>
+                        <span class="tag-chip"><i class="fa-solid fa-music"></i> Kokoro-82M (af_heart)</span>
+                    </div>
+                </div>
+
+                <div class="transcript-body" id="transcriptContainer">
+                    <div class="chat-message system">
+                        <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="message-content">
+                            <div class="message-author">CONVERSE AI SUPPORT &bull; System Ready</div>
+                            <div class="message-bubble">
+                                Welcome to <strong>ConverseAI Voice Support</strong>! I am <strong>SONARA</strong>, your conversational AI assistant. Click <strong>"Start Real-Time Voice"</strong> to explore automated voice bots, WhatsApp lead generation, and enterprise case studies!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Text Input for Hybrid Testing -->
+                <div class="chat-input-bar">
+                    <input type="text" id="manualTextInput" placeholder="Type a question about Converse AI, case studies, or voice bots..." />
+                    <button id="btnSendText" class="send-btn" title="Send Text">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+            </section>
+        </div>
     </div>
 
     <!-- Configuration Modal / Settings Drawer -->
