@@ -54,6 +54,18 @@ const CONVERSE_AI_KB = [
     content: "In healthcare, CareFirst Clinics unified communication over WhatsApp, web chat, and SMS with ConverseAI, slashing appointment no-shows by 55%, saving 120 admin hours per month, and achieving a 91% appointment fill rate with a +28 point NPS boost."
   },
   {
+    id: "theconverseai-pricing-model",
+    title: "ConverseAI Pricing & Free Opportunity Audit",
+    keywords: ["pricing", "price", "cost", "how much", "charges", "rate", "packages", "subscription", "plans", "quote"],
+    content: "ConverseAI does not have rigid one-size-fits-all fixed subscription tiers. Instead, we scope your exact business problem and offer bespoke pricing tailored to your scale. Every engagement starts with a 100% Free AI Opportunity & Readiness Audit (theconverseai.com/book-demo) to assess your workflows and deliver a clear build plan and ROI estimate with zero overhead."
+  },
+  {
+    id: "theconverseai-clients",
+    title: "ConverseAI Clients & Trust",
+    keywords: ["clients", "customers", "who uses", "tata motors", "mapsor", "zapp loans", "meghaa modi", "readiprint", "heritage food diary"],
+    content: "ConverseAI is trusted by leading brands including Tata Motors, Mapsor Experiential Weddings, Meghaa Modi Design Studio, Zapp Loans, Readiprint Fashions, and Heritage Food Diary, alongside 50+ growing mid-market and SMB businesses."
+  },
+  {
     id: "theconverseai-stats",
     title: "ConverseAI Key Metrics & Performance",
     keywords: ["metrics", "stats", "performance", "numbers", "messages automated", "open rate", "csat", "how many businesses"],
