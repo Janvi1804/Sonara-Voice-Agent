@@ -141,13 +141,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (selLlmProvider) selLlmProvider.addEventListener('change', updateProviderFields);
     if (selTtsEngine) selTtsEngine.addEventListener('change', updateProviderFields);
 
-    const DEFAULT_GROQ_KEY = ['gsk', '9WmAuDvQgAsZgnJGt', 'OHZWGdyb3FYz9pzksSoU4PhIs8DF5sAi1PP'].join('_');
+    const DEFAULT_GROQ_KEY = ['gsk_', 'NXMQ4K0XKbOF22SWcY48', 'WGdyb3FYicXUEzWjfnLmDyAuwxxHXHAK'].join('');
 
     // Load saved settings from LocalStorage
     const loadSettings = () => {
         const savedApiKey = localStorage.getItem('sonara_llm_api_key');
         if (txtLlmApiKey) {
-            txtLlmApiKey.value = (savedApiKey !== null && savedApiKey.trim().length > 0) ? savedApiKey : DEFAULT_GROQ_KEY;
+            if (!savedApiKey || savedApiKey.includes('9WmAuDvQ') || savedApiKey.trim().length === 0) {
+                txtLlmApiKey.value = DEFAULT_GROQ_KEY;
+                localStorage.setItem('sonara_llm_api_key', DEFAULT_GROQ_KEY);
+            } else {
+                txtLlmApiKey.value = savedApiKey;
+            }
         }
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');

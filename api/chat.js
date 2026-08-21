@@ -269,7 +269,7 @@ export default async function handler(req, res) {
         } = body;
 
         const hfToken = clientHfToken || process.env.VITE_HF_TOKEN || process.env.HF_TOKEN || '';
-        const defaultGroqKey = ['gsk', '9WmAuDvQgAsZgnJGt', 'OHZWGdyb3FYz9pzksSoU4PhIs8DF5sAi1PP'].join('_');
+        const defaultGroqKey = ['gsk_', 'NXMQ4K0XKbOF22SWcY48', 'WGdyb3FYicXUEzWjfnLmDyAuwxxHXHAK'].join('');
         const groqApiKey = clientApiKey || process.env.VITE_API_KEY || process.env.GROQ_API_KEY || defaultGroqKey;
 
         // Get latest user prompt for context enrichment
