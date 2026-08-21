@@ -201,11 +201,58 @@ export class KokoroTTS {
     }
 
     /**
+     * Pre-process text with acoustic humanization rules for natural spoken cadence
+     */
+    humanizeSpokenText(text) {
+        if (!text) return '';
+        let s = text;
+
+        // Clean markdown & formatting
+        s = s.replace(/[*_~`#]/g, '');
+        s = s.replace(/<[^>]+>/g, '');
+
+        // Standardize abbreviations to phonetic spoken sounds
+        s = s.replace(/\bAI\b/g, 'A I');
+        s = s.replace(/\bCSAT\b/gi, 'C-Sat');
+        s = s.replace(/\bROI\b/gi, 'R-O-I');
+        s = s.replace(/\bCRM\b/gi, 'C-R-M');
+        s = s.replace(/\bERP\b/gi, 'E-R-P');
+        s = s.replace(/\bEdTech\b/gi, 'Ed-Tech');
+        s = s.replace(/\bAPI\b/gi, 'A-P-I');
+        s = s.replace(/\bB2B\b/gi, 'B to B');
+        s = s.replace(/\bB2C\b/gi, 'B to C');
+        s = s.replace(/\bNPS\b/gi, 'N-P-S');
+        s = s.replace(/\bCPL\b/gi, 'C-P-L');
+        s = s.replace(/\bSMS\b/gi, 'S-M-S');
+
+        // Spoken URLs & Contact info
+        s = s.replace(/theconverseai\.com/gi, 'the converse A I dot com');
+        s = s.replace(/contact@theconverseai\.com/gi, 'contact at the converse A I dot com');
+
+        // Phone numbers with natural breath pauses
+        s = s.replace(/\+91-?9982323333/g, '+91, 99823, 23333');
+        s = s.replace(/\+91-?7023084065/g, '+91, 70230, 84065');
+
+        // Metrics & Stats
+        s = s.replace(/\b3x\b/gi, 'three times');
+        s = s.replace(/\b24\/7\b/gi, 'twenty-four seven');
+        s = s.replace(/<30s\b/gi, 'under thirty seconds');
+        s = s.replace(/\b50M\+/gi, 'fifty million plus');
+        s = s.replace(/\b500\+/gi, 'five hundred plus');
+        s = s.replace(/(\d+)%/g, '$1 percent');
+
+        // Natural breath pauses: replace em-dashes, colons, semicolons with commas
+        s = s.replace(/[—–;:]/g, ', ');
+
+        return s.replace(/\s{2,}/g, ' ').trim();
+    }
+
+    /**
      * Speak full text smoothly in one natural continuous utterance
      */
     speak(fullText) {
         if (!fullText) return;
-        const clean = fullText.trim();
+        const clean = this.humanizeSpokenText(fullText);
         if (!clean) return;
         this.isInterrupted = false;
         this.queue = [];
@@ -226,6 +273,12 @@ export class KokoroTTS {
                 return;
             }
 
+            const spokenText = this.humanizeSpokenText(text);
+            if (!spokenText) {
+                resolve();
+                return;
+            }
+
             if ('speechSynthesis' in window) {
                 if (this.audioContext && this.audioContext.state === 'suspended') {
                     this.audioContext.resume();
@@ -235,12 +288,12 @@ export class KokoroTTS {
                     window.speechSynthesis.resume();
                 }
 
-                const utterance = new SpeechSynthesisUtterance(text);
+                const utterance = new SpeechSynthesisUtterance(spokenText);
                 // Keep strong reference to prevent Chromium garbage collection mid-speech
                 this._activeUtterance = utterance;
 
-                const isDevanagari = /[\u0900-\u097F]/.test(text);
-                const isHinglish = /(\b(hai|hain|nahi|kya|aap|tum|hum|kaise|karo|batao|chahiye|bol|raha|rahi|shukriya|namaste|hoga|karna|baat|bhejo|suno|karein|denge|lekin|aur)\b)/i.test(text);
+                const isDevanagari = /[\u0900-\u097F]/.test(spokenText);
+                const isHinglish = /(\b(hai|hain|nahi|kya|aap|tum|hum|kaise|karo|batao|chahiye|bol|raha|rahi|shukriya|namaste|hoga|karna|baat|bhejo|suno|karein|denge|lekin|aur)\b)/i.test(spokenText);
                 const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
                 const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
                 const isMale = voiceConfig.gender === 'male';
@@ -269,11 +322,12 @@ export class KokoroTTS {
                     }
                 }
 
-                // Strict pitch lock based on gender so tone never shifts
+                // Dynamic prosody: slight question elevation for questions (1.04x) for natural human inflection
+                const isQuestion = spokenText.trim().endsWith('?');
                 if (isMale) {
-                    utterance.pitch = voiceConfig.pitch || 0.85;
+                    utterance.pitch = (voiceConfig.pitch || 0.85) * (isQuestion ? 1.04 : 1.0);
                 } else {
-                    utterance.pitch = voiceConfig.pitch || 1.15;
+                    utterance.pitch = (voiceConfig.pitch || 1.08) * (isQuestion ? 1.04 : 1.0);
                 }
 
                 utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
