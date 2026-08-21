@@ -879,25 +879,283 @@ body.dark-theme {
     transform: scale(1.02);
 }
 
-/* Responsive Breakpoints */
-@media (max-width: 768px) {
+/* ==========================================================================
+   Comprehensive Responsive Breakpoints (Desktop, Tablet, Mobile, Foldables)
+   ========================================================================== */
+
+@media (max-width: 1024px) {
     .app-container {
-        padding: 12px;
+        padding: 16px 20px;
+        margin: 1vh auto;
+        gap: 16px;
+    }
+
+    .transcript-section {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    body.dark-theme {
+        padding: 0;
+        align-items: flex-start;
+    }
+
+    .app-container {
+        padding: 12px 14px;
         margin: 0;
-        min-height: 100vh;
+        min-height: 100dvh;
+        gap: 14px;
+        border-radius: 0;
+    }
+
+    .app-header {
+        padding: 10px 14px;
+        gap: 10px;
+    }
+
+    .brand-icon-pulse {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+    }
+
+    .brand-text h1 {
+        font-size: 16px;
+    }
+
+    .pipeline-badge {
+        font-size: 9px;
+    }
+
+    /* Keep header icons visible & touch-friendly on mobile */
+    .header-stats {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .stat-pill {
+        display: none; /* Hide verbose latency pill to conserve space */
+    }
+
+    .icon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+
+    .main-stage {
+        padding: 10px 0;
+        gap: 16px;
+    }
+
+    .orb-wrapper {
+        width: 240px;
+        height: 240px;
+    }
+
+    #visualizerCanvas {
+        width: 440px;
+        height: 440px;
+    }
+
+    .orb-core {
+        width: 110px;
+        height: 110px;
     }
 
     .audio-metrics-bar {
         grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 10px 14px;
     }
 
-    .header-stats {
-        display: none;
+    .primary-call-btn {
+        width: 100%;
+        max-width: 320px;
+        justify-content: center;
+        padding: 12px 20px;
+        font-size: 14px;
+    }
+
+    .transcript-section {
+        min-height: 280px;
+    }
+
+    .transcript-header {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .model-tags-bar {
+        display: none; /* Hide tags bar on mobile to keep title clean */
+    }
+
+    .transcript-body {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
+    .chat-message {
+        max-width: 94%;
+    }
+
+    .message-bubble {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+
+    .chat-input-bar {
+        padding: 8px 12px;
+    }
+
+    .chat-input-bar input {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+
+    /* Responsive Modals */
+    .settings-modal {
+        width: 94vw !important;
+        max-width: 94vw !important;
+        max-height: 88dvh;
+        margin: 6dvh auto;
+        padding: 0;
+        border-radius: var(--radius-md);
+    }
+
+    .modal-header {
+        padding: 14px 18px;
+    }
+
+    .modal-body {
+        padding: 14px 18px;
+        max-height: calc(88dvh - 130px);
+    }
+
+    .modal-footer {
+        padding: 12px 18px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .form-row.two-col {
+        grid-template-columns: 1fr;
+    }
+
+    .database-tabs {
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .tab-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    /* Human Handoff Banner */
+    .human-handoff-banner {
+        padding: 10px 14px;
+    }
+
+    .handoff-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .handoff-actions {
+        width: 100%;
+        justify-content: stretch;
+    }
+
+    .handoff-btn {
+        flex: 1;
+        justify-content: center;
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .app-container {
+        padding: 8px 10px;
+        gap: 12px;
+    }
+
+    .app-header {
+        padding: 8px 10px;
+    }
+
+    .brand-badge {
+        gap: 10px;
+    }
+
+    .brand-text h1 {
+        font-size: 14px;
+    }
+
+    .brand-text h1 span {
+        display: inline;
     }
 
     .orb-wrapper {
-        width: 260px;
-        height: 260px;
+        width: 200px;
+        height: 200px;
+    }
+
+    #visualizerCanvas {
+        width: 340px;
+        height: 340px;
+    }
+
+    .orb-core {
+        width: 95px;
+        height: 95px;
+    }
+
+    .orb-core i {
+        font-size: 26px;
+    }
+
+    .metric-item label {
+        font-size: 11px;
+    }
+
+    .metric-value {
+        font-size: 11px;
+    }
+
+    .agent-status-label {
+        font-size: 11px;
+    }
+
+    .agent-state-badge {
+        font-size: 11px;
+        padding: 4px 10px;
+    }
+
+    .settings-modal {
+        width: 96vw !important;
+        max-width: 96vw !important;
+        max-height: 92dvh;
+        margin: 4dvh auto;
+    }
+
+    .modal-header h3 {
+        font-size: 15px;
+    }
+
+    .modal-body {
+        padding: 12px 14px;
+    }
+
+    .data-table th, .data-table td {
+        padding: 8px 8px;
+        font-size: 11px;
     }
 }
 
