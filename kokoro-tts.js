@@ -226,8 +226,8 @@ export class KokoroTTS {
         s = s.replace(/\bSMS\b/gi, 'S-M-S');
 
         // Spoken URLs & Contact info
-        s = s.replace(/theconverseai\.com/gi, 'the converse A I dot com');
         s = s.replace(/contact@theconverseai\.com/gi, 'contact at the converse A I dot com');
+        s = s.replace(/theconverseai\.com/gi, 'the converse A I dot com');
 
         // Phone numbers with natural breath pauses
         s = s.replace(/\+91-?9982323333/g, '+91, 99823, 23333');
