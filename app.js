@@ -1235,7 +1235,33 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
             badge.innerHTML = `<i class="fa-solid fa-bolt"></i> ${toolResult.tool}: ${toolResult.message || 'Executed'}`;
             aiMessageBubble.appendChild(badge);
         }
-
+        // Instant Zero-Downtime Knowledge Responder based on https://theconverseai.com/
+        const generateSmartFallback = (query) => {
+            const lower = (query || '').toLowerCase();
+            if (lower.includes('price') || lower.includes('pricing') || lower.includes('cost') || lower.includes('rate') || lower.includes('charge') || lower.includes('fees') || lower.includes('kitna')) {
+                return 'Achha! Converse AI ke paas koi rigid fixed monthly plans nahi hain—har partnership ek 100% Free AI Opportunity & Readiness Audit se shuru hoti hai, jiske baad bespoke pricing tayaar hoti hai. Kya aap apne business ke liye free audit demo schedule karna chahenge?';
+            }
+            if (lower.includes('client') || lower.includes('customer') || lower.includes('kaun') || lower.includes('who uses') || lower.includes('company') || lower.includes('tata')) {
+                return 'Achha! Hamare trusted enterprise clients hain—Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Design Studio, Readiprint Fashions aur Heritage Food Diary. Kya aap inke case studies ke baare me janna chahenge?';
+            }
+            if (lower.includes('whatsapp') || lower.includes('wa bot') || lower.includes('chat bot') || lower.includes('chatbot')) {
+                return 'Bilkul! Hamara WhatsApp AI solution 98% open rates ke sath 24/7 customer queries aur lead qualification ko autonomously handle karta hai. Kya aap iska live demo dekhna chahenge?';
+            }
+            if (lower.includes('voice') || lower.includes('call') || lower.includes('calling') || lower.includes('telephony')) {
+                return 'Bilkul! Hamare AI Voice Agents inbound aur outbound calls ko 100+ languages me bina human intervention ke naturally handle karte hain. Kya aap iske features explore karna chahenge?';
+            }
+            if (lower.includes('appointment') || lower.includes('demo') || lower.includes('audit') || lower.includes('book') || lower.includes('schedule')) {
+                return 'Haan ji! Main aapka 100% Free AI Opportunity & Readiness Audit demo book kar sakti hoon. Bas apna preferred time slot aur phone number bata dijiye!';
+            }
+            if (lower.includes('contact') || lower.includes('number') || lower.includes('email') || lower.includes('phone') || lower.includes('address') || lower.includes('jaipur')) {
+                return 'Aap humein contact@theconverseai.com ya phone +91-9982323333 par reach out kar sakte hain, aur hamara office Jaipur, India me hai. Kya aapko kisi particular solution me help chahiye?';
+            }
+            if (lower.includes('case study') || lower.includes('result') || lower.includes('stylemart') || lower.includes('learnsphere') || lower.includes('carefirst')) {
+                return 'StyleMart ne repeat orders me 3x revenue grow kiya, LearnSphere ne 90 days me enrolments double kiye, aur CareFirst Clinics me appointment no-shows 55% drop hue. Kya aap apne sector ke liye ROI janna chahenge?';
+            }
+            const nameGreeting = memory?.entities?.customerName ? ` ${memory.entities.customerName} ji` : '';
+            return `Achha${nameGreeting}! Main Converse AI ki official solutions specialist hoon. Main aapke business ke customer care aur sales ko AI Voice bots ya WhatsApp automation se scale karne me help kar sakti hoon. Aap kis service ke baare me janna chahenge?`;
+        };
 
         try {
             let fullResponse = '';
@@ -1439,11 +1465,7 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
                 if (ttsEngine) ttsEngine.speak(fullResponse);
 
             } else {
-                // --- FREE FALLBACK: Pollinations.AI ---
-                if (provider === 'huggingface' && !hfToken) {
-                    appendSystemMessage('ℹ️ HuggingFace token nahi mila. ⚙️ Settings me HF Token add karo ya neeche Pollinations AI se jawab aa raha hai (free).');
-                }
-
+                // --- SERVERLESS FALLBACK: Call /api/chat on Vercel ---
                 const historySlice = conversationHistory.slice(-8);
                 const messages = [
                     { role: 'system', content: systemPrompt },
@@ -1453,28 +1475,35 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
                     }))
                 ];
 
-                const pollRes = await fetch('https://text.pollinations.ai/openai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: 'openai-fast',
-                        messages,
-                        max_tokens: 200,
-                        temperature: 0.7,
-                        stream: false,
-                        private: true
-                    })
-                });
+                try {
+                    const apiRes = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: 'groq',
+                            model: 'openai/gpt-oss-120b',
+                            messages,
+                            apiKey,
+                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
+                            customUrl: txtCustomRagUrl ? txtCustomRagUrl.value.trim() : ''
+                        })
+                    });
 
-                if (!pollRes.ok) {
-                    const errText = await pollRes.text().catch(() => '');
-                    throw new Error(`Free AI API error ${pollRes.status}: ${errText.slice(0, 100)}`);
+                    if (apiRes.ok) {
+                        const apiData = await apiRes.json();
+                        if (apiData.text) {
+                            fullResponse = apiData.text.trim();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Serverless chat fallback error:', e.message);
                 }
 
-                const pollData = await pollRes.json();
-                fullResponse = sanitizeAiResponse(pollData.choices?.[0]?.message?.content?.trim() || '');
-                if (!fullResponse) throw new Error('Empty response. Please retry.');
+                if (!fullResponse) {
+                    fullResponse = generateSmartFallback(userPrompt);
+                }
 
+                fullResponse = sanitizeAiResponse(fullResponse);
                 markFirstToken();
                 aiMessageBubble.textContent = fullResponse;
                 if (ttsEngine) ttsEngine.speak(fullResponse);
@@ -1493,34 +1522,6 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
 
         } catch (err) {
             console.warn('External LLM API unavailable, engaging instant verified smart responder:', err.message);
-
-            // Instant Zero-Downtime Knowledge Responder based on https://theconverseai.com/
-            const generateSmartFallback = (query) => {
-                const lower = (query || '').toLowerCase();
-                if (lower.includes('price') || lower.includes('pricing') || lower.includes('cost') || lower.includes('rate') || lower.includes('charge') || lower.includes('fees') || lower.includes('kitna')) {
-                    return 'Achha! Converse AI ke paas koi rigid fixed monthly plans nahi hain—har partnership ek 100% Free AI Opportunity & Readiness Audit se shuru hoti hai, jiske baad bespoke pricing tayaar hoti hai. Kya aap apne business ke liye free audit demo schedule karna chahenge?';
-                }
-                if (lower.includes('client') || lower.includes('customer') || lower.includes('kaun') || lower.includes('who uses') || lower.includes('company') || lower.includes('tata')) {
-                    return 'Achha! Hamare trusted enterprise clients hain—Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Design Studio, Readiprint Fashions aur Heritage Food Diary. Kya aap inke case studies ke baare me janna chahenge?';
-                }
-                if (lower.includes('whatsapp') || lower.includes('wa bot') || lower.includes('chat bot') || lower.includes('chatbot')) {
-                    return 'Bilkul! Hamara WhatsApp AI solution 98% open rates ke sath 24/7 customer queries aur lead qualification ko autonomously handle karta hai. Kya aap iska live demo dekhna chahenge?';
-                }
-                if (lower.includes('voice') || lower.includes('call') || lower.includes('calling') || lower.includes('telephony')) {
-                    return 'Bilkul! Hamare AI Voice Agents inbound aur outbound calls ko 100+ languages me bina human intervention ke naturally handle karte hain. Kya aap iske features explore karna chahenge?';
-                }
-                if (lower.includes('appointment') || lower.includes('demo') || lower.includes('audit') || lower.includes('book') || lower.includes('schedule')) {
-                    return 'Haan ji! Main aapka 100% Free AI Opportunity & Readiness Audit demo book kar sakti hoon. Bas apna preferred time slot aur phone number bata dijiye!';
-                }
-                if (lower.includes('contact') || lower.includes('number') || lower.includes('email') || lower.includes('phone') || lower.includes('address') || lower.includes('jaipur')) {
-                    return 'Aap humein contact@theconverseai.com ya phone +91-9982323333 par reach out kar sakte hain, aur hamara office Jaipur, India me hai. Kya aapko kisi particular solution me help chahiye?';
-                }
-                if (lower.includes('case study') || lower.includes('result') || lower.includes('stylemart') || lower.includes('learnsphere') || lower.includes('carefirst')) {
-                    return 'StyleMart ne repeat orders me 3x revenue grow kiya, LearnSphere ne 90 days me enrolments double kiye, aur CareFirst Clinics me appointment no-shows 55% drop hue. Kya aap apne sector ke liye ROI janna chahenge?';
-                }
-                const nameGreeting = memory?.entities?.customerName ? ` ${memory.entities.customerName} ji` : '';
-                return `Achha${nameGreeting}! Main Converse AI ki official solutions specialist hoon. Main aapke business ke customer care aur sales ko AI Voice bots ya WhatsApp automation se scale karne me help kar sakti hoon. Aap kis service ke baare me janna chahenge?`;
-            };
 
             fullResponse = generateSmartFallback(userPrompt);
             markFirstToken();

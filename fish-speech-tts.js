@@ -60,6 +60,12 @@ export class FishSpeechTTS {
         }
     }
 
+    flush() {
+        if (this.fallbackEngine && typeof this.fallbackEngine.flush === 'function') {
+            this.fallbackEngine.flush();
+        }
+    }
+
     /**
      * Speak text using Fish Speech API with automatic graceful fallback
      */
