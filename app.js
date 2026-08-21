@@ -176,8 +176,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // TTS Settings
-        if (selTtsEngine && localStorage.getItem('sonara_tts_engine')) {
-            selTtsEngine.value = localStorage.getItem('sonara_tts_engine');
+        if (selTtsEngine) {
+            const savedTts = localStorage.getItem('sonara_tts_engine');
+            selTtsEngine.value = (savedTts === 'fish-speech' || savedTts === 'kokoro-82m') ? savedTts : 'kokoro-82m';
         }
         if (txtFishApiKey) {
             const savedFish = localStorage.getItem('sonara_fish_api_key');
@@ -551,7 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 onEnd: handleTtsEnd
             });
 
-            const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'fish-speech';
+            const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'kokoro-82m';
             ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
 
             // Initialize Silero VAD Engine with optimal voice sensitivity (0.45 threshold)
@@ -1263,19 +1264,19 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
             return `Achha${nameGreeting}! Main Converse AI ki official solutions specialist hoon. Main aapke business ke customer care aur sales ko AI Voice bots ya WhatsApp automation se scale karne me help kar sakti hoon. Aap kis service ke baare me janna chahenge?`;
         };
 
+        let fullResponse = '';
+        let firstTokenTime = 0;
+
+        const markFirstToken = () => {
+            if (!firstTokenTime) {
+                firstTokenTime = performance.now();
+                const ttft = Math.round(firstTokenTime - turnStartTime);
+                if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
+                setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
+            }
+        };
+
         try {
-            let fullResponse = '';
-            let firstTokenTime = 0;
-
-            const markFirstToken = () => {
-                if (!firstTokenTime) {
-                    firstTokenTime = performance.now();
-                    const ttft = Math.round(firstTokenTime - turnStartTime);
-                    if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
-                    setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
-                }
-            };
-
             if (provider === 'huggingface' && hfToken) {
                 // --- HUGGINGFACE INFERENCE API: Google Gemma on HF Router ---
                 const hfModelMap = {

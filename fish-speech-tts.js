@@ -85,20 +85,19 @@ export class FishSpeechTTS {
             return;
         }
 
-        const endpoint = this.customUrl || 'https://api.fish.audio/v1/tts';
+        const endpoint = this.customUrl || '/api/tts';
         const headers = { 'Content-Type': 'application/json' };
-        if (this.apiKey) {
+        if (this.apiKey && this.customUrl) {
             headers['Authorization'] = `Bearer ${this.apiKey}`;
         }
 
         const payload = {
             text: clean,
+            apiKey: this.apiKey,
+            reference_id: this.voiceId || undefined,
             format: 'mp3',
             latency: 'balanced'
         };
-        if (this.voiceId) {
-            payload.reference_id = this.voiceId;
-        }
 
         this.currentAbortController = new AbortController();
 
