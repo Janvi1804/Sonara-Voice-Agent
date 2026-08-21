@@ -441,9 +441,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === settingsModal) settingsModal.classList.remove('active');
         });
     }
+    if (dbModalBackdrop) {
+        dbModalBackdrop.addEventListener('click', (e) => {
+            if (e.target === dbModalBackdrop) dbModalBackdrop.classList.remove('active');
+        });
+    }
     window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && settingsModal && settingsModal.classList.contains('active')) {
-            settingsModal.classList.remove('active');
+        if (e.key === 'Escape') {
+            if (settingsModal && settingsModal.classList.contains('active')) settingsModal.classList.remove('active');
+            if (dbModalBackdrop && dbModalBackdrop.classList.contains('active')) dbModalBackdrop.classList.remove('active');
         }
     });
 
