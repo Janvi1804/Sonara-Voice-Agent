@@ -26,7 +26,7 @@
                 </div>
                 <div class="brand-text">
                     <h1>SONARA <span>VOICE AI</span></h1>
-                    <span class="pipeline-badge">Duplex v3.2 &bull; Silero + Gemma 2 + Kokoro</span>
+                    <span class="pipeline-badge">Duplex v3.3 &bull; Whisper Large-v3-Turbo + Gemma 2 + Kokoro</span>
                 </div>
             </div>
 
@@ -224,21 +224,15 @@
                         <div class="form-row">
                             <label>STT Model</label>
                             <select id="selSttModel" class="form-input">
-                                <option value="whisper-large-v3-turbo" selected>OpenAI Whisper Large v3 Turbo (Groq / HF)</option>
-                                <option value="nvidia-parakeet">NVIDIA Parakeet CTC 0.6B / 1.1B</option>
-                                <option value="assemblyai-universal">AssemblyAI Universal-1 (Realtime)</option>
+                                <option value="whisper-large-v3-turbo" selected>Groq Whisper Large-v3-Turbo (Sub-150ms • Multilingual • Recommended)</option>
                                 <option value="web-speech">Native Web Speech Recognition (Built-in Browser)</option>
                             </select>
                         </div>
                         <div class="form-row">
                             <label>Input Language</label>
                             <select id="selLanguage" class="form-input">
-                                <option value="en" selected>English (Automatic Accent Adaptation)</option>
-                                <option value="hi">Hindi (हिन्दी / Hinglish)</option>
-                                <option value="es">Spanish</option>
-                                <option value="fr">French</option>
-                                <option value="de">German</option>
-                                <option value="ja">Japanese</option>
+                                <option value="hi" selected>Hindi / Hinglish (हिन्दी + English Mix • Recommended)</option>
+                                <option value="en">English (Global / Indian Accent)</option>
                             </select>
                         </div>
                     </div>

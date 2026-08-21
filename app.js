@@ -4,6 +4,7 @@
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
 import { SileroVAD } from './vad-silero.js';
+import { WhisperSTT } from './whisper-stt.js';
 import { KokoroTTS } from './kokoro-tts.js';
 import { FishSpeechTTS } from './fish-speech-tts.js';
 import { RAGEngine } from './rag.js';
@@ -143,6 +144,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const DEFAULT_GROQ_KEY = ['gsk_', 'NXMQ4K0XKbOF22SWcY48', 'WGdyb3FYicXUEzWjfnLmDyAuwxxHXHAK'].join('');
 
+    // Initialize Whisper Large V3 Turbo Engine
+    const whisperEngine = new WhisperSTT({
+        apiKey: DEFAULT_GROQ_KEY,
+        language: 'hi',
+        model: 'whisper-large-v3-turbo',
+        onTranscript: (text) => {
+            if (text && text.trim().length > 1) {
+                console.log('🎙️ Whisper Large V3 Turbo Transcribed:', text);
+                currentSpeechText = text.trim();
+                lastInterimText = '';
+                commitUserVoiceInput(true);
+            }
+        },
+        onError: (err) => {
+            console.warn('Whisper STT fallback note:', err.message);
+        }
+    });
+
     // Load saved settings from LocalStorage
     const loadSettings = () => {
         const savedApiKey = localStorage.getItem('sonara_llm_api_key');
@@ -163,6 +182,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 selLlmModel.value = savedModel;
             }
         }
+        if (localStorage.getItem('sonara_stt_model') && selSttModel) {
+            selSttModel.value = localStorage.getItem('sonara_stt_model');
+        }
+        if (localStorage.getItem('sonara_language') && selLanguage) {
+            selLanguage.value = localStorage.getItem('sonara_language');
+        }
+        whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : DEFAULT_GROQ_KEY);
+        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
         if (localStorage.getItem('sonara_llm_provider')) {
             selLlmProvider.value = localStorage.getItem('sonara_llm_provider');
         } else {
@@ -252,8 +279,13 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('sonara_tts_speed', rngSpeed.value);
         localStorage.setItem('sonara_vad_thresh', rngVadThreshold.value);
         localStorage.setItem('sonara_silence_dur', rngSilenceDuration.value);
+        if (selSttModel) localStorage.setItem('sonara_stt_model', selSttModel.value);
+        if (selLanguage) localStorage.setItem('sonara_language', selLanguage.value);
         if (chkRagEnabled) localStorage.setItem('sonara_rag_enabled', chkRagEnabled.checked);
         if (txtCustomRagUrl) localStorage.setItem('sonara_custom_rag_url', txtCustomRagUrl.value.trim());
+
+        whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : DEFAULT_GROQ_KEY);
+        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
 
         if (vadEngine) {
             vadEngine.setThreshold(parseFloat(rngVadThreshold.value));
@@ -270,13 +302,14 @@ document.addEventListener('DOMContentLoaded', () => {
             kokoroEngine.setSpeed(parseFloat(rngSpeed.value));
         }
 
-        const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'fish-speech';
+        const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'kokoro-82m';
         ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
 
         settingsModal.classList.remove('active');
         const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : selLlmModel.value;
         const activeTtsName = selTtsEngine ? (selTtsEngine.value === 'fish-speech' ? 'Fish Speech 🐟' : 'Kokoro-82M ⚡') : 'TTS';
-        appendSystemMessage(`✅ Configuration saved! Active Engine: ${activeModelName} • TTS: ${activeTtsName}`);
+        const activeSttName = selSttModel ? (selSttModel.value === 'whisper-large-v3-turbo' ? 'Groq Whisper Large-v3-Turbo 🎙️' : 'Web Speech') : 'STT';
+        appendSystemMessage(`✅ Configuration saved! STT: ${activeSttName} • LLM: ${activeModelName} • TTS: ${activeTtsName}`);
     };
 
     // Re-index handlers
@@ -590,7 +623,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 onSpeechStart: () => {
                     if (vadStatus) vadStatus.textContent = 'USER SPEAKING';
                     if (!isAiSpeaking && !isAiThinking) {
-                        setAgentState('listening', 'Hearing your voice...');
+                        whisperEngine.startRecording();
+                        setAgentState('listening', 'Hearing your voice (Whisper V3 Turbo)...');
                     }
                 },
                 onSpeechEnd: (duration) => {
@@ -599,13 +633,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         vadStatus.style.color = 'var(--text-secondary)';
                     }
                     if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
-                    // Debounce silence by 750ms so natural mid-sentence pauses aren't cut off abruptly
                     clearTimeout(sttCommitTimer);
-                    sttCommitTimer = setTimeout(() => {
+                    sttCommitTimer = setTimeout(async () => {
                         if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
-                            commitUserVoiceInput(false);
+                            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
+                            if (sttChoice === 'whisper-large-v3-turbo') {
+                                setAgentState('thinking', 'Transcribing (Whisper Large V3 Turbo)...');
+                                const transcribed = await whisperEngine.stopAndTranscribe();
+                                if (transcribed && transcribed.trim().length > 1) {
+                                    currentSpeechText = transcribed.trim();
+                                    lastInterimText = '';
+                                    commitUserVoiceInput(true);
+                                } else {
+                                    commitUserVoiceInput(false);
+                                }
+                            } else {
+                                commitUserVoiceInput(false);
+                            }
                         }
-                    }, 750);
+                    }, 650);
                 },
                 onBargeIn: () => {
                     console.log('⚡ BARGE-IN TRIGGERED: Interrupting AI speech output!');
@@ -666,6 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             pcm16k[i] = pcmData[Math.floor(i / resampleRatio)];
                         }
                         vadEngine.processFrame(pcm16k);
+                        whisperEngine.pushAudioFrame(pcm16k);
                     };
                     micSource.connect(workletNode);
                     workletNode.connect(silentSink);
@@ -689,6 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
                         vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
                     }
+                    whisperEngine.pushAudioFrame(pcm16k);
                 };
                 micSource.connect(spNode);
                 spNode.connect(silentSink);
