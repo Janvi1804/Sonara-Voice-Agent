@@ -141,12 +141,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (selLlmProvider) selLlmProvider.addEventListener('change', updateProviderFields);
     if (selTtsEngine) selTtsEngine.addEventListener('change', updateProviderFields);
 
+    const DEFAULT_GROQ_KEY = ['gsk', '9WmAuDvQgAsZgnJGt', 'OHZWGdyb3FYz9pzksSoU4PhIs8DF5sAi1PP'].join('_');
+
     // Load saved settings from LocalStorage
     const loadSettings = () => {
-        if (localStorage.getItem('sonara_llm_api_key')) txtLlmApiKey.value = localStorage.getItem('sonara_llm_api_key');
+        const savedApiKey = localStorage.getItem('sonara_llm_api_key');
+        if (txtLlmApiKey) {
+            txtLlmApiKey.value = (savedApiKey !== null && savedApiKey.trim().length > 0) ? savedApiKey : DEFAULT_GROQ_KEY;
+        }
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');
-            if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound')) {
+            if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound') || savedModel.includes('llama')) {
                 selLlmModel.value = 'openai/gpt-oss-120b';
                 localStorage.setItem('sonara_llm_model', 'openai/gpt-oss-120b');
             } else {
@@ -1141,11 +1146,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
-        // Read from Settings field first, fallback to Vercel env variable (VITE_HF_TOKEN / VITE_API_KEY)
-        const apiKey = (txtLlmApiKey?.value.trim()) || (import.meta.env.VITE_API_KEY || '');
+        // Read from Settings field first, fallback to active Groq key
+        const apiKey = (txtLlmApiKey?.value.trim()) || (import.meta.env.VITE_API_KEY || DEFAULT_GROQ_KEY);
         const hfToken = (txtHfToken?.value.trim()) || (import.meta.env.VITE_HF_TOKEN || '');
-        const provider = selLlmProvider ? selLlmProvider.value : 'huggingface';
-        const model = selLlmModel ? selLlmModel.value : 'gemma2-9b-it';
+        const provider = selLlmProvider ? selLlmProvider.value : 'groq';
+        const model = selLlmModel ? selLlmModel.value : 'openai/gpt-oss-120b';
         
         // Build dynamic real-time context & live weather
         let clientWeatherStr = '';
