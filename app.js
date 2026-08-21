@@ -577,8 +577,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 },
                 onSpeechEnd: (duration) => {
-                    if (isAiThinking || isAiSpeaking) return;
-                    commitUserVoiceInput();
+                    if (vadStatus) {
+                        vadStatus.textContent = 'SILENCE';
+                        vadStatus.style.color = 'var(--text-secondary)';
+                    }
+                    if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
+                    // Debounce silence by 750ms so natural mid-sentence pauses aren't cut off abruptly
+                    clearTimeout(sttCommitTimer);
+                    sttCommitTimer = setTimeout(() => {
+                        if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
+                            commitUserVoiceInput(false);
+                        }
+                    }, 750);
                 },
                 onBargeIn: () => {
                     console.log('⚡ BARGE-IN TRIGGERED: Interrupting AI speech output!');
@@ -708,15 +718,58 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastCommittedTime = 0;
     let sttWatchdogTimer = null;
     let sttCommitTimer = null;
+    let pendingIncompleteTimer = null;
 
-    const commitUserVoiceInput = () => {
+    const INCOMPLETE_CONNECTORS = [
+        'mujhe', 'mera', 'meri', 'mere', 'hum', 'humara', 'humari', 'aap', 'aapka', 'aapki', 'aapke',
+        'kya', 'aur', 'lekin', 'par', 'kyunki', 'toh', 'agar', 'jaise', 'main', 'maine', 'woh', 'yeh',
+        'kisi', 'kuch', 'bhi', 'ke', 'ki', 'ka', 'ko', 'se', 'me', 'mein', 'ne', 'i', 'my', 'we', 'our',
+        'you', 'your', 'the', 'a', 'an', 'and', 'but', 'because', 'so', 'if', 'when', 'actually', 'well', 'um', 'uh'
+    ];
+
+    const isSentenceIncomplete = (text) => {
+        if (!text) return true;
+        const clean = text.trim().toLowerCase();
+        const words = clean.split(/\s+/);
+        
+        // Single word commands allowed: 'stop', 'pause', 'resume', 'yes', 'haan', 'no', 'nahi', 'bye', 'ok', 'theek'
+        const allowedSingleWords = ['stop', 'ruko', 'chup', 'pause', 'resume', 'yes', 'haan', 'ha', 'no', 'nahi', 'na', 'bye', 'ok', 'theek', 'done', 'sure', 'namaste', 'hello', 'hi'];
+        if (words.length === 1) {
+            if (allowedSingleWords.includes(words[0])) return false;
+            // Short numbers like "999" during phone entry
+            if (/^\d{1,4}$/.test(words[0])) return true;
+            return true; // Single words like "Mujhe", "Mera" should wait for full sentence
+        }
+
+        // Check if last word is an open hanging connective in short phrases (< 5 words)
+        const lastWord = words[words.length - 1];
+        if (INCOMPLETE_CONNECTORS.includes(lastWord) && words.length < 5) {
+            return true;
+        }
+
+        return false;
+    };
+
+    const commitUserVoiceInput = (force = false) => {
         clearTimeout(sttCommitTimer);
+        clearTimeout(pendingIncompleteTimer);
+
         if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
         const prompt = (currentSpeechText + ' ' + lastInterimText).trim();
-        currentSpeechText = '';
-        lastInterimText = '';
 
         if (!prompt || prompt.length < 2) return;
+
+        // If sentence is incomplete (e.g. user said "Mujhe" or "Mera naam" and took a breath), wait for remaining words!
+        if (!force && isSentenceIncomplete(prompt)) {
+            console.log('⏳ Incomplete speech fragment detected ("' + prompt + '"), waiting for user to complete sentence...');
+            pendingIncompleteTimer = setTimeout(() => {
+                commitUserVoiceInput(true); // If user stays silent for another 1800ms, process it
+            }, 1800);
+            return;
+        }
+
+        currentSpeechText = '';
+        lastInterimText = '';
 
         const now = Date.now();
         // Prevent duplicate voice submissions within 3.0s
@@ -860,7 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
                             commitUserVoiceInput();
                         }
-                    }, 850);
+                    }, 1250);
                 }
             };
 
