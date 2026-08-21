@@ -641,11 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 setAgentState('thinking', 'Transcribing (Whisper Large V3 Turbo)...');
                                 const transcribed = await whisperEngine.stopAndTranscribe();
                                 if (transcribed && transcribed.trim().length > 1) {
-                                    currentSpeechText = transcribed.trim();
-                                    lastInterimText = '';
-                                    commitUserVoiceInput(true);
-                                } else {
-                                    commitUserVoiceInput(false);
+                                    commitUserVoiceInput(false, transcribed.trim());
                                 }
                             } else {
                                 commitUserVoiceInput(false);
@@ -815,12 +811,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     };
 
-    const commitUserVoiceInput = (force = false) => {
+    const commitUserVoiceInput = (force = false, directText = null) => {
         clearTimeout(sttCommitTimer);
         clearTimeout(pendingIncompleteTimer);
 
         if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
-        const prompt = (currentSpeechText + ' ' + lastInterimText).trim();
+        const prompt = (directText !== null ? directText : (currentSpeechText + ' ' + lastInterimText)).trim();
 
         if (!prompt || prompt.length < 2) return;
 
@@ -828,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!force && isSentenceIncomplete(prompt)) {
             console.log('⏳ Incomplete speech fragment detected ("' + prompt + '"), waiting for user to complete sentence...');
             pendingIncompleteTimer = setTimeout(() => {
-                commitUserVoiceInput(true); // If user stays silent for another 1800ms, process it
+                commitUserVoiceInput(true, prompt); // If user stays silent, process it
             }, 1800);
             return;
         }
@@ -971,14 +967,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     setAgentState('listening', `Hearing: "${liveHeard}"`);
                 }
 
-                // Dual Trigger: When user pauses speech, debounce and commit
-                if (finalChunk.trim() || interimChunk.trim()) {
-                    clearTimeout(sttCommitTimer);
-                    sttCommitTimer = setTimeout(() => {
-                        if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
-                            commitUserVoiceInput();
-                        }
-                    }, 1250);
+                // Only commit directly from Web Speech API if user chose web-speech mode
+                const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
+                if (sttChoice === 'web-speech') {
+                    if (finalChunk.trim() || interimChunk.trim()) {
+                        clearTimeout(sttCommitTimer);
+                        sttCommitTimer = setTimeout(() => {
+                            if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
+                                commitUserVoiceInput(false);
+                            }
+                        }, 1250);
+                    }
                 }
             };
 

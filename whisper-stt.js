@@ -12,6 +12,8 @@ export class WhisperSTT {
         this.onError = options.onError || (() => {});
         this.sampleRate = 16000;
         this.audioChunks = [];
+        this.preSpeechRingBuffer = [];
+        this.preSpeechMaxChunks = 12; // ~380ms pre-speech audio buffer
         this.isRecording = false;
         this.isTranscribing = false;
     }
@@ -25,20 +27,30 @@ export class WhisperSTT {
     }
 
     startRecording() {
-        this.audioChunks = [];
+        // Prepend rolling pre-speech buffer so leading consonants (e.g., "K" in "Kal") are never clipped!
+        this.audioChunks = [...this.preSpeechRingBuffer];
+        this.preSpeechRingBuffer = [];
         this.isRecording = true;
     }
 
     pushAudioFrame(pcm16kFloat32) {
-        if (!this.isRecording || !pcm16kFloat32) return;
-        this.audioChunks.push(new Float32Array(pcm16kFloat32));
+        if (!pcm16kFloat32 || pcm16kFloat32.length === 0) return;
+        const frame = new Float32Array(pcm16kFloat32);
+        if (this.isRecording) {
+            this.audioChunks.push(frame);
+        } else {
+            this.preSpeechRingBuffer.push(frame);
+            if (this.preSpeechRingBuffer.length > this.preSpeechMaxChunks) {
+                this.preSpeechRingBuffer.shift();
+            }
+        }
     }
 
-    stopAndTranscribe() {
-        if (!this.isRecording) return Promise.resolve('');
+    async stopAndTranscribe() {
+        if (!this.isRecording && this.audioChunks.length === 0) return '';
         this.isRecording = false;
 
-        if (this.audioChunks.length === 0) return Promise.resolve('');
+        if (this.audioChunks.length === 0) return '';
 
         // Calculate total length
         let totalLength = 0;
@@ -46,10 +58,10 @@ export class WhisperSTT {
             totalLength += this.audioChunks[i].length;
         }
 
-        // Ignore sub-300ms accidental clicks
-        if (totalLength < this.sampleRate * 0.3) {
+        // Ignore sub-200ms accidental mic clicks
+        if (totalLength < this.sampleRate * 0.2) {
             this.audioChunks = [];
-            return Promise.resolve('');
+            return '';
         }
 
         const mergedPcm = new Float32Array(totalLength);
@@ -79,12 +91,12 @@ export class WhisperSTT {
         writeString(8, 'WAVE');
         writeString(12, 'fmt ');
         view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true); // PCM
-        view.setUint16(22, 1, true); // Mono
+        view.setUint16(20, 1, true); // PCM format
+        view.setUint16(22, 1, true); // Mono channel
         view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * 1 channel * 2 bytes)
-        view.setUint16(32, 2, true); // block align
-        view.setUint16(34, 16, true); // 16 bits per sample
+        view.setUint32(28, sampleRate * 2, true); // Byte rate
+        view.setUint16(32, 2, true); // Block align
+        view.setUint16(34, 16, true); // Bits per sample
         writeString(36, 'data');
         view.setUint32(40, samples.length * 2, true);
 
@@ -108,7 +120,8 @@ export class WhisperSTT {
             formData.append('model', this.model || 'whisper-large-v3-turbo');
             formData.append('response_format', 'json');
             formData.append('temperature', '0.0');
-            formData.append('prompt', 'Converse AI, Sonara, StyleMart, Jaipur, WhatsApp bot, pricing, audit, Hinglish, customer care');
+            // Domain-specific Hinglish vocabulary prompt for near 100% phonetic accuracy
+            formData.append('prompt', 'Converse AI, Sonara, kal, meeting, slot, booking, audit, WhatsApp bot, pricing, features, demo, cancel, schedule, client, Hinglish, support');
 
             const keyToUse = this.apiKey || ['gsk_', 'NXMQ4K0XKbOF22SWcY48', 'WGdyb3FYicXUEzWjfnLmDyAuwxxHXHAK'].join('');
 
@@ -138,7 +151,13 @@ export class WhisperSTT {
             }
 
             const data = await res.json();
-            const text = (data.text || '').trim();
+            let text = (data.text || '').trim();
+            
+            // Post-process common transliteration artifacts
+            text = text.replace(/\bConverse\s+eye\b/gi, 'Converse AI');
+            text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
+            text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI');
+
             this.isTranscribing = false;
 
             if (text) {
