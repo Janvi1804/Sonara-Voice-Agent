@@ -298,8 +298,10 @@ export class KokoroTTS {
                     this.audioContext.resume().catch(() => {});
                 }
 
-                // Unlock SpeechSynthesis queue
-                window.speechSynthesis.cancel();
+                // Only cancel if nothing is currently speaking (avoid mid-sentence cancellation)
+                if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+                    window.speechSynthesis.cancel();
+                }
                 if (window.speechSynthesis.paused) {
                     window.speechSynthesis.resume();
                 }
@@ -309,46 +311,48 @@ export class KokoroTTS {
 
                 const isDevanagari = /[\u0900-\u097F]/.test(spokenText);
                 const available = window.speechSynthesis.getVoices();
-                const targetVoice = this.resolvedVoice || this.resolveSystemVoice();
                 const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
                 const isMale = voiceConfig.gender === 'male';
 
                 if (isDevanagari) {
-                    const hindiVoices = available.filter(v => 
-                        (v.lang && v.lang.toLowerCase().startsWith('hi')) || 
-                        v.name.toLowerCase().includes('hindi') || 
-                        v.name.toLowerCase().includes('swara') || 
-                        v.name.toLowerCase().includes('kalpana') || 
-                        v.name.toLowerCase().includes('heera') || 
+                    // Hindi voice: prefer Google hi-IN, then any hi-IN, then system default
+                    const hindiVoices = available.filter(v =>
+                        (v.lang && v.lang.toLowerCase().startsWith('hi')) ||
+                        v.name.toLowerCase().includes('hindi') ||
+                        v.name.toLowerCase().includes('swara') ||
+                        v.name.toLowerCase().includes('kalpana') ||
+                        v.name.toLowerCase().includes('heera') ||
                         v.name.toLowerCase().includes('google हिन्दी')
                     );
-                    const matchedHindi = hindiVoices.find(v => !v.name.toLowerCase().includes('male'));
+                    const matchedHindi = hindiVoices.find(v => !v.name.toLowerCase().includes('male'))
+                        || hindiVoices[0];
                     if (matchedHindi) {
                         utterance.voice = matchedHindi;
                         utterance.lang = matchedHindi.lang || 'hi-IN';
-                    } else if (targetVoice) {
-                        utterance.voice = targetVoice;
-                        utterance.lang = targetVoice.lang || 'hi-IN';
                     } else {
                         utterance.lang = 'hi-IN';
                     }
                 } else {
-                    if (targetVoice) {
-                        utterance.voice = targetVoice;
-                        utterance.lang = targetVoice.lang || 'en-US';
+                    // English voice: prefer Google US English, then any en-US, then en-GB, then default
+                    const enVoices = available.filter(v =>
+                        v.lang && (v.lang.toLowerCase().startsWith('en-us') || v.lang.toLowerCase().startsWith('en-gb'))
+                    );
+                    const googleEn = enVoices.find(v => v.name.toLowerCase().includes('google'));
+                    const preferredVoice = googleEn || this.resolvedVoice || enVoices[0] || null;
+                    if (preferredVoice) {
+                        utterance.voice = preferredVoice;
+                        utterance.lang = preferredVoice.lang || 'en-US';
                     } else {
                         utterance.lang = 'en-US';
                     }
                 }
 
-                // Dynamic prosody: slight question elevation for questions (1.04x) for natural human inflection
                 const isQuestion = spokenText.trim().endsWith('?');
                 if (isMale) {
                     utterance.pitch = (voiceConfig.pitch || 0.85) * (isQuestion ? 1.04 : 1.0);
                 } else {
                     utterance.pitch = (voiceConfig.pitch || 1.08) * (isQuestion ? 1.04 : 1.0);
                 }
-
                 utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
 
                 let isCompleted = false;
@@ -371,24 +375,25 @@ export class KokoroTTS {
                     complete();
                 };
 
-                // Chromium bug workaround: Keep alive interval so Chrome doesn't pause mid-sentence
+                // FIX: Reduced keepAlive from 10s → 4s to prevent Chrome mid-sentence cutoff on slower PCs
                 keepAliveTimer = setInterval(() => {
                     if (!isCompleted && window.speechSynthesis.speaking) {
                         window.speechSynthesis.pause();
                         window.speechSynthesis.resume();
-                    } else {
+                    } else if (!window.speechSynthesis.speaking && !isCompleted) {
+                        // Chrome silently stopped — force complete
                         clearInterval(keepAliveTimer);
+                        complete();
                     }
-                }, 10000);
+                }, 4000);
 
-                // Watchdog timeout to prevent speech synthesis hang (tight realistic spoken bound)
-                const estimatedMs = (text.split(' ').length / 2.0) * 1000 + 2000;
-                const maxTimeoutMs = Math.max(4000, Math.min(14000, estimatedMs));
+                // Watchdog: generous bound based on word count, min 6s, max 20s
+                const estimatedMs = (text.split(' ').length / 2.0) * 1000 + 3000;
+                const maxTimeoutMs = Math.max(6000, Math.min(20000, estimatedMs));
                 setTimeout(complete, maxTimeoutMs);
 
-                if (typeof window !== 'undefined') {
-                    window._activeSpeechUtterance = utterance; // Prevent Chrome GC bug
-                }
+                // Prevent Chrome GC from destroying utterance mid-speech
+                window._activeSpeechUtterance = utterance;
                 window.speechSynthesis.speak(utterance);
             } else {
                 const duration = Math.max(1000, (text.split(' ').length / 3) * 1000);
