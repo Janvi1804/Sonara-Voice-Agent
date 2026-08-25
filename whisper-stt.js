@@ -133,16 +133,15 @@ export class WhisperSTT {
         // Known Whisper hallucination phrases on near-silent audio
         const hallucinationPhrases = [
             'thank you', 'thank you very much', 'thank you so much',
-            'thanks for watching', 'subtitles by', 'you', 'and', 'bye',
+            'thanks for watching', 'subtitles by', 'you', 'and',
             'so', 'the end', 'amara org', 'subscribe', 'like and subscribe',
             'thank you for watching', 'thanks', 'body', 'i will',
             'kiregenis sivay', 'nubi sikken', 'torea', 'for the hour',
-            // Additional common Whisper phantom outputs on silence / self-echo
+            // Phantom outputs on silence / self-echo (do NOT include valid user words like hello/yes/no)
             'i m doing', 'i m doing great', 'i promise', 'i promise i m doing',
-            'i m sorry', 'i m fine', 'i m good', 'i m here', 'okay', 'ok',
-            'hmm', 'mm', 'mhm', 'yeah', 'yes', 'no', 'peace', 'hi', 'hello',
+            'i m sorry', 'i m fine', 'i m good', 'i m here', 'peace',
             'see you next time', 'i ll see you next time', 'please subscribe',
-            'thanks for listening', 'goodbye', 'bye bye', 'uh', 'um'
+            'thanks for listening', 'uh', 'um'
         ];
 
         // Known phantom sentence *openers* — filter when the whole (short) utterance starts with these

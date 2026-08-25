@@ -191,10 +191,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isAiSpeaking = false;
         isProcessingUtterance = false;
         if (vadEngine) vadEngine.setAiSpeakingState(false);
-        // Post-TTS mic cooldown: discard mic audio for a short window after the AI stops
-        // speaking, so the TTS tail / room reverb loopback isn't captured and transcribed
-        // as a phantom user utterance (Whisper self-echo hallucination guard).
-        ttsCooldownUntil = Date.now() + 700;
+        // 150ms hardware drain buffer — just enough to clear speaker room reverb tail
+        // without locking out the user's next utterance.
+        ttsCooldownUntil = Date.now() + 150;
 
         ttsEndGraceTimer = setTimeout(() => {
             currentSpeechText = '';
