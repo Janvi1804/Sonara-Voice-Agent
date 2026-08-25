@@ -136,11 +136,26 @@ export class WhisperSTT {
             'thanks for watching', 'subtitles by', 'you', 'and', 'bye',
             'so', 'the end', 'amara org', 'subscribe', 'like and subscribe',
             'thank you for watching', 'thanks', 'body', 'i will',
-            'kiregenis sivay', 'nubi sikken', 'torea', 'for the hour'
+            'kiregenis sivay', 'nubi sikken', 'torea', 'for the hour',
+            // Additional common Whisper phantom outputs on silence / self-echo
+            'i m doing', 'i m doing great', 'i promise', 'i promise i m doing',
+            'i m sorry', 'i m fine', 'i m good', 'i m here', 'okay', 'ok',
+            'hmm', 'mm', 'mhm', 'yeah', 'yes', 'no', 'peace', 'hi', 'hello',
+            'see you next time', 'i ll see you next time', 'please subscribe',
+            'thanks for listening', 'goodbye', 'bye bye', 'uh', 'um'
         ];
 
-        const cleanLatin = clean.replace(/[^\x00-\x7F]/g, '').trim();
-        const isHallucination = hallucinationPhrases.includes(cleanLatin);
+        // Known phantom sentence *openers* — filter when the whole (short) utterance starts with these
+        const hallucinationOpeners = [
+            'i promise', 'i m doing', 'thank you for', 'thanks for',
+            'please subscribe', 'see you', 'i ll see you', 'subtitles'
+        ];
+
+        const cleanLatin = clean.replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim();
+        const wordCount = cleanLatin ? cleanLatin.split(' ').length : 0;
+        const isHallucination = hallucinationPhrases.includes(cleanLatin)
+            // short phantom sentence (<=6 words) that begins with a known filler opener
+            || (wordCount <= 6 && hallucinationOpeners.some(op => cleanLatin.startsWith(op)));
 
         // Repeating stutter pattern (e.g. and the the the)
         const isRepeatingStutter = /(.)(\1){4,}/.test(clean) || /\b(\w+)\s+\1\s+\1\b/.test(clean);
