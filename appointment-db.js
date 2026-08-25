@@ -23,8 +23,52 @@ export class AppointmentDB {
     async init() {
         if (this.isInitialized) return;
         await this.initIndexedDB();
-        await this.loadAll();
+        await this.loadAll();           // Load from local IndexedDB first (fast)
+        await this.loadFromSupabase();  // Then sync from remote Supabase (cross-device)
         this.isInitialized = true;
+    }
+
+    /**
+     * Load all appointments from Supabase (cross-device persistence).
+     * Merges remote records into inMemoryAppointments — remote wins on conflict.
+     */
+    async loadFromSupabase() {
+        try {
+            const res = await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'get_appointments' })
+            });
+            if (!res.ok) return; // Silently skip if DB not configured
+            const data = await res.json();
+            if (!data.success || !Array.isArray(data.appointments)) return;
+
+            // Normalize Supabase flat record → internal format
+            for (const row of data.appointments) {
+                // Supabase stores "date_time" as "YYYY-MM-DD HH:MM AM/PM"
+                const parts = (row.date_time || '').split(' ');
+                const slot_date = parts[0] || '';
+                const slot_time = parts.slice(1).join(' ') || '';
+
+                const record = {
+                    id: row.id,
+                    customer_name: row.customer_name || '',
+                    phone: row.phone || '',
+                    email: row.email || '',
+                    service: row.service || 'Free AI Opportunity Audit',
+                    slot_date,
+                    slot_time,
+                    status: (row.status || 'confirmed').toLowerCase(),
+                    notes: row.notes || '',
+                    created_at: row.created_at || new Date().toISOString(),
+                    updated_at: row.updated_at || new Date().toISOString()
+                };
+                this.inMemoryAppointments.set(record.id, record);
+            }
+            console.log(`[AppointmentDB] Synced ${data.appointments.length} appointment(s) from Supabase.`);
+        } catch (err) {
+            console.warn('[AppointmentDB] Supabase sync skipped:', err.message);
+        }
     }
 
     setPostgresUrl(url) {
@@ -131,30 +175,32 @@ export class AppointmentDB {
         this.inMemoryAppointments.set(apptId, record);
         await this.saveToIndexedDB(record);
 
-        // Remote PostgreSQL sync if connection string configured
-        if (this.postgresUrl) {
-            try {
-                await fetch('/api/db', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'save_appointment',
-                        postgresUrl: this.postgresUrl,
-                        data: {
-                            id: record.id,
-                            customer_name: record.customer_name,
-                            phone: record.phone,
-                            service: record.service,
-                            date_time: `${record.slot_date} ${record.slot_time}`,
-                            status: record.status,
-                            notes: record.notes
-                        }
-                    })
-                });
-            } catch (err) {
-                console.warn('Postgres appointment sync note:', err);
-            }
+        // Remote PostgreSQL sync — always attempt via Vercel env var (POSTGRES_URL)
+        // Client postgresUrl is optional fallback for self-hosted installs
+        try {
+            await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save_appointment',
+                    postgresUrl: this.postgresUrl || undefined,
+                    data: {
+                        id: record.id,
+                        customer_name: record.customer_name,
+                        phone: record.phone,
+                        service: record.service,
+                        date_time: `${record.slot_date} ${record.slot_time}`,
+                        status: record.status,
+                        notes: record.notes
+                    }
+                })
+            });
+        } catch (err) {
+            console.warn('[AppointmentDB] Supabase save note:', err.message);
         }
+
+        // Fire email + WhatsApp notifications (non-blocking)
+        this.notifyBooking(record).catch(() => {});
 
         return {
             success: true,
@@ -162,6 +208,30 @@ export class AppointmentDB {
             appointment: record,
             message: `Appointment ${apptId} successfully booked for ${record.customer_name} on ${normDate} at ${normTime} for ${service}.`
         };
+    }
+
+    /**
+     * Fire-and-forget: send email + WhatsApp notifications to customer and admin.
+     */
+    async notifyBooking(record) {
+        try {
+            await fetch('/api/notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customerName:  record.customer_name,
+                    customerPhone: record.phone,
+                    customerEmail: record.email,
+                    appointmentId: record.id,
+                    date:          record.slot_date,
+                    time:          record.slot_time,
+                    service:       record.service
+                })
+            });
+            console.log('[AppointmentDB] Notifications dispatched for', record.id);
+        } catch (err) {
+            console.warn('[AppointmentDB] Notification dispatch failed:', err.message);
+        }
     }
 
     /**
