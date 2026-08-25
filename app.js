@@ -1416,8 +1416,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
         // Read from Settings field first, fallback to active Groq key
-        const apiKey = (txtLlmApiKey?.value.trim()) || (import.meta.env.VITE_API_KEY || DEFAULT_GROQ_KEY);
-        const hfToken = (txtHfToken?.value.trim()) || (import.meta.env.VITE_HF_TOKEN || '');
+        const viteEnv = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
+        const apiKey = (txtLlmApiKey?.value.trim()) || (viteEnv.VITE_API_KEY || DEFAULT_GROQ_KEY);
+        const hfToken = (txtHfToken?.value.trim()) || (viteEnv.VITE_HF_TOKEN || '');
         const provider = selLlmProvider ? selLlmProvider.value : 'groq';
         const model = selLlmModel ? selLlmModel.value : 'openai/gpt-oss-120b';
         
