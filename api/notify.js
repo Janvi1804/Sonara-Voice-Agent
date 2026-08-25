@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Vercel Serverless Function: /api/notify
  * Sends Email (Resend) + WhatsApp (Twilio) notifications to both customer and admin.
  *
@@ -23,33 +23,42 @@ async function sendEmail({ to, subject, html }) {
         body: JSON.stringify({ from: 'Sonara by Converse AI <onboarding@resend.dev>', to: [to], subject, html })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(Resend error: );
+    if (!res.ok) throw new Error(`Resend error: ${JSON.stringify(data)}`);
     return data;
 }
 
 async function sendWhatsApp({ to, body }) {
-    const sid   = process.env.TWILIO_ACCOUNT_SID;
-    const token = process.env.TWILIO_AUTH_TOKEN;
-    const from  = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-    if (!sid || !token) { console.warn('[Notify] Twilio not set - skipping WhatsApp to', to); return { skipped: true }; }
+    const accountSid = process.env.TWILIO_ACCOUNT_SID; // AC... (required for URL)
+    const apiKeySid  = process.env.TWILIO_API_KEY_SID;  // SK... (API Key auth)
+    const apiSecret  = process.env.TWILIO_API_KEY_SECRET;
+    const authToken  = process.env.TWILIO_AUTH_TOKEN;
+    const from       = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+
+    if (!accountSid) { console.warn('[Notify] TWILIO_ACCOUNT_SID not set - skipping WhatsApp to', to); return { skipped: true }; }
+
+    // Use API Key auth (SK) if available, else fall back to Auth Token
+    const username = apiKeySid  || accountSid;
+    const password = apiSecret  || authToken;
+    if (!password) { console.warn('[Notify] No Twilio auth (TWILIO_AUTH_TOKEN or TWILIO_API_KEY_SECRET) - skipping WhatsApp'); return { skipped: true }; }
+
     const normalized = String(to).replace(/[^0-9+]/g, '');
-    const waTo = whatsapp:;
+    const waTo = `whatsapp:${normalized.startsWith('+') ? normalized : '+91' + normalized}`;
     const params = new URLSearchParams({ From: from, To: waTo, Body: body });
-    const res = await fetch(https://api.twilio.com/2010-04-01/Accounts//Messages.json, {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
         method: 'POST',
         headers: {
-            'Authorization': 'Basic ' + Buffer.from(${sid}:).toString('base64'),
+            'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64'),
             'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: params.toString()
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(Twilio error: );
+    if (!res.ok) throw new Error(`Twilio error: ${JSON.stringify(data)}`);
     return data;
 }
 
 function customerEmailHtml({ customerName, appointmentId, date, time, service }) {
-    return <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0f0f1a;color:#e0e0e0;border-radius:12px;overflow:hidden">
+    return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0f0f1a;color:#e0e0e0;border-radius:12px;overflow:hidden">
       <div style="background:linear-gradient(135deg,#00d4ff,#7b2ff7);padding:24px;text-align:center">
         <h1 style="margin:0;color:#fff;font-size:24px">Appointment Confirmed!</h1>
         <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Sonara by Converse AI</p>
