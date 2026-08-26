@@ -174,7 +174,10 @@ export default async function handler(req, res) {
                 results.customerWA = await sendWhatsApp({
                     to: customerPhone,
                     body: customerWA({ customerName, appointmentId, date, time, service }),
-                    contentVariables: { '1': customerName, '2': `${date} at ${time}`, '3': service }
+                    contentVariables: {
+                        '1': `${date} @ ${time} for ${customerName} (Phone: ${customerPhone})`,
+                        '2': `${service} [ID: ${appointmentId}] | Email: ${customerEmail || 'N/A'}`
+                    }
                 });
             } catch(e) {
                 results.customerWAError = e.message;
@@ -187,7 +190,10 @@ export default async function handler(req, res) {
             results.adminWA = await sendWhatsApp({
                 to: ADMIN_WHATSAPP,
                 body: adminWA({ customerName, phone: customerPhone, appointmentId, date, time, service }),
-                contentVariables: { '1': customerName, '2': `${date} at ${time}`, '3': service }
+                contentVariables: {
+                    '1': `${date} @ ${time} for ${customerName} (Phone: ${customerPhone || 'N/A'})`,
+                    '2': `${service} [ID: ${appointmentId}] | Email: ${customerEmail || 'N/A'}`
+                }
             });
         } catch(e) {
             results.adminWAError = e.message;
