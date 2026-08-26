@@ -30,12 +30,13 @@ async function sendEmail({ to, subject, html }) {
     return data;
 }
 
-async function sendWhatsApp({ to, body }) {
+async function sendWhatsApp({ to, body, contentSid, contentVariables }) {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const apiKeySid  = process.env.TWILIO_API_KEY_SID;
     const apiSecret  = process.env.TWILIO_API_KEY_SECRET;
     const authToken  = process.env.TWILIO_AUTH_TOKEN;
-    const from       = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+17373212163';
+    const from       = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+17372212163';
+    const defaultContentSid = process.env.TWILIO_CONTENT_SID || 'HXfe5ab5f00277942d4d4200328b4d403c';
 
     if (!accountSid) {
         console.warn('[Notify] TWILIO_ACCOUNT_SID not set - skipping WhatsApp to', to);
@@ -51,7 +52,20 @@ async function sendWhatsApp({ to, body }) {
 
     const normalized = String(to).replace(/[^0-9+]/g, '');
     const waTo = `whatsapp:${normalized.startsWith('+') ? normalized : '+91' + normalized}`;
-    const params = new URLSearchParams({ From: from, To: waTo, Body: body });
+    
+    // Prefer ContentSid template (required for Trial and business outbound)
+    const activeContentSid = contentSid || defaultContentSid;
+    const params = new URLSearchParams({ From: from, To: waTo });
+    
+    if (activeContentSid) {
+        params.append('ContentSid', activeContentSid);
+        if (contentVariables) {
+            params.append('ContentVariables', typeof contentVariables === 'string' ? contentVariables : JSON.stringify(contentVariables));
+        }
+    } else if (body) {
+        params.append('Body', body);
+    }
+
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
         method: 'POST',
         headers: {
@@ -159,7 +173,8 @@ export default async function handler(req, res) {
             try {
                 results.customerWA = await sendWhatsApp({
                     to: customerPhone,
-                    body: customerWA({ customerName, appointmentId, date, time, service })
+                    body: customerWA({ customerName, appointmentId, date, time, service }),
+                    contentVariables: { '1': customerName, '2': `${date} at ${time}`, '3': service }
                 });
             } catch(e) {
                 results.customerWAError = e.message;
@@ -171,7 +186,8 @@ export default async function handler(req, res) {
         try {
             results.adminWA = await sendWhatsApp({
                 to: ADMIN_WHATSAPP,
-                body: adminWA({ customerName, phone: customerPhone, appointmentId, date, time, service })
+                body: adminWA({ customerName, phone: customerPhone, appointmentId, date, time, service }),
+                contentVariables: { '1': customerName, '2': `${date} at ${time}`, '3': service }
             });
         } catch(e) {
             results.adminWAError = e.message;
