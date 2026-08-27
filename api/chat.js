@@ -305,7 +305,7 @@ export default async function handler(req, res) {
 
         // --- 1. Groq Cloud Engine ---
         if (groqApiKey) {
-            const targetGroq = 'openai/gpt-oss-120b';
+            const targetGroq = 'llama-3.3-70b-versatile';
             try {
                 const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
