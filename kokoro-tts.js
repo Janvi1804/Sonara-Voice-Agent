@@ -278,154 +278,165 @@ export class KokoroTTS {
     }
 
     /**
-     * Synthesize and play sentence with strictly consistent locked voice
+     * Synthesize and play sentence using Sarvam TTS (primary) with Web Speech API fallback
      */
     speakSentence(text) {
-        return new Promise((resolve) => {
-            if (this.isInterrupted) {
-                resolve();
-                return;
-            }
+        return new Promise(async (resolve) => {
+            if (this.isInterrupted) { resolve(); return; }
 
             const spokenText = this.humanizeSpokenText(text);
-            if (!spokenText) {
-                resolve();
-                return;
+            if (!spokenText) { resolve(); return; }
+
+            // ── Sarvam TTS (Primary Engine) ──────────────────────────────────────
+            try {
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                }
+
+                const ttsRes = await fetch('/api/sarvam-tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: spokenText })
+                });
+
+                if (!ttsRes.ok) {
+                    const err = await ttsRes.text();
+                    throw new Error('Sarvam TTS failed: ' + err);
+                }
+
+                const arrayBuffer = await ttsRes.arrayBuffer();
+
+                if (this.isInterrupted) { resolve(); return; }
+
+                const audioCtx = this.audioContext || new AudioContext();
+                const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+
+                if (this.isInterrupted) { resolve(); return; }
+
+                const source = audioCtx.createBufferSource();
+                source.buffer = decoded;
+                this.activeSource = source;
+
+                // Connect through gain → analyser → destination
+                if (this.gainNode && this.analyser) {
+                    source.connect(this.gainNode);
+                } else {
+                    source.connect(audioCtx.destination);
+                }
+
+                source.onended = () => {
+                    this.activeSource = null;
+                    resolve();
+                };
+
+                source.start(0);
+                console.log('[TTS] Sarvam playing:', spokenText.substring(0, 60));
+                return; // Resolved via onended
+
+            } catch (sarvamErr) {
+                console.warn('[TTS] Sarvam failed, falling back to Web Speech API:', sarvamErr.message);
             }
 
-            if ('speechSynthesis' in window) {
-                if (this.audioContext && this.audioContext.state === 'suspended') {
-                    this.audioContext.resume().catch(() => {});
-                }
+            // ── Web Speech API Fallback ───────────────────────────────────────────
+            if (!('speechSynthesis' in window)) { resolve(); return; }
 
-                // Only cancel if nothing is currently speaking (avoid mid-sentence cancellation)
-                if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
-                    window.speechSynthesis.cancel();
-                }
-                if (window.speechSynthesis.paused) {
+            if (this.audioContext && this.audioContext.state === 'suspended') {
+                this.audioContext.resume().catch(() => {});
+            }
+
+            if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+                window.speechSynthesis.cancel();
+            }
+            if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); }
+
+            const utterance = new SpeechSynthesisUtterance(spokenText);
+            this._activeUtterance = utterance;
+
+            const isDevanagari = /[\u0900-\u097F]/.test(spokenText);
+            const available = window.speechSynthesis.getVoices();
+            const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
+            const isMale = voiceConfig.gender === 'male';
+
+            if (isDevanagari) {
+                const hindiVoices = available.filter(v =>
+                    (v.lang && v.lang.toLowerCase().startsWith('hi')) ||
+                    v.name.toLowerCase().includes('hindi') ||
+                    v.name.toLowerCase().includes('swara')
+                );
+                const matchedHindi = hindiVoices.find(v => !v.name.toLowerCase().includes('male')) || hindiVoices[0];
+                if (matchedHindi) { utterance.voice = matchedHindi; utterance.lang = matchedHindi.lang || 'hi-IN'; }
+                else { utterance.lang = 'hi-IN'; }
+            } else {
+                const enVoices = available.filter(v => v.lang && (v.lang.toLowerCase().startsWith('en-us') || v.lang.toLowerCase().startsWith('en-in')));
+                const preferred = enVoices.find(v => {
+                    const n = v.name.toLowerCase();
+                    return n.includes('google') && (isMale ? !n.includes('female') : !n.includes('male'));
+                }) || enVoices.find(v => isMale ? !v.name.toLowerCase().includes('female') : !v.name.toLowerCase().includes('male')) || enVoices[0];
+                if (preferred) { utterance.voice = preferred; utterance.lang = preferred.lang; }
+                else { utterance.lang = 'en-US'; }
+            }
+
+            utterance.pitch = voiceConfig.pitch || 1.0;
+            utterance.rate  = (voiceConfig.rate || 1.0) * (this.speed || 1.05);
+            utterance.volume = 1.0;
+
+            let watchdog;
+            const WATCHDOG_MS = Math.max(6000, spokenText.length * 80);
+
+            const cleanup = () => { clearTimeout(watchdog); };
+
+            utterance.onend = () => { cleanup(); resolve(); };
+            utterance.onerror = (e) => {
+                if (e.error === 'interrupted' || e.error === 'canceled') { cleanup(); resolve(); return; }
+                console.warn('[TTS] SpeechSynthesis error:', e.error);
+                cleanup(); resolve();
+            };
+
+            // Keepalive for Chrome TTS bug
+            const keepAlive = setInterval(() => {
+                if (window.speechSynthesis.speaking) {
+                    window.speechSynthesis.pause();
                     window.speechSynthesis.resume();
                 }
+            }, 4000);
 
-                const utterance = new SpeechSynthesisUtterance(spokenText);
-                this._activeUtterance = utterance;
+            watchdog = setTimeout(() => {
+                clearInterval(keepAlive);
+                window.speechSynthesis.cancel();
+                resolve();
+            }, WATCHDOG_MS);
 
-                const isDevanagari = /[\u0900-\u097F]/.test(spokenText);
-                const available = window.speechSynthesis.getVoices();
-                const voiceConfig = this.voices[this.voice] || this.voices['af_heart'];
-                const isMale = voiceConfig.gender === 'male';
+            utterance.onend = () => { clearInterval(keepAlive); cleanup(); resolve(); };
+            utterance.onerror = (e) => {
+                clearInterval(keepAlive);
+                if (e.error !== 'interrupted' && e.error !== 'canceled') console.warn('[TTS] error:', e.error);
+                cleanup(); resolve();
+            };
 
-                if (isDevanagari) {
-                    // Hindi voice: prefer Google hi-IN, then any hi-IN, then system default
-                    const hindiVoices = available.filter(v =>
-                        (v.lang && v.lang.toLowerCase().startsWith('hi')) ||
-                        v.name.toLowerCase().includes('hindi') ||
-                        v.name.toLowerCase().includes('swara') ||
-                        v.name.toLowerCase().includes('kalpana') ||
-                        v.name.toLowerCase().includes('heera') ||
-                        v.name.toLowerCase().includes('google हिन्दी')
-                    );
-                    const matchedHindi = hindiVoices.find(v => !v.name.toLowerCase().includes('male'))
-                        || hindiVoices[0];
-                    if (matchedHindi) {
-                        utterance.voice = matchedHindi;
-                        utterance.lang = matchedHindi.lang || 'hi-IN';
-                    } else {
-                        utterance.lang = 'hi-IN';
-                    }
-                } else {
-                    // English voice: prefer Google US English, then any en-US, then en-GB, then default
-                    const enVoices = available.filter(v =>
-                        v.lang && (v.lang.toLowerCase().startsWith('en-us') || v.lang.toLowerCase().startsWith('en-gb'))
-                    );
-                    const googleEn = enVoices.find(v => v.name.toLowerCase().includes('google'));
-                    const preferredVoice = googleEn || this.resolvedVoice || enVoices[0] || null;
-                    if (preferredVoice) {
-                        utterance.voice = preferredVoice;
-                        utterance.lang = preferredVoice.lang || 'en-US';
-                    } else {
-                        utterance.lang = 'en-US';
-                    }
-                }
-
-                const isQuestion = spokenText.trim().endsWith('?');
-                if (isMale) {
-                    utterance.pitch = (voiceConfig.pitch || 0.85) * (isQuestion ? 1.04 : 1.0);
-                } else {
-                    utterance.pitch = (voiceConfig.pitch || 1.08) * (isQuestion ? 1.04 : 1.0);
-                }
-                utterance.rate = (voiceConfig.rate || 1.0) * (this.speed || 1.0);
-
-                let isCompleted = false;
-                let keepAliveTimer = null;
-
-                const complete = () => {
-                    if (keepAliveTimer) clearInterval(keepAliveTimer);
-                    if (!isCompleted) {
-                        isCompleted = true;
-                        this._activeUtterance = null;
-                        resolve();
-                    }
-                };
-
-                utterance.onend = complete;
-                utterance.onerror = (e) => {
-                    if (e.error !== 'interrupted' && e.error !== 'canceled') {
-                        console.warn('Speech synthesis note:', e.error);
-                    }
-                    complete();
-                };
-
-                // FIX: Reduced keepAlive from 10s → 4s to prevent Chrome mid-sentence cutoff on slower PCs
-                keepAliveTimer = setInterval(() => {
-                    if (!isCompleted && window.speechSynthesis.speaking) {
-                        window.speechSynthesis.pause();
-                        window.speechSynthesis.resume();
-                    } else if (!window.speechSynthesis.speaking && !isCompleted) {
-                        // Chrome silently stopped — force complete
-                        clearInterval(keepAliveTimer);
-                        complete();
-                    }
-                }, 4000);
-
-                // Watchdog: generous bound based on word count, min 6s, max 20s
-                const estimatedMs = (text.split(' ').length / 2.0) * 1000 + 3000;
-                const maxTimeoutMs = Math.max(6000, Math.min(20000, estimatedMs));
-                setTimeout(complete, maxTimeoutMs);
-
-                // Prevent Chrome GC from destroying utterance mid-speech
-                window._activeSpeechUtterance = utterance;
-                window.speechSynthesis.speak(utterance);
-            } else {
-                const duration = Math.max(1000, (text.split(' ').length / 3) * 1000);
-                setTimeout(resolve, duration);
-            }
+            window.speechSynthesis.speak(utterance);
+            console.log('[TTS] Web Speech fallback playing:', spokenText.substring(0, 60));
         });
     }
 
-    /**
-     * Instantly interrupt / cancel ongoing speech (Barge-in)
-     */
     interrupt() {
         this.isInterrupted = true;
+        this.queue = [];
+        this.textBuffer = '';
+        if (this.activeSource) {
+            try { this.activeSource.stop(); } catch (_) {}
+            this.activeSource = null;
+        }
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+    }
+
+    reset() {
+        this.isInterrupted = false;
         this.isPlaying = false;
         this.queue = [];
         this.textBuffer = '';
-
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-        }
-
-        if (this.activeSource) {
-            try {
-                this.activeSource.stop();
-            } catch (e) {}
-            this.activeSource = null;
-        }
-
-        this.onEnd();
-        setTimeout(() => {
-            this.isInterrupted = false;
-        }, 100);
+        this.activeSource = null;
     }
 }
 

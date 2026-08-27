@@ -213,51 +213,50 @@ export class WhisperSTT {
         try {
             const formData = new FormData();
             formData.append('file', wavBlob, 'user_speech.wav');
-            formData.append('model', this.model || 'whisper-large-v3-turbo');
-            // verbose_json: verified supported by Groq Whisper API (2026-08-25).
-            // Returns segments with no_speech_prob and avg_logprob per segment.
-            // no_speech_prob may be 0.0 for synthetic noise (tested), so treat as one signal only.
-            formData.append('response_format', 'verbose_json');
-            formData.append('temperature', '0.0');
-            if (this.language) formData.append('language', this.language);
+            // Sarvam STT params
+            formData.append('language_code', this.language === 'hi' ? 'hi-IN' : 'en-IN');
+            formData.append('model', 'saarika:v2');
+            formData.append('with_timestamps', 'false');
 
-            // Concise keyword and context priming for Hinglish/Hindi
-            formData.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish.');
-
-            const keyToUse = this.apiKey ? this.apiKey.trim() : '';
-            const headers = {};
-            if (keyToUse) headers['Authorization'] = 'Bearer ' + keyToUse;
-
-            // Primary: Vercel serverless proxy (CORS-safe, uses server-side GROQ_API_KEY)
+            // Primary: Sarvam STT via /api/sarvam-stt proxy
             let res = null;
             try {
-                res = await fetch('/api/transcribe', { method: 'POST', headers, body: formData });
-            } catch (proxyErr) {
-                console.warn('[STT] Proxy error:', proxyErr.message);
+                res = await fetch('/api/sarvam-stt', { method: 'POST', body: formData });
+                if (res.ok) {
+                    console.log('[STT] Using Sarvam saarika:v2');
+                }
+            } catch (sarvamErr) {
+                console.warn('[STT] Sarvam proxy error, falling back to Whisper:', sarvamErr.message);
             }
 
-            // Fallback: direct Groq API (only if user provided their own key)
-            if ((!res || !res.ok) && keyToUse) {
+            // Fallback: Groq Whisper (if Sarvam fails)
+            if (!res || !res.ok) {
+                console.warn('[STT] Sarvam failed (status ' + (res?.status) + '), falling back to Groq Whisper');
+                const fallbackForm = new FormData();
+                fallbackForm.append('file', wavBlob, 'user_speech.wav');
+                fallbackForm.append('model', 'whisper-large-v3-turbo');
+                fallbackForm.append('response_format', 'verbose_json');
+                fallbackForm.append('temperature', '0.0');
+                if (this.language) fallbackForm.append('language', this.language);
+                fallbackForm.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish.');
+                const keyToUse = this.apiKey ? this.apiKey.trim() : '';
+                const headers = keyToUse ? { 'Authorization': 'Bearer ' + keyToUse } : {};
                 try {
-                    res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + keyToUse },
-                        body: formData
-                    });
-                } catch (directErr) {
-                    console.warn('[STT] Direct fetch error:', directErr.message);
+                    res = await fetch('/api/transcribe', { method: 'POST', headers, body: fallbackForm });
+                } catch (proxyErr) {
+                    console.warn('[STT] Whisper proxy error:', proxyErr.message);
                 }
             }
 
             if (!res || !res.ok) {
                 const errJson = res ? await res.json().catch(() => ({})) : {};
-                throw new Error(errJson.error?.message || errJson.error || 'Whisper HTTP ' + (res ? res.status : 'Network Error'));
+                throw new Error(errJson.error?.message || errJson.error || 'STT HTTP ' + (res ? res.status : 'Network Error'));
             }
 
             const data = await res.json();
             let text = (data.text || '').trim();
 
-            // Extract segment-level metadata (from verbose_json)
+            // Extract segment-level metadata if available (Whisper verbose_json)
             const seg = (data.segments && data.segments.length > 0) ? data.segments[0] : null;
             const noSpeechProb = seg ? (seg.no_speech_prob || 0) : 0;
             const avgLogProb   = seg ? (seg.avg_logprob   || 0) : 0;
