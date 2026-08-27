@@ -31,7 +31,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
                 inputs: [text.trim()],
                 target_language_code: detectedLang,
-                speaker: speaker || 'shubh',
+                speaker: speaker || 'karun',
                 pitch: pitch !== undefined ? pitch : 0,
                 pace: pace !== undefined ? pace : 1.1,
                 loudness: 1.5,
