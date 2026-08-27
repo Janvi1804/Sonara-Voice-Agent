@@ -217,33 +217,35 @@ export class WhisperSTT {
             formData.append('language_code', this.language === 'hi' ? 'hi-IN' : 'en-IN');
             formData.append('model', 'saarika:v2');
 
-            // Primary: Sarvam STT via /api/sarvam-stt proxy
+            // Primary: Groq Whisper large-v3-turbo (fast, accurate, direct)
             let res = null;
             try {
-                res = await fetch('/api/sarvam-stt', { method: 'POST', body: formData });
-                if (res.ok) {
-                    console.log('[STT] Using Sarvam saarika:v2');
-                }
-            } catch (sarvamErr) {
-                console.warn('[STT] Sarvam proxy error, falling back to Whisper:', sarvamErr.message);
-            }
-
-            // Fallback: Groq Whisper (if Sarvam fails)
-            if (!res || !res.ok) {
-                console.warn('[STT] Sarvam failed (status ' + (res?.status) + '), falling back to Groq Whisper');
-                const fallbackForm = new FormData();
-                fallbackForm.append('file', wavBlob, 'user_speech.wav');
-                fallbackForm.append('model', 'whisper-large-v3-turbo');
-                fallbackForm.append('response_format', 'verbose_json');
-                fallbackForm.append('temperature', '0.0');
-                if (this.language) fallbackForm.append('language', this.language);
-                fallbackForm.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish.');
+                const whisperForm = new FormData();
+                whisperForm.append('file', wavBlob, 'user_speech.wav');
+                whisperForm.append('model', 'whisper-large-v3-turbo');
+                whisperForm.append('response_format', 'verbose_json');
+                whisperForm.append('temperature', '0.0');
+                if (this.language) whisperForm.append('language', this.language);
+                whisperForm.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish.');
                 const keyToUse = this.apiKey ? this.apiKey.trim() : '';
                 const headers = keyToUse ? { 'Authorization': 'Bearer ' + keyToUse } : {};
+                res = await fetch('/api/transcribe', { method: 'POST', headers, body: whisperForm });
+                if (res.ok) console.log('[STT] Using Groq Whisper large-v3-turbo');
+            } catch (whisperErr) {
+                console.warn('[STT] Whisper error, falling back to Sarvam:', whisperErr.message);
+            }
+
+            // Fallback: Sarvam saarika:v2
+            if (!res || !res.ok) {
+                console.warn('[STT] Whisper failed, falling back to Sarvam saarika:v2');
+                const sarvamForm = new FormData();
+                sarvamForm.append('file', wavBlob, 'user_speech.wav');
+                sarvamForm.append('language_code', this.language === 'hi' ? 'hi-IN' : 'en-IN');
+                sarvamForm.append('model', 'saarika:v2');
                 try {
-                    res = await fetch('/api/transcribe', { method: 'POST', headers, body: fallbackForm });
-                } catch (proxyErr) {
-                    console.warn('[STT] Whisper proxy error:', proxyErr.message);
+                    res = await fetch('/api/sarvam-stt', { method: 'POST', body: sarvamForm });
+                } catch (sarvamErr) {
+                    console.warn('[STT] Sarvam fallback error:', sarvamErr.message);
                 }
             }
 

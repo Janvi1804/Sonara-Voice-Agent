@@ -32,12 +32,12 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 text: text.trim(),
-                model_id: 'eleven_multilingual_v2',
+                model_id: 'eleven_turbo_v2_5',    // turbo = ~200ms latency vs 1500ms for multilingual
                 voice_settings: {
-                    stability: 0.35,          // Lower = more expressive & natural variation
-                    similarity_boost: 0.80,   // High = consistent voice character
-                    style: 0.40,              // Adds human expressiveness & emotion
-                    use_speaker_boost: true   // Enhances clarity and presence
+                    stability: 0.35,
+                    similarity_boost: 0.80,
+                    style: 0.30,
+                    use_speaker_boost: true
                 }
             })
 
