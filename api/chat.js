@@ -265,7 +265,7 @@ export default async function handler(req, res) {
             customUrl = '',
             ragEnabled = true,
             temperature = 0.65,
-            max_tokens = 300
+            max_tokens = 130
         } = body;
 
         const hfToken = clientHfToken || process.env.VITE_HF_TOKEN || process.env.HF_TOKEN || '';
@@ -287,7 +287,7 @@ export default async function handler(req, res) {
             `GREETING RESPONSE: When greeted with "Hello", "Hi", or "Namaste", reply warmly and directly: "Hello! Welcome to Converse AI. How can I help you automate your customer support, voice bots, or WhatsApp workflows today?" Never combine awkward robotic fillers like "Achha! Bilkul". ` +
             `Verified Results: StyleMart India (3x repeat purchase revenue, 65% support cost reduction), LearnSphere (doubled enrolments in 90 days), CareFirst Clinics (55% drop in no-shows). ` +
             `Official Contact: email contact@theconverseai.com, phone +91-9982323333. When asked for contact, state these exact details. ` +
-            `Keep responses strictly to 1-2 punchy, spoken sentences, always ending with a warm, relevant follow-up question. ` +
+            `RESPONSE LENGTH — STRICT RULE: Give MAXIMUM 2 short spoken sentences per reply. Voice responses must be brief and direct — no lists, no lengthy explanations. Say exactly what the user needs to know, then ask ONE follow-up question. If the answer needs more detail, summarize in 1 sentence and offer to elaborate. ` +
             `CRITICAL RULE: NEVER output <think> tags, internal thoughts, bullet points, or markdown. Always speak in full, natural human sentences. ` +
             `APPOINTMENT BOOKING: Ask for the customer's 10-digit phone number before confirming. If a slot is booked or occupied, politely state that this slot is already taken and offer alternative open slots. Never confirm an already booked slot. ` +
             `\n${realTimeContext}${ragContext}`;
@@ -316,7 +316,7 @@ export default async function handler(req, res) {
                     body: JSON.stringify({
                         model: targetGroq,
                         messages: enrichedMessages,
-                        max_completion_tokens: 450,
+                        max_completion_tokens: 130,
                         temperature: 0.65
                     })
                 });
