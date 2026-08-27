@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Vercel Serverless Function: /api/sarvam-stt
  * Proxy for Sarvam AI Speech-to-Text (saarika:v2 model)
  * Hindi, English, Hinglish transcription
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
     try {
-        const apiKey = process.env.SARVAM_API_KEY || 'sk_25atwi6q_NdW6xeXjxf8exrTGOO8r5GgQ';
+        const apiKey = process.env.SARVAM_API_KEY || 'sk_fn685v3d_SvgbWzdtCiwETa2jCt1WYIBz';
 
         // Buffer incoming multipart request
         const chunks = [];

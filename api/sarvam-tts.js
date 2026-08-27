@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
         if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
 
-        const apiKey = process.env.SARVAM_API_KEY || 'sk_25atwi6q_NdW6xeXjxf8exrTGOO8r5GgQ';
+        const apiKey = process.env.SARVAM_API_KEY || 'sk_fn685v3d_SvgbWzdtCiwETa2jCt1WYIBz';
 
         // Detect language if not specified: Hindi/Hinglish -> hi-IN, else en-IN
         const detectedLang = language_code || (containsHindi(text) ? 'hi-IN' : 'en-IN');
