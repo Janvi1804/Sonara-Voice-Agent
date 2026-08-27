@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Vercel Serverless Function: /api/sarvam-tts
  * Proxy for Sarvam AI Text-to-Speech (bulbul:v2 model)
  * Supports Hindi, English, Hinglish
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
                 inputs: [text.trim()],
                 target_language_code: detectedLang,
-                speaker: speaker || 'meera',
+                speaker: speaker || 'anushka',
                 pitch: pitch !== undefined ? pitch : 0,
                 pace: pace !== undefined ? pace : 1.1,
                 loudness: 1.5,

@@ -216,7 +216,6 @@ export class WhisperSTT {
             // Sarvam STT params
             formData.append('language_code', this.language === 'hi' ? 'hi-IN' : 'en-IN');
             formData.append('model', 'saarika:v2');
-            formData.append('with_timestamps', 'false');
 
             // Primary: Sarvam STT via /api/sarvam-stt proxy
             let res = null;
