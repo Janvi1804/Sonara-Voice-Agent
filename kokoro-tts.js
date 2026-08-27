@@ -287,13 +287,13 @@ export class KokoroTTS {
             const spokenText = this.humanizeSpokenText(text);
             if (!spokenText) { resolve(); return; }
 
-            // ── Sarvam TTS (Primary Engine) ──────────────────────────────────────
+            // ── ElevenLabs TTS (Primary Engine) ──────────────────────────────────
             try {
                 if (this.audioContext && this.audioContext.state === 'suspended') {
                     await this.audioContext.resume();
                 }
 
-                const ttsRes = await fetch('/api/sarvam-tts', {
+                const ttsRes = await fetch('/api/elevenlabs-tts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: spokenText })
@@ -301,7 +301,7 @@ export class KokoroTTS {
 
                 if (!ttsRes.ok) {
                     const err = await ttsRes.text();
-                    throw new Error('Sarvam TTS failed: ' + err);
+                    throw new Error('ElevenLabs TTS failed: ' + err);
                 }
 
                 const arrayBuffer = await ttsRes.arrayBuffer();
@@ -330,12 +330,37 @@ export class KokoroTTS {
                 };
 
                 source.start(0);
-                console.log('[TTS] Sarvam playing:', spokenText.substring(0, 60));
+                console.log('[TTS] ElevenLabs playing:', spokenText.substring(0, 60));
                 return; // Resolved via onended
 
-            } catch (sarvamErr) {
-                console.warn('[TTS] Sarvam failed, falling back to Web Speech API:', sarvamErr.message);
+            } catch (elErr) {
+                console.warn('[TTS] ElevenLabs failed, falling back to Web Speech API:', elErr.message);
             }
+
+            /* ── Sarvam TTS (Commented out — replaced by ElevenLabs) ──────────────
+            try {
+                const ttsRes = await fetch('/api/sarvam-tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: spokenText })
+                });
+                if (!ttsRes.ok) throw new Error('Sarvam TTS failed');
+                const arrayBuffer = await ttsRes.arrayBuffer();
+                const audioCtx = this.audioContext || new AudioContext();
+                const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+                const source = audioCtx.createBufferSource();
+                source.buffer = decoded;
+                this.activeSource = source;
+                if (this.gainNode && this.analyser) source.connect(this.gainNode);
+                else source.connect(audioCtx.destination);
+                source.onended = () => { this.activeSource = null; resolve(); };
+                source.start(0);
+                return;
+            } catch (sarvamErr) {
+                console.warn('[TTS] Sarvam failed:', sarvamErr.message);
+            }
+            ─────────────────────────────────────────────────────────────────────── */
+
 
             // ── Web Speech API Fallback ───────────────────────────────────────────
             if (!('speechSynthesis' in window)) { resolve(); return; }
