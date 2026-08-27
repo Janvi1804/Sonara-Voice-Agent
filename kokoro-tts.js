@@ -445,6 +445,7 @@ export class KokoroTTS {
 
     interrupt() {
         this.isInterrupted = true;
+        this.isPlaying = false;
         this.queue = [];
         this.textBuffer = '';
         if (this.activeSource) {
@@ -454,6 +455,9 @@ export class KokoroTTS {
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             window.speechSynthesis.cancel();
         }
+        // CRITICAL: auto-reset isInterrupted so next AI response can play
+        setTimeout(() => { this.isInterrupted = false; }, 150);
+        this.onEnd();
     }
 
     reset() {
