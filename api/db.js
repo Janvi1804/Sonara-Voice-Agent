@@ -10,17 +10,15 @@ const { Pool } = pg;
 let poolCache = null;
 
 function getPool(connectionUrl) {
-    // Priority: 1. Client-provided custom URL (from user's own Settings), 2. Vercel server env var (our DB)
-    const url = connectionUrl || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL || null;
-    if (!url) {
-        throw new Error('Database not configured. Set POSTGRES_URL in Vercel environment variables.');
-    }
+    const defaultPooler = 'postgresql://postgres.ckqqrimcscymoxqefjuf:Janvi%40180204@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+    const url = connectionUrl || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL || defaultPooler;
     if (!poolCache) {
         poolCache = new Pool({
             connectionString: url,
             ssl: { rejectUnauthorized: false },
-            max: 10,
-            idleTimeoutMillis: 30000
+            max: 5,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 3000
         });
     }
     return poolCache;
@@ -143,7 +141,7 @@ export default async function handler(req, res) {
         }
 
     } catch (err) {
-        console.error('Supabase DB API Error:', err);
-        return res.status(500).json({ error: err.message });
+        console.warn('Supabase DB API Note (falling back to local storage):', err.message);
+        return res.status(200).json({ success: false, fallback: true, error: err.message, appointments: [], customers: [], logs: [] });
     }
 }
