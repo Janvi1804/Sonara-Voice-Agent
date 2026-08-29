@@ -1979,6 +1979,198 @@ CRITICAL ZERO-HALLUCINATION & CONVERSATIONAL RULES:
     // Initialize Settings & Visualizer Loop
     loadSettings();
     startVisualizerLoop();
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ── CALL AGENT WIDGET (Phase 1 — Free Browser Voice Call)             ──
+    // Reuses existing: startAudioPipeline(), stopAudioPipeline(),           ──
+    //   setAgentState(), startVisualizerLoop(), appendChatMessage(),         ──
+    //   ttsEngine, isCallActive, isAiSpeaking, isAiThinking,                ──
+    //   conversationHistory — NO new STT/LLM/TTS code.                      ──
+    // ════════════════════════════════════════════════════════════════════════
+    (function initCallAgentWidget() {
+        const _overlay       = document.getElementById('callPhoneOverlay');
+        const _btnCall       = document.getElementById('btnCallAgent');
+        const _btnEnd        = document.getElementById('btnEndCall');
+        const _inputName     = document.getElementById('callInputName');
+        const _inputPhone    = document.getElementById('callInputPhone');
+        const _overlayName   = document.getElementById('callOverlayCallerName');
+        const _stateText     = document.getElementById('callStateText');
+        const _durationEl    = document.getElementById('callDurationDisplay');
+
+        // Guard: exit if elements not found (shouldn't happen)
+        if (!_btnCall || !_overlay) return;
+
+        let _callStart   = null;   // Date.now() when call connected
+        let _durTimer    = null;   // interval: updates duration + state text
+
+        // ── Helpers ──────────────────────────────────────────────────────
+        const _fmtDur = (ms) => {
+            const s = Math.floor(ms / 1000);
+            return `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
+        };
+
+        const _showOverlay = (displayName) => {
+            if (_overlayName) _overlayName.textContent = displayName || 'Sonara AI';
+            _overlay.classList.add('visible');
+            _overlay.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('call-overlay-open');
+            if (_durationEl) _durationEl.textContent = '00:00';
+        };
+
+        const _hideOverlay = () => {
+            _overlay.classList.remove('visible');
+            _overlay.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('call-overlay-open');
+        };
+
+        const _startDurTimer = () => {
+            _callStart = Date.now();
+            _durTimer = setInterval(() => {
+                // Update duration clock
+                if (_durationEl) _durationEl.textContent = _fmtDur(Date.now() - _callStart);
+
+                // Reflect current voice-agent state in overlay (reads shared closure vars)
+                if (_stateText) {
+                    if (isAiSpeaking)       _stateText.textContent = '🔊 Sonara is speaking…';
+                    else if (isAiThinking)  _stateText.textContent = '⏳ Processing…';
+                    else if (isCallActive)  _stateText.textContent = '🎙️ Listening…';
+                }
+
+                // Safety: if main pipeline ended call externally, sync overlay
+                if (!isCallActive && _overlay.classList.contains('visible')) {
+                    _cleanupCall();
+                }
+            }, 500);
+        };
+
+        const _stopDurTimer = () => {
+            clearInterval(_durTimer);
+            _durTimer = null;
+        };
+
+        const _resetBtn = () => {
+            _btnCall.disabled = false;
+            _btnCall.innerHTML = '<i class="fa-solid fa-phone" aria-hidden="true"></i><span>Call Agent</span>';
+        };
+
+        const _cleanupCall = () => {
+            _stopDurTimer();
+            _hideOverlay();
+            _resetBtn();
+            // Remove call context from history
+            conversationHistory = conversationHistory.filter(
+                m => !m.content?.startsWith('[CALL_CTX]')
+            );
+        };
+
+        // ── Start Call ───────────────────────────────────────────────────
+        _btnCall.addEventListener('click', async () => {
+            const name  = _inputName?.value.trim()  || '';
+            const phone = _inputPhone?.value.trim()  || '';
+
+            // Validate: phone must have at least 10 digits
+            if (!phone || phone.replace(/\D/g, '').length < 10) {
+                _inputPhone?.classList.add('call-input-error');
+                _inputPhone?.focus();
+                setTimeout(() => _inputPhone?.classList.remove('call-input-error'), 2000);
+                return;
+            }
+
+            // Prevent double-tap
+            if (isCallActive) return;
+
+            // Inject caller context into conversation (remove stale one first)
+            conversationHistory = conversationHistory.filter(
+                m => !m.content?.startsWith('[CALL_CTX]')
+            );
+            conversationHistory.unshift({
+                role: 'system',
+                content: `[CALL_CTX] Browser voice call. Caller: ${name || 'Guest'}, Phone: ${phone}. ${name ? `Address the caller as ${name}.` : ''} Keep answers concise and conversational.`
+            });
+
+            // Show connecting state
+            _btnCall.disabled = true;
+            _btnCall.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Connecting…</span>';
+            if (_stateText) _stateText.textContent = '⏳ Connecting…';
+
+            // ── Start the existing audio pipeline (mic → VAD → STT → LLM → TTS)
+            const success = await startAudioPipeline();
+
+            if (success) {
+                // Mark call active (mirrors btnToggleVoice logic)
+                isCallActive = true;
+
+                // Sync existing main voice button UI so both stay consistent
+                if (btnToggleVoice) btnToggleVoice.classList.add('active-call');
+                if (callBtnIcon)    callBtnIcon.className  = 'fa-solid fa-phone-slash';
+                if (callBtnText)    callBtnText.textContent = 'End Voice Session';
+
+                setAgentState('listening', 'Connected & Listening (Silero VAD)');
+                startVisualizerLoop();
+
+                // Show overlay with caller name / phone as display name
+                _showOverlay(name || phone);
+                _startDurTimer();
+
+                console.log(`[CallAgent] call_started — caller: "${name || 'Guest'}", phone: ${phone}`);
+
+                // Personalised proactive greeting
+                setTimeout(() => {
+                    const greeting = name
+                        ? `Namaste ${name}! Welcome to Converse AI. I'm Sonara — how can I help you today?`
+                        : "Namaste! Welcome to Converse AI. I'm Sonara — how can I help you today?";
+                    appendChatMessage('assistant', greeting);
+                    conversationHistory.push({ role: 'assistant', content: greeting });
+                    if (ttsEngine) ttsEngine.speak(greeting);
+                }, 450);
+
+            } else {
+                // Pipeline failed (mic denied / not found / etc.)
+                conversationHistory = conversationHistory.filter(
+                    m => !m.content?.startsWith('[CALL_CTX]')
+                );
+                _resetBtn();
+                if (_stateText) _stateText.textContent = '🎙️ Listening…';
+                console.warn('[CallAgent] call_error — startAudioPipeline failed');
+            }
+        });
+
+        // ── End Call ─────────────────────────────────────────────────────
+        _btnEnd?.addEventListener('click', () => {
+            if (!isCallActive) return;
+
+            console.log('[CallAgent] call_ended — user clicked End Call');
+            isCallActive = false;
+            stopAudioPipeline();
+            _cleanupCall();
+
+            // Sync main voice button
+            if (btnToggleVoice) btnToggleVoice.classList.remove('active-call');
+            if (callBtnIcon)    callBtnIcon.className  = 'fa-solid fa-phone';
+            if (callBtnText)    callBtnText.textContent = 'Start Real-Time Voice';
+            setAgentState('idle', 'Agent Inactive • Click to Start');
+        });
+
+        // ── Keyboard: Escape → end call ───────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && _overlay.classList.contains('visible')) {
+                _btnEnd?.click();
+            }
+        });
+
+        // ── Sync: hide overlay if main "End Voice Session" btn was used ───
+        // (so both UIs stay consistent regardless of which button the user uses)
+        btnToggleVoice?.addEventListener('click', () => {
+            setTimeout(() => {
+                if (!isCallActive && _overlay.classList.contains('visible')) {
+                    _cleanupCall();
+                }
+            }, 300);
+        });
+
+        console.log('[CallAgent] Widget initialised');
+    })();
+
 });
 
 

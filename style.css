@@ -1378,3 +1378,372 @@ body.dark-theme {
     font-weight: 600;
 }
 
+/* ==========================================================================
+   CALL AGENT WIDGET — Browser Voice Call Section
+   ========================================================================== */
+
+/* ── Section wrapper ─────────────────────────────────────────────────────── */
+.call-agent-section {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px 20px;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.call-agent-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-lg);
+    padding: 20px 28px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    flex-wrap: wrap;
+}
+.call-agent-card:hover {
+    border-color: rgba(0, 242, 254, 0.25);
+    box-shadow: 0 4px 32px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,242,254,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+/* ── Card left: icon + info ──────────────────────────────────────────────── */
+.call-agent-card-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    min-width: 200px;
+}
+.call-agent-icon-wrap {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: #000;
+    flex-shrink: 0;
+    box-shadow: 0 0 18px rgba(0,242,254,0.4);
+}
+.call-agent-info h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+}
+.call-agent-info p {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* ── Card form ───────────────────────────────────────────────────────────── */
+.call-agent-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 260px;
+    justify-content: flex-end;
+}
+.call-form-input {
+    height: 42px;
+    padding: 0 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    min-width: 160px;
+    max-width: 200px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.call-form-input::placeholder { color: var(--text-muted); }
+.call-form-input:focus {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 3px rgba(0,242,254,0.12);
+}
+.call-form-input.call-input-error {
+    border-color: var(--accent-red);
+    box-shadow: 0 0 0 3px rgba(239,68,68,0.18);
+    animation: shake 0.35s ease;
+}
+@keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%,60%  { transform: translateX(-6px); }
+    40%,80%  { transform: translateX(6px); }
+}
+
+/* ── Start Call button ───────────────────────────────────────────────────── */
+.btn-start-call {
+    height: 42px;
+    padding: 0 22px;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+    color: #000;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    font-weight: 700;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+    white-space: nowrap;
+    box-shadow: 0 0 18px rgba(0,242,254,0.35);
+}
+.btn-start-call:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 0 28px rgba(0,242,254,0.55);
+}
+.btn-start-call:active:not(:disabled) { transform: translateY(0); }
+.btn-start-call:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ── Privacy note ────────────────────────────────────────────────────────── */
+.call-agent-note {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 10px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+/* ==========================================================================
+   PHONE CALL OVERLAY — Fullscreen in-browser call UI
+   ========================================================================== */
+
+.call-phone-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(7, 9, 14, 0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /* Hidden by default */
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.97);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.call-phone-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+    transform: scale(1);
+}
+/* Prevent body scroll when overlay is open */
+body.call-overlay-open { overflow: hidden; }
+
+/* ── Screen ──────────────────────────────────────────────────────────────── */
+.call-phone-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 40px 32px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+}
+
+/* ── Brand ───────────────────────────────────────────────────────────────── */
+.call-phone-brand {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* ── Avatar orb ──────────────────────────────────────────────────────────── */
+.call-phone-avatar {
+    position: relative;
+    width: 110px;
+    height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 8px 0;
+}
+.call-avatar-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px solid rgba(0,242,254,0.3);
+    animation: ring-pulse 2.5s ease-in-out infinite;
+}
+.call-avatar-ring-1 { width: 100%; height: 100%; animation-delay: 0s; }
+.call-avatar-ring-2 { width: 130%; height: 130%; animation-delay: 0.8s; opacity: 0.5; }
+@keyframes ring-pulse {
+    0%,100% { opacity: 0.6; transform: scale(1); }
+    50%     { opacity: 0.15; transform: scale(1.06); }
+}
+.call-avatar-core {
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(0,242,254,0.15), rgba(79,172,254,0.25));
+    border: 1px solid rgba(0,242,254,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: var(--accent-cyan);
+    box-shadow: 0 0 32px rgba(0,242,254,0.3);
+    z-index: 1;
+}
+
+/* ── Caller name ─────────────────────────────────────────────────────────── */
+.call-phone-caller-name {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+}
+
+/* ── Status ──────────────────────────────────────────────────────────────── */
+.call-phone-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.8rem;
+    color: var(--accent-green);
+    font-weight: 600;
+}
+.call-status-dot-live {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    display: inline-block;
+    animation: dot-blink 1.4s ease-in-out infinite;
+}
+@keyframes dot-blink {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.3; }
+}
+
+/* ── State text (Listening / Speaking / Processing) ──────────────────────── */
+.call-phone-state {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    min-height: 1.4em;
+    transition: color 0.3s;
+}
+
+/* ── Wave bars ───────────────────────────────────────────────────────────── */
+.call-wave-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 32px;
+}
+.wave-bar {
+    width: 5px;
+    background: linear-gradient(to top, var(--accent-cyan), var(--accent-blue));
+    border-radius: 3px;
+    animation: wave-bounce 1.1s ease-in-out infinite;
+    min-height: 5px;
+}
+.wave-bar:nth-child(1) { animation-delay: 0.00s; }
+.wave-bar:nth-child(2) { animation-delay: 0.10s; }
+.wave-bar:nth-child(3) { animation-delay: 0.20s; }
+.wave-bar:nth-child(4) { animation-delay: 0.15s; }
+.wave-bar:nth-child(5) { animation-delay: 0.05s; }
+.wave-bar:nth-child(6) { animation-delay: 0.25s; }
+.wave-bar:nth-child(7) { animation-delay: 0.12s; }
+@keyframes wave-bounce {
+    0%,100% { height: 6px;  opacity: 0.4; }
+    50%     { height: 26px; opacity: 1;   }
+}
+
+/* ── Duration ────────────────────────────────────────────────────────────── */
+.call-duration-display {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.08em;
+}
+
+/* ── End Call button ─────────────────────────────────────────────────────── */
+.call-phone-actions { margin-top: 4px; }
+.btn-end-call-overlay {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 36px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+    font-family: var(--font-main);
+    font-size: 1rem;
+    font-weight: 700;
+    border: none;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 24px rgba(239,68,68,0.45);
+}
+.btn-end-call-overlay:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 0 36px rgba(239,68,68,0.65);
+}
+.btn-end-call-overlay:active {
+    transform: translateY(0) scale(0.98);
+}
+.btn-end-call-overlay:focus-visible {
+    outline: 3px solid rgba(239,68,68,0.6);
+    outline-offset: 3px;
+}
+
+/* ==========================================================================
+   RESPONSIVE — Call Agent Widget
+   ========================================================================== */
+@media (max-width: 768px) {
+    .call-agent-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 18px 20px;
+    }
+    .call-agent-form {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .call-form-input {
+        min-width: 0;
+        flex: 1;
+        max-width: 100%;
+    }
+    .btn-start-call {
+        width: 100%;
+        justify-content: center;
+    }
+    .call-phone-screen {
+        padding: 32px 20px;
+        gap: 14px;
+    }
+    .call-duration-display { font-size: 1.6rem; }
+}

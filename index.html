@@ -165,6 +165,116 @@
                 </div>
             </section>
         </div>
+
+        <!-- ── Call Agent Widget ──────────────────────────────────────────── -->
+        <!-- Separate from the chat section. User enters details and starts   -->
+        <!-- a browser voice call — reuses the existing STT/LLM/TTS pipeline. -->
+        <section class="call-agent-section" id="callAgentSection" aria-label="Call Agent">
+            <div class="call-agent-card">
+                <div class="call-agent-card-left">
+                    <div class="call-agent-icon-wrap">
+                        <i class="fa-solid fa-phone-volume" aria-hidden="true"></i>
+                    </div>
+                    <div class="call-agent-info">
+                        <h3>📞 Talk to Sonara</h3>
+                        <p>Browser voice call — free, no phone required. Enter your details and start a real-time AI conversation.</p>
+                    </div>
+                </div>
+                <div class="call-agent-form" role="group" aria-label="Call Agent form">
+                    <input
+                        type="text"
+                        id="callInputName"
+                        class="call-form-input"
+                        placeholder="Your name (optional)"
+                        maxlength="60"
+                        autocomplete="name"
+                        aria-label="Your name"
+                    />
+                    <input
+                        type="tel"
+                        id="callInputPhone"
+                        class="call-form-input"
+                        placeholder="Your phone number *"
+                        maxlength="15"
+                        autocomplete="tel"
+                        aria-label="Your phone number (required)"
+                        aria-required="true"
+                    />
+                    <button id="btnCallAgent" class="btn-start-call" aria-label="Start voice call with Sonara">
+                        <i class="fa-solid fa-phone" aria-hidden="true"></i>
+                        <span>Call Agent</span>
+                    </button>
+                </div>
+            </div>
+            <p class="call-agent-note">
+                <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                Microphone is only accessed after you click "Call Agent" and released when the call ends. No data is stored.
+            </p>
+        </section>
+    </div>
+
+    <!-- ── Phone Call Overlay ─────────────────────────────────────────────── -->
+    <!-- Fullscreen phone-call-style UI shown during an active browser call.  -->
+    <!-- Hidden by default; becomes visible when call starts.                 -->
+    <div
+        class="call-phone-overlay"
+        id="callPhoneOverlay"
+        role="dialog"
+        aria-label="Active voice call with Sonara"
+        aria-modal="true"
+        aria-hidden="true"
+    >
+        <div class="call-phone-screen">
+
+            <!-- Brand header -->
+            <div class="call-phone-brand" aria-hidden="true">SONARA VOICE AI</div>
+
+            <!-- Animated avatar orb -->
+            <div class="call-phone-avatar" aria-hidden="true">
+                <div class="call-avatar-ring call-avatar-ring-1"></div>
+                <div class="call-avatar-ring call-avatar-ring-2"></div>
+                <div class="call-avatar-core">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+            </div>
+
+            <!-- Caller display name -->
+            <div class="call-phone-caller-name" id="callOverlayCallerName">Connecting…</div>
+
+            <!-- Connection status -->
+            <div class="call-phone-status">
+                <span class="call-status-dot-live" aria-hidden="true"></span>
+                <span id="callStatusLabel">Connected</span>
+            </div>
+
+            <!-- Current voice state (listening / speaking / processing) -->
+            <div class="call-phone-state" id="callStateText" aria-live="polite" aria-atomic="true">
+                🎙️ Listening…
+            </div>
+
+            <!-- Audio wave visualizer bars -->
+            <div class="call-wave-bars" aria-hidden="true">
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+                <span class="wave-bar"></span>
+            </div>
+
+            <!-- Call duration -->
+            <div class="call-duration-display" id="callDurationDisplay" aria-label="Call duration">00:00</div>
+
+            <!-- End call button -->
+            <div class="call-phone-actions">
+                <button id="btnEndCall" class="btn-end-call-overlay" aria-label="End voice call">
+                    <i class="fa-solid fa-phone-slash" aria-hidden="true"></i>
+                    <span>End Call</span>
+                </button>
+            </div>
+
+        </div>
     </div>
 
     <!-- Configuration Modal / Settings Drawer -->
