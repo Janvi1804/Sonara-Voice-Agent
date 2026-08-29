@@ -34,11 +34,11 @@ export class WhisperSTT {
         // rmsFloor: audio below this RMS is considered too quiet to transcribe.
         // Default 0.007 retained from v1. Do NOT change without testing against:
         // quiet speech, normal speech, loud speech, Hindi, English, Hinglish, and noisy environments.
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.007;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.004;
 
         // Minimum speech duration to pass to Whisper (ms).
         // VAD already filters via minSpeechDurationMs, but we keep a backup here.
-        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 250;
+        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 150;
     }
 
     setApiKey(key) { this.apiKey = key; }

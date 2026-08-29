@@ -286,17 +286,20 @@ document.addEventListener('DOMContentLoaded', () => {
             lblSpeed.textContent = `${rngSpeed.value}x`;
         }
         if (localStorage.getItem('sonara_vad_thresh')) {
-            rngVadThreshold.value = localStorage.getItem('sonara_vad_thresh');
+            const savedThresh = parseFloat(localStorage.getItem('sonara_vad_thresh'));
+            // If old value was too high (>= 0.60, the old default), reset to new sensitive default
+            rngVadThreshold.value = (savedThresh >= 0.60) ? 0.45 : savedThresh;
             lblVadThreshold.textContent = rngVadThreshold.value;
             if (vadThresholdMarker) vadThresholdMarker.style.left = `${rngVadThreshold.value * 100}%`;
         }
         if (localStorage.getItem('sonara_silence_dur')) {
             const savedSilence = parseInt(localStorage.getItem('sonara_silence_dur'));
-            rngSilenceDuration.value = savedSilence >= 1000 ? savedSilence : 1200;
+            // Old default was 1200ms — if saved >= 1000ms, override with new 600ms default
+            rngSilenceDuration.value = (savedSilence >= 1000) ? 600 : savedSilence;
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         } else if (rngSilenceDuration) {
-            rngSilenceDuration.value = 1200;
-            lblSilenceDuration.textContent = '1200 ms';
+            rngSilenceDuration.value = 600;
+            lblSilenceDuration.textContent = '600 ms';
         }
         if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
             chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
@@ -691,12 +694,12 @@ document.addEventListener('DOMContentLoaded', () => {
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.65,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 1200,
-                minSpeechDurationMs: 250,
-                speechStartConfirmFrames: 3,
-                rmsFloor: 0.007,
-                bargeInConfirmFrames: 8,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 600,
+                minSpeechDurationMs: 200,
+                speechStartConfirmFrames: 2,
+                rmsFloor: 0.004,
+                bargeInConfirmFrames: 5,
                 debugLog: true,
                 onFrame: (data) => {
                     const probPct = Math.round(data.prob * 100);
