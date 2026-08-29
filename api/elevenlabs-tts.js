@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         // Jessica — most natural, human-like ElevenLabs voice
         const voiceId = voice_id || 'cgSgspJ2msm6clMCkdW9';
 
-        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=3`, {
             method: 'POST',
             headers: {
                 'xi-api-key': apiKey,

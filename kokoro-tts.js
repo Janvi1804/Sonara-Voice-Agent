@@ -274,7 +274,15 @@ export class KokoroTTS {
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
         }
-        this.enqueueSentence(clean);
+        
+        // Split by punctuation marks (. ! ? \n) while keeping sentence intact
+        const sentences = clean.match(/[^.!?\n]+[.!?\n]*/g) || [clean];
+        for (const s of sentences) {
+            const trimmed = s.trim();
+            if (trimmed.length > 0) {
+                this.enqueueSentence(trimmed);
+            }
+        }
     }
 
     /**

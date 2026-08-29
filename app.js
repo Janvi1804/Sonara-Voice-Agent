@@ -294,12 +294,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_silence_dur')) {
             const savedSilence = parseInt(localStorage.getItem('sonara_silence_dur'));
-            // Old default was 1200ms — if saved >= 1000ms, override with new 600ms default
-            rngSilenceDuration.value = (savedSilence >= 1000) ? 600 : savedSilence;
+            // Old defaults were 1200ms/600ms — optimize to ultra-fast 450ms
+            rngSilenceDuration.value = (savedSilence >= 600) ? 450 : savedSilence;
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         } else if (rngSilenceDuration) {
-            rngSilenceDuration.value = 600;
-            lblSilenceDuration.textContent = '600 ms';
+            rngSilenceDuration.value = 450;
+            lblSilenceDuration.textContent = '450 ms';
         }
         if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
             chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
@@ -695,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 600,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 450,
                 minSpeechDurationMs: 200,
                 speechStartConfirmFrames: 2,
                 rmsFloor: 0.004,
@@ -1002,8 +1002,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // If sentence is incomplete (e.g. user said "Mujhe" or "Mera naam" and took a breath), wait for remaining words!
-        if (!force && isSentenceIncomplete(prompt)) {
+        // If sentence is incomplete (only for continuous browser speechRecognition, NOT finished Whisper STT)
+        if (!force && directText === null && isSentenceIncomplete(prompt)) {
             console.log('⏳ Incomplete speech fragment detected ("' + prompt + '"), waiting for user to complete sentence...');
             pendingIncompleteTimer = setTimeout(() => {
                 const words = prompt.trim().toLowerCase().replace(/[^a-z0-9\u0900-\u097f\s]/g, '').split(/\s+/).filter(Boolean);
@@ -1015,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 commitUserVoiceInput(true, prompt);
-            }, 1200);
+            }, 600);
             return;
         }
 
