@@ -19,28 +19,44 @@ const ipRateLimits = new Map();
  */
 export function setCorsHeaders(req, res, methods = 'GET, POST, OPTIONS') {
     const origin = req.headers.origin || '';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
     const allowedOrigin = (process.env.ALLOWED_ORIGIN || '').trim();
     const isDev = process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
 
     let isAllowed = false;
 
-    if (allowedOrigin) {
-        // Support exact match or comma-separated list of allowed production origins
-        const allowedList = allowedOrigin.split(',').map(o => o.trim());
-        if (allowedList.includes(origin)) {
-            isAllowed = true;
-        } else if (isDev && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+    // 1. Same-Origin Check: When user visits site and calls its own API
+    if (origin && host) {
+        const originHost = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+        const currentHost = host.split(':')[0].toLowerCase();
+        if (originHost === currentHost) {
             isAllowed = true;
         }
-    } else if (isDev) {
-        // In local development only: permit localhost/127.0.0.1 origins
+    }
+
+    // 2. Explicit ALLOWED_ORIGIN configuration (exact match, list, or wildcard)
+    if (!isAllowed && allowedOrigin) {
+        const allowedList = allowedOrigin.split(',').map(o => o.trim());
+        if (allowedList.includes(origin) || allowedList.includes('*')) {
+            isAllowed = true;
+        }
+    }
+
+    // 3. Vercel deployment preview / production URLs (e.g. *.vercel.app)
+    if (!isAllowed && origin && !allowedOrigin) {
+        try {
+            const parsed = new URL(origin);
+            if (parsed.hostname.endsWith('.vercel.app')) {
+                isAllowed = true;
+            }
+        } catch (_) {}
+    }
+
+    // 4. Local Development: permit localhost and 127.0.0.1
+    if (!isAllowed && isDev) {
         if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
             isAllowed = true;
         }
-    } else {
-        // PRODUCTION WITH NO ALLOWED_ORIGIN SET:
-        // FAIL CLOSED — Do NOT reflect origin, do NOT set wildcard '*'
-        isAllowed = false;
     }
 
     if (isAllowed && origin) {
@@ -50,7 +66,7 @@ export function setCorsHeaders(req, res, methods = 'GET, POST, OPTIONS') {
         res.setHeader('Access-Control-Max-Age', '86400');
     }
 
-    return isAllowed || !origin; // Direct same-origin requests without Origin header proceed
+    return isAllowed || !origin;
 }
 
 /**

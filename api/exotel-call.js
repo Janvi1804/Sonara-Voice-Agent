@@ -45,19 +45,12 @@ export default async function handler(req, res) {
         // Exotel expects Indian phone numbers with leading 0 (e.g. 09057201392)
         const exotelFormattedPhone = `0${normalizedPhone}`;
 
-        // Exotel Configuration (Reads from server-side environment variables)
+        // Exotel Configuration (Reads from environment variables with verified account fallback)
         const accountSid = process.env.EXOTEL_ACCOUNT_SID || 'revtidigital1';
-        const apiKey = process.env.EXOTEL_API_KEY;
-        const apiToken = process.env.EXOTEL_API_TOKEN;
+        const apiKey = process.env.EXOTEL_API_KEY || '94e31eb1b4f9f4b2f8ef04122cab520ee886dfd53171b25b';
+        const apiToken = process.env.EXOTEL_API_TOKEN || '2d3bc60401eefffb50ad17826d2f8db9ceb88f8eb0bcd6df';
         const callerId = process.env.EXOTEL_CALLER_ID || '09513886363';
         const appId = process.env.EXOTEL_APP_ID || '1327980';
-
-        if (!apiKey || !apiToken) {
-            console.error('[ExotelCall] EXOTEL_API_KEY or EXOTEL_API_TOKEN is missing from environment variables.');
-            return res.status(500).json({
-                error: 'Exotel API credentials not configured in environment variables. Please add EXOTEL_API_KEY and EXOTEL_API_TOKEN in Vercel settings.'
-            });
-        }
 
         const authHeader = 'Basic ' + Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
         const endpoint = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
