@@ -3,24 +3,39 @@
  * Proxy for Sarvam AI Text-to-Speech (bulbul:v2 model)
  * Supports Hindi, English, Hinglish
  */
-export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
+export default async function handler(req, res) {
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+        return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+    }
+
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please slow down.' });
+    }
 
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const { text, language_code, speaker, pace, pitch } = body;
 
-        if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+        if (!text || !String(text).trim()) return res.status(400).json({ error: 'text is required' });
 
-        const apiKey = process.env.SARVAM_API_KEY || 'sk_fn685v3d_SvgbWzdtCiwETa2jCt1WYIBz';
+        const apiKey = process.env.SARVAM_API_KEY;
+        if (!apiKey) {
+            return res.status(500).json({ error: 'SARVAM_API_KEY is not configured on server.' });
+        }
 
-        // Detect language if not specified: Hindi/Hinglish -> hi-IN, else en-IN
-        const detectedLang = language_code || (containsHindi(text) ? 'hi-IN' : 'en-IN');
+        const sanitizedText = String(text).trim().slice(0, 1000);
+        const detectedLang = language_code || (containsHindi(sanitizedText) ? 'hi-IN' : 'en-IN');
 
         const sarvamRes = await fetch('https://api.sarvam.ai/text-to-speech', {
             method: 'POST',
@@ -29,7 +44,7 @@ export default async function handler(req, res) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                inputs: [text.trim()],
+                inputs: [sanitizedText],
                 target_language_code: detectedLang,
                 speaker: speaker || 'arya',
                 pitch: pitch !== undefined ? pitch : 0,
@@ -58,10 +73,11 @@ export default async function handler(req, res) {
 
     } catch (err) {
         console.error('[SarvamTTS] Handler error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'Sarvam TTS synthesis failed.' });
     }
 }
 
 function containsHindi(text) {
     return /[\u0900-\u097F]/.test(text) || /\b(hai|hain|kya|nahi|aur|mujhe|mera|apka|kal|aaj|theek|bahut|bohot|accha|zaroor|bilkul|namaskar|namaste|dhanyavad)\b/i.test(text);
 }
+

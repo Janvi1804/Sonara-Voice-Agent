@@ -3,18 +3,33 @@
  * Proxy for Sarvam AI Speech-to-Text (saarika:v2 model)
  * Hindi, English, Hinglish transcription
  */
+import { setCorsHeaders, checkRateLimit } from './_utils.js';
+
 export const config = { api: { bodyParser: false } };
 
 export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+        return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+    }
+
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please slow down.' });
+    }
+
     try {
-        const apiKey = process.env.SARVAM_API_KEY || 'sk_fn685v3d_SvgbWzdtCiwETa2jCt1WYIBz';
+        const apiKey = process.env.SARVAM_API_KEY;
+        if (!apiKey) {
+            return res.status(500).json({ error: 'SARVAM_API_KEY is not configured on server.' });
+        }
 
         // Buffer incoming multipart request
         const chunks = [];
@@ -45,6 +60,7 @@ export default async function handler(req, res) {
 
     } catch (err) {
         console.error('[SarvamSTT] Handler error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'STT transcription failed.' });
     }
 }
+

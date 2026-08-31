@@ -1,16 +1,17 @@
 /**
  * Vercel Serverless Function: /api/notify
- * Sends Email (Resend) + WhatsApp (Twilio) notifications to both customer and admin.
+ * Secure notification dispatcher for Email (Resend) and WhatsApp (Twilio).
  */
+import { setCorsHeaders, checkRateLimit, escapeHtml, validatePhone, validateEmail } from './_utils.js';
 
-const ADMIN_EMAIL    = process.env.ADMIN_EMAIL    || 'janvisethi801@gmail.com';
-const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+919057201392';
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
+const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP;
 
 async function sendEmail({ to, subject, html }) {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
-        console.warn('[Notify] RESEND_API_KEY not set - skipping email to', to);
-        return { skipped: true };
+        console.warn('[Notify] RESEND_API_KEY not configured on server — skipping email dispatch');
+        return { skipped: true, reason: 'RESEND_API_KEY not set' };
     }
     const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -35,19 +36,19 @@ async function sendWhatsApp({ to, body, contentSid, contentVariables }) {
     const apiKeySid  = process.env.TWILIO_API_KEY_SID;
     const apiSecret  = process.env.TWILIO_API_KEY_SECRET;
     const authToken  = process.env.TWILIO_AUTH_TOKEN;
-    const from       = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+17372212163';
-    const defaultContentSid = process.env.TWILIO_CONTENT_SID || 'HXfe5ab5f00277942d4d4200328b4d403c';
+    const from       = process.env.TWILIO_WHATSAPP_FROM;
+    const defaultContentSid = process.env.TWILIO_CONTENT_SID;
 
-    if (!accountSid) {
-        console.warn('[Notify] TWILIO_ACCOUNT_SID not set - skipping WhatsApp to', to);
-        return { skipped: true };
+    if (!accountSid || !from) {
+        console.warn('[Notify] Twilio credentials not configured on server — skipping WhatsApp');
+        return { skipped: true, reason: 'TWILIO credentials not set' };
     }
 
     const username = apiKeySid || accountSid;
     const password = apiSecret || authToken;
     if (!password) {
-        console.warn('[Notify] No Twilio password/token set - skipping WhatsApp');
-        return { skipped: true };
+        console.warn('[Notify] Twilio auth token not set — skipping WhatsApp');
+        return { skipped: true, reason: 'Auth token missing' };
     }
 
     const normalized = String(to).replace(/[^0-9+]/g, '');
@@ -80,18 +81,24 @@ async function sendWhatsApp({ to, body, contentSid, contentVariables }) {
 }
 
 function customerEmailHtml({ customerName, appointmentId, date, time, service }) {
+    const safeName = escapeHtml(customerName);
+    const safeAppt = escapeHtml(appointmentId);
+    const safeDate = escapeHtml(date);
+    const safeTime = escapeHtml(time);
+    const safeService = escapeHtml(service);
+
     return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0f0f1a;color:#e0e0e0;border-radius:12px;overflow:hidden">
       <div style="background:linear-gradient(135deg,#00d4ff,#7b2ff7);padding:24px;text-align:center">
         <h1 style="margin:0;color:#fff;font-size:24px">Appointment Confirmed!</h1>
         <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Sonara by Converse AI</p>
       </div>
       <div style="padding:28px">
-        <p>Hello <strong>${customerName}</strong>, your appointment is confirmed!</p>
+        <p>Hello <strong>${safeName}</strong>, your appointment is confirmed!</p>
         <table style="width:100%;border-collapse:collapse;margin:16px 0">
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold;width:40%">Appointment ID</td><td style="padding:10px 14px">${appointmentId}</td></tr>
-          <tr style="background:#13131f"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Service</td><td style="padding:10px 14px">${service}</td></tr>
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Date</td><td style="padding:10px 14px">${date}</td></tr>
-          <tr style="background:#13131f"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Time</td><td style="padding:10px 14px">${time}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold;width:40%">Appointment ID</td><td style="padding:10px 14px">${safeAppt}</td></tr>
+          <tr style="background:#13131f"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Service</td><td style="padding:10px 14px">${safeService}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Date</td><td style="padding:10px 14px">${safeDate}</td></tr>
+          <tr style="background:#13131f"><td style="padding:10px 14px;color:#00d4ff;font-weight:bold">Time</td><td style="padding:10px 14px">${safeTime}</td></tr>
         </table>
         <p style="background:#1a1a2e;border-left:3px solid #00d4ff;padding:12px 16px;border-radius:4px;font-size:13px">
           Need to reschedule? Call <strong>+91 99823 23333</strong> or email <strong>contact@theconverseai.com</strong>
@@ -102,19 +109,27 @@ function customerEmailHtml({ customerName, appointmentId, date, time, service })
 }
 
 function adminEmailHtml({ customerName, phone, email, appointmentId, date, time, service }) {
+    const safeName = escapeHtml(customerName);
+    const safePhone = escapeHtml(phone);
+    const safeEmail = escapeHtml(email);
+    const safeAppt = escapeHtml(appointmentId);
+    const safeDate = escapeHtml(date);
+    const safeTime = escapeHtml(time);
+    const safeService = escapeHtml(service);
+
     return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0f0f1a;color:#e0e0e0;border-radius:12px;overflow:hidden">
       <div style="background:linear-gradient(135deg,#ff6b35,#f7931e);padding:20px;text-align:center">
         <h1 style="margin:0;color:#fff;font-size:22px">New Appointment Booked</h1>
       </div>
       <div style="padding:28px">
         <table style="width:100%;border-collapse:collapse;margin:16px 0">
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold;width:40%">Appointment ID</td><td style="padding:10px 14px">${appointmentId}</td></tr>
-          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Customer</td><td style="padding:10px 14px">${customerName}</td></tr>
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Phone</td><td style="padding:10px 14px">${phone || 'N/A'}</td></tr>
-          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Email</td><td style="padding:10px 14px">${email || 'N/A'}</td></tr>
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Service</td><td style="padding:10px 14px">${service}</td></tr>
-          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Date</td><td style="padding:10px 14px">${date}</td></tr>
-          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Time</td><td style="padding:10px 14px">${time}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold;width:40%">Appointment ID</td><td style="padding:10px 14px">${safeAppt}</td></tr>
+          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Customer</td><td style="padding:10px 14px">${safeName}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Phone</td><td style="padding:10px 14px">${safePhone || 'N/A'}</td></tr>
+          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Email</td><td style="padding:10px 14px">${safeEmail || 'N/A'}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Service</td><td style="padding:10px 14px">${safeService}</td></tr>
+          <tr style="background:#13131f"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Date</td><td style="padding:10px 14px">${safeDate}</td></tr>
+          <tr style="background:#1a1a2e"><td style="padding:10px 14px;color:#f7931e;font-weight:bold">Time</td><td style="padding:10px 14px">${safeTime}</td></tr>
         </table>
       </div>
     </div>`;
@@ -129,26 +144,52 @@ function adminWA({ customerName, phone, appointmentId, date, time, service }) {
 }
 
 export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') return res.status(200).end();
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+        return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+    }
+
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+    // Anti-Spam Rate Limit: max 5 notification dispatches per 5 minutes per IP
+    if (!checkRateLimit(req, { maxRequests: 5, windowMs: 300000 })) {
+        return res.status(429).json({ error: 'Too many notification requests. Please wait a few minutes.' });
+    }
 
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-        const { customerName = 'Valued Customer', customerPhone = '', customerEmail = '',
-                appointmentId = 'APPT-XXXX', date = '', time = '', service = 'Free AI Opportunity Audit' } = body;
+        const {
+            customerName = 'Valued Customer',
+            customerPhone = '',
+            customerEmail = '',
+            appointmentId = 'APPT-XXXX',
+            date = '',
+            time = '',
+            service = 'Free AI Opportunity Audit'
+        } = body;
+
+        // Validation & length limits
+        const safeName = String(customerName).slice(0, 100);
+        const safeAppt = String(appointmentId).slice(0, 50);
+        const safeDate = String(date).slice(0, 50);
+        const safeTime = String(time).slice(0, 50);
+        const safeService = String(service).slice(0, 100);
 
         const results = {};
 
-        // 1. Customer Email
-        if (customerEmail) {
+        // 1. Customer Email (only if valid email provided)
+        if (customerEmail && validateEmail(customerEmail)) {
             try {
                 results.customerEmail = await sendEmail({
-                    to: customerEmail,
-                    subject: `Appointment Confirmed - ${appointmentId} | Converse AI`,
-                    html: customerEmailHtml({ customerName, appointmentId, date, time, service })
+                    to: String(customerEmail).trim().toLowerCase(),
+                    subject: `Appointment Confirmed - ${safeAppt} | Converse AI`,
+                    html: customerEmailHtml({ customerName: safeName, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService })
                 });
             } catch(e) {
                 results.customerEmailError = e.message;
@@ -157,26 +198,28 @@ export default async function handler(req, res) {
         }
 
         // 2. Admin Email
-        try {
-            results.adminEmail = await sendEmail({
-                to: ADMIN_EMAIL,
-                subject: `New Booking ${appointmentId} - ${customerName} | Sonara`,
-                html: adminEmailHtml({ customerName, phone: customerPhone, email: customerEmail, appointmentId, date, time, service })
-            });
-        } catch(e) {
-            results.adminEmailError = e.message;
-            console.error('[Notify] Admin email error:', e.message);
+        if (ADMIN_EMAIL) {
+            try {
+                results.adminEmail = await sendEmail({
+                    to: ADMIN_EMAIL,
+                    subject: `New Booking ${safeAppt} - ${safeName} | Sonara`,
+                    html: adminEmailHtml({ customerName: safeName, phone: customerPhone, email: customerEmail, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService })
+                });
+            } catch(e) {
+                results.adminEmailError = e.message;
+                console.error('[Notify] Admin email error:', e.message);
+            }
         }
 
-        // 3. Customer WhatsApp
-        if (customerPhone) {
+        // 3. Customer WhatsApp (only if valid phone provided)
+        if (customerPhone && validatePhone(customerPhone)) {
             try {
                 results.customerWA = await sendWhatsApp({
                     to: customerPhone,
-                    body: customerWA({ customerName, appointmentId, date, time, service }),
+                    body: customerWA({ customerName: safeName, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService }),
                     contentVariables: {
-                        '1': `${date} @ ${time} for ${customerName} (Phone: ${customerPhone})`,
-                        '2': `${service} [ID: ${appointmentId}] | Email: ${customerEmail || 'N/A'}`
+                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${customerPhone})`,
+                        '2': `${safeService} [ID: ${safeAppt}] | Email: ${customerEmail || 'N/A'}`
                     }
                 });
             } catch(e) {
@@ -186,25 +229,26 @@ export default async function handler(req, res) {
         }
 
         // 4. Admin WhatsApp
-        try {
-            results.adminWA = await sendWhatsApp({
-                to: ADMIN_WHATSAPP,
-                body: adminWA({ customerName, phone: customerPhone, appointmentId, date, time, service }),
-                contentVariables: {
-                    '1': `${date} @ ${time} for ${customerName} (Phone: ${customerPhone || 'N/A'})`,
-                    '2': `${service} [ID: ${appointmentId}] | Email: ${customerEmail || 'N/A'}`
-                }
-            });
-        } catch(e) {
-            results.adminWAError = e.message;
-            console.error('[Notify] Admin WhatsApp error:', e.message);
+        if (ADMIN_WHATSAPP) {
+            try {
+                results.adminWA = await sendWhatsApp({
+                    to: ADMIN_WHATSAPP,
+                    body: adminWA({ customerName: safeName, phone: customerPhone, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService }),
+                    contentVariables: {
+                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${customerPhone || 'N/A'})`,
+                        '2': `${safeService} [ID: ${safeAppt}] | Email: ${customerEmail || 'N/A'}`
+                    }
+                });
+            } catch(e) {
+                results.adminWAError = e.message;
+                console.error('[Notify] Admin WhatsApp error:', e.message);
+            }
         }
 
-        console.log('[Notify] Results:', JSON.stringify(results));
         return res.status(200).json({ success: true, results });
     } catch (err) {
         console.error('[Notify] Handler error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'Notification service error. Request recorded.' });
     }
 }
 

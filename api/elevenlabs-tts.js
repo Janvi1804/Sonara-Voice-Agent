@@ -1,26 +1,47 @@
 /**
  * Vercel Serverless Function: /api/elevenlabs-tts
  * ElevenLabs Text-to-Speech proxy
- * Voice: Jessica (cgSgspJ2msm6clMCkdW9) - Playful, Bright, Warm — most human-like
- * Model: eleven_multilingual_v2 (Hindi + English support)
+ * Voice: Jessica (cgSgspJ2msm6clMCkdW9)
+ * Model: eleven_turbo_v2_5 (Low-latency)
  */
-export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
+export default async function handler(req, res) {
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+        return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+    }
+
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+    // Rate limit: max 60 synthesis requests per minute per IP
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please wait a moment.' });
+    }
 
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const { text, voice_id } = body;
 
-        if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+        if (!text || !String(text).trim()) {
+            return res.status(400).json({ error: 'text is required' });
+        }
 
-        const apiKey = process.env.ELEVENLABS_API_KEY || 'sk_5419d966bcb625ed03ebafe67156d823098206771f5856f4';
+        const apiKey = process.env.ELEVENLABS_API_KEY;
+        if (!apiKey) {
+            return res.status(500).json({ error: 'ELEVENLABS_API_KEY is not configured on server.' });
+        }
 
-        // Jessica — most natural, human-like ElevenLabs voice
+        // Limit text length per chunk to prevent abuse (max 1000 chars per utterance)
+        const sanitizedText = String(text).trim().slice(0, 1000);
+
+        // Jessica — natural, human-like voice
         const voiceId = voice_id || 'cgSgspJ2msm6clMCkdW9';
 
         const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=3`, {
@@ -31,8 +52,8 @@ export default async function handler(req, res) {
                 'Accept': 'audio/mpeg'
             },
             body: JSON.stringify({
-                text: text.trim(),
-                model_id: 'eleven_turbo_v2_5',    // turbo = ~200ms latency vs 1500ms for multilingual
+                text: sanitizedText,
+                model_id: 'eleven_turbo_v2_5',
                 voice_settings: {
                     stability: 0.35,
                     similarity_boost: 0.80,
@@ -40,7 +61,6 @@ export default async function handler(req, res) {
                     use_speaker_boost: true
                 }
             })
-
         });
 
         if (!elRes.ok) {
@@ -56,6 +76,7 @@ export default async function handler(req, res) {
 
     } catch (err) {
         console.error('[ElevenLabsTTS] Handler error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'TTS synthesis failed. Please try again.' });
     }
 }
+

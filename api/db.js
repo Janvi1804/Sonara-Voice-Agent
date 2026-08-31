@@ -1,17 +1,18 @@
 /**
  * Vercel Serverless Function: /api/db
- * High-speed database proxy for Supabase PostgreSQL + pgvector
- * BUG-002 FIX: Database credentials are NEVER hardcoded here.
- * Set POSTGRES_URL in Vercel Dashboard → Project Settings → Environment Variables.
+ * Secure database proxy for Supabase PostgreSQL + pgvector
  */
 import pg from 'pg';
+import { setCorsHeaders, checkRateLimit } from './_utils.js';
+
 const { Pool } = pg;
 
 let poolCache = null;
 
 function getPool(connectionUrl) {
-    const defaultPooler = 'postgresql://postgres.ckqqrimcscymoxqefjuf:Janvi%40180204@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
-    const url = connectionUrl || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL || defaultPooler;
+    const url = connectionUrl || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL;
+    if (!url) return null;
+
     if (!poolCache) {
         poolCache = new Pool({
             connectionString: url,
@@ -25,27 +26,83 @@ function getPool(connectionUrl) {
 }
 
 export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
 
     if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
         return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
     }
 
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
+    // Rate limit: 60 requests per minute per IP
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+    }
+
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-        const { action, data, postgresUrl } = body;
+        const { action, data = {}, postgresUrl } = body;
+
+        // ── Auth Guard for Sensitive Administrative Reads ─────────────────────
+        const sensitiveReadActions = ['get_appointments', 'get_customers', 'get_logs'];
+        if (sensitiveReadActions.includes(action)) {
+            const authHeader = req.headers.authorization || req.headers['x-admin-secret'] || body.adminSecret || '';
+            const adminSecret = process.env.ADMIN_SECRET;
+            const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+            if (!adminSecret || token !== adminSecret) {
+                return res.status(401).json({
+                    error: 'Unauthorized. Admin credentials required to read database records.'
+                });
+            }
+        }
+
+        const validActions = [
+            'save_appointment', 'get_appointments',
+            'save_customer', 'get_customers',
+            'save_log', 'get_logs',
+            'search_embeddings'
+        ];
+        if (!validActions.includes(action)) {
+            return res.status(400).json({ error: `Invalid or unsupported action: ${action}` });
+        }
+
         const pool = getPool(postgresUrl);
+        if (!pool) {
+            return res.status(200).json({
+                success: false,
+                fallback: true,
+                message: 'PostgreSQL database not configured on server. Operating in local storage mode.',
+                appointments: [],
+                customers: [],
+                logs: []
+            });
+        }
 
         switch (action) {
             // --- APPOINTMENTS ---
             case 'save_appointment': {
                 const { id, customer_name, phone, service, date_time, status, notes } = data;
+                if (!id || !customer_name || !phone || !date_time) {
+                    return res.status(400).json({ error: 'Missing required appointment fields (id, customer_name, phone, date_time).' });
+                }
+
+                // Sanitize string length limits
+                const safeId = String(id).slice(0, 50);
+                const safeName = String(customer_name).slice(0, 100);
+                const safePhone = String(phone).slice(0, 20);
+                const safeService = String(service || 'Free AI Opportunity Audit').slice(0, 100);
+                const safeDateTime = String(date_time).slice(0, 50);
+                const safeStatus = String(status || 'CONFIRMED').slice(0, 20);
+                const safeNotes = String(notes || '').slice(0, 500);
+
                 await pool.query(`
                     INSERT INTO appointments (id, customer_name, phone, service, date_time, status, notes, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
@@ -57,18 +114,30 @@ export default async function handler(req, res) {
                         status = EXCLUDED.status,
                         notes = EXCLUDED.notes,
                         updated_at = NOW();
-                `, [id, customer_name, phone, service, date_time, status || 'CONFIRMED', notes || '']);
-                return res.status(200).json({ success: true, id });
+                `, [safeId, safeName, safePhone, safeService, safeDateTime, safeStatus, safeNotes]);
+                return res.status(200).json({ success: true, id: safeId });
             }
 
             case 'get_appointments': {
-                const result = await pool.query('SELECT * FROM appointments ORDER BY date_time DESC;');
+                const result = await pool.query('SELECT id, customer_name, phone, email, service, date_time, status, notes, created_at FROM appointments ORDER BY date_time DESC LIMIT 100;');
                 return res.status(200).json({ success: true, appointments: result.rows });
             }
 
             // --- CUSTOMERS ---
             case 'save_customer': {
                 const { id, name, phone, email, company, notes, preferred_services } = data;
+                if (!phone) {
+                    return res.status(400).json({ error: 'Customer phone number is required.' });
+                }
+
+                const safeId = String(id || `cust_${phone}`).slice(0, 50);
+                const safeName = String(name || 'Valued Customer').slice(0, 100);
+                const safePhone = String(phone).slice(0, 20);
+                const safeEmail = String(email || '').slice(0, 120);
+                const safeCompany = String(company || '').slice(0, 100);
+                const safeNotes = String(notes || '').slice(0, 500);
+                const safeServices = String(preferred_services || '').slice(0, 200);
+
                 await pool.query(`
                     INSERT INTO customers (id, name, phone, email, company, notes, preferred_services, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
@@ -80,22 +149,26 @@ export default async function handler(req, res) {
                         notes = EXCLUDED.notes,
                         preferred_services = EXCLUDED.preferred_services,
                         updated_at = NOW();
-                `, [id, name, phone, email || '', company || '', notes || '', preferred_services || '']);
-                return res.status(200).json({ success: true, id });
+                `, [safeId, safeName, safePhone, safeEmail, safeCompany, safeNotes, safeServices]);
+                return res.status(200).json({ success: true, id: safeId });
             }
 
             case 'get_customers': {
-                const result = await pool.query('SELECT * FROM customers ORDER BY created_at DESC;');
+                const result = await pool.query('SELECT id, name, phone, email, company, notes, preferred_services, created_at FROM customers ORDER BY created_at DESC LIMIT 100;');
                 return res.status(200).json({ success: true, customers: result.rows });
             }
 
             // --- CONVERSATION LOGS ---
             case 'save_log': {
                 const { session_id, turn_index, user_input, ai_response, latency_ttft_ms, total_latency_ms, tool_calls } = data;
+                const safeSessionId = String(session_id || '').slice(0, 60);
+                const safeInput = String(user_input || '').slice(0, 2000);
+                const safeOutput = String(ai_response || '').slice(0, 4000);
+
                 await pool.query(`
                     INSERT INTO conversation_logs (session_id, turn_index, user_input, ai_response, latency_ttft_ms, total_latency_ms, tool_calls, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());
-                `, [session_id || '', turn_index || 1, user_input, ai_response, latency_ttft_ms || 0, total_latency_ms || 0, JSON.stringify(tool_calls || [])]);
+                `, [safeSessionId, Number(turn_index) || 1, safeInput, safeOutput, Number(latency_ttft_ms) || 0, Number(total_latency_ms) || 0, JSON.stringify(tool_calls || [])]);
                 return res.status(200).json({ success: true });
             }
 
@@ -105,43 +178,36 @@ export default async function handler(req, res) {
             }
 
             // --- KNOWLEDGE EMBEDDINGS (pgvector) ---
-            case 'save_embedding': {
-                const { id, title, content, url, embedding } = data;
-                const vectorString = Array.isArray(embedding) ? `[${embedding.join(',')}]` : null;
-                await pool.query(`
-                    INSERT INTO knowledge_embeddings (id, title, content, url, embedding, created_at)
-                    VALUES ($1, $2, $3, $4, $5::vector, NOW())
-                    ON CONFLICT (id) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        content = EXCLUDED.content,
-                        url = EXCLUDED.url,
-                        embedding = EXCLUDED.embedding;
-                `, [id, title || '', content, url || '', vectorString]);
-                return res.status(200).json({ success: true, id });
-            }
-
             case 'search_embeddings': {
                 const { query_embedding, limit = 4 } = data;
                 if (!query_embedding || !Array.isArray(query_embedding)) {
                     return res.status(400).json({ error: 'query_embedding array is required' });
                 }
-                const vectorString = `[${query_embedding.join(',')}]`;
+                const vectorString = `[${query_embedding.slice(0, 1536).join(',')}]`;
+                const safeLimit = Math.min(10, Math.max(1, Number(limit) || 4));
                 const result = await pool.query(`
                     SELECT id, title, content, url, 1 - (embedding <=> $1::vector) as similarity
                     FROM knowledge_embeddings
                     WHERE embedding IS NOT NULL
                     ORDER BY embedding <=> $1::vector ASC
                     LIMIT $2;
-                `, [vectorString, limit]);
+                `, [vectorString, safeLimit]);
                 return res.status(200).json({ success: true, results: result.rows });
             }
 
             default:
-                return res.status(400).json({ error: `Unknown action: ${action}` });
+                return res.status(400).json({ error: `Invalid or unsupported action: ${action}` });
         }
 
     } catch (err) {
-        console.warn('Supabase DB API Note (falling back to local storage):', err.message);
-        return res.status(200).json({ success: false, fallback: true, error: err.message, appointments: [], customers: [], logs: [] });
+        console.warn('Database proxy note (fallback active):', err.message);
+        return res.status(200).json({
+            success: false,
+            fallback: true,
+            error: 'Database operation skipped or failed. Local storage active.',
+            appointments: [],
+            customers: [],
+            logs: []
+        });
     }
 }

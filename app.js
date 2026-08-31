@@ -2177,8 +2177,14 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             const name  = _inputName?.value.trim()  || '';
             const phone = _inputPhone?.value.trim()  || '';
 
-            // Validate: phone must have at least 10 digits
-            if (!phone || phone.replace(/\D/g, '').length < 10) {
+            // Validate: phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9
+            let cleanPhone = phone.replace(/[\s\-()]/g, '');
+            if (cleanPhone.startsWith('+91')) cleanPhone = cleanPhone.slice(3);
+            else if (cleanPhone.startsWith('91') && cleanPhone.length === 12) cleanPhone = cleanPhone.slice(2);
+            else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = cleanPhone.slice(1);
+
+            const isIndianMobile = /^[6-9]\d{9}$/.test(cleanPhone);
+            if (!isIndianMobile) {
                 _inputPhone?.classList.add('call-input-error');
                 _inputPhone?.focus();
                 setTimeout(() => _inputPhone?.classList.remove('call-input-error'), 2000);
@@ -2258,6 +2264,69 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             if (callBtnIcon)    callBtnIcon.className  = 'fa-solid fa-phone';
             if (callBtnText)    callBtnText.textContent = 'Start Real-Time Voice';
             setAgentState('idle', 'Agent Inactive • Click to Start');
+        });
+
+        // ── Exotel Phone Call Trigger ────────────────────────────────────
+        const _btnExotel     = document.getElementById('btnExotelCall');
+        const _statusEl      = document.getElementById('exotelCallStatus');
+
+        const _showExotelStatus = (msg, type = 'info') => {
+            if (!_statusEl) return;
+            _statusEl.className = `exotel-call-status ${type}`;
+            _statusEl.innerHTML = msg;
+            _statusEl.style.display = 'block';
+        };
+
+        _btnExotel?.addEventListener('click', async () => {
+            const name  = _inputName?.value.trim()  || '';
+            const phone = _inputPhone?.value.trim()  || '';
+
+            // Validate Indian phone number
+            let cleanPhone = phone.replace(/[\s\-()]/g, '');
+            if (cleanPhone.startsWith('+91')) cleanPhone = cleanPhone.slice(3);
+            else if (cleanPhone.startsWith('91') && cleanPhone.length === 12) cleanPhone = cleanPhone.slice(2);
+            else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = cleanPhone.slice(1);
+
+            const isIndianMobile = /^[6-9]\d{9}$/.test(cleanPhone);
+            if (!isIndianMobile) {
+                _inputPhone?.classList.add('call-input-error');
+                _inputPhone?.focus();
+                _showExotelStatus('⚠️ Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).', 'error');
+                setTimeout(() => _inputPhone?.classList.remove('call-input-error'), 2500);
+                return;
+            }
+
+            _btnExotel.disabled = true;
+            _btnExotel.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Calling Phone…</span>';
+            _showExotelStatus('⏳ Connecting to Exotel to dial your phone number (via 09513886363)...', 'loading');
+
+            try {
+                const res = await fetch('/api/exotel-call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: cleanPhone, name })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    _showExotelStatus(`✅ <strong>Call Initiated!</strong> Your phone will ring shortly from Exophone <strong>09513886363</strong>. Please pick up the call to talk to Sonara.`, 'success');
+                    appendSystemMessage(`📞 Exotel phone call dispatched to +91-${cleanPhone}. Caller ID: 09513886363.`);
+                } else {
+                    const errMsg = data.error || 'Failed to place call';
+                    if (errMsg.toLowerCase().includes('kyc') || errMsg.toLowerCase().includes('unverified') || errMsg.toLowerCase().includes('not yet kyc compliant')) {
+                        _showExotelStatus(`⚠️ <strong>Exotel Account Notice:</strong> ${errMsg}<br><small style="margin-top:6px;display:block;">Your Exotel trial account requires phone number whitelisting / KYC verification before outbound calls can be connected to this number. You can verify your number in the Exotel Dashboard, or use the <strong>"Browser Call"</strong> button above for instant free calling.</small>`, 'error');
+                    } else {
+                        _showExotelStatus(`❌ <strong>Call Error:</strong> ${errMsg}`, 'error');
+                    }
+                }
+            } catch (err) {
+                console.error('[ExotelUI] Call error:', err);
+                _showExotelStatus(`❌ Network error while connecting to Exotel. Please try again or use Browser Call.`, 'error');
+            } finally {
+                _btnExotel.disabled = false;
+                _btnExotel.innerHTML = '<i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i><span>Call My Phone</span>';
+            }
         });
 
         // ── Keyboard: Escape → end call ───────────────────────────────────

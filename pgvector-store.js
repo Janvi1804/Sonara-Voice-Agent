@@ -164,14 +164,16 @@ export class PgVectorStore {
         // SELECT id, page_url, title, content, 1 - (embedding <=> query_vector) AS similarity FROM knowledge_embeddings ORDER BY embedding <=> query_vector LIMIT topK;
         if (this.postgresUrl) {
             try {
-                const res = await fetch('/api/pgvector', {
+                const res = await fetch('/api/db', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'search',
+                        action: 'search_embeddings',
                         postgresUrl: this.postgresUrl,
-                        queryVector,
-                        topK
+                        data: {
+                            query_embedding: queryVector,
+                            limit: topK
+                        }
                     })
                 });
                 if (res.ok) {
@@ -181,7 +183,7 @@ export class PgVectorStore {
                     }
                 }
             } catch (err) {
-                console.warn('Remote pgvector query failed, using local store:', err);
+                console.warn('Remote pgvector query note (using local store):', err.message);
             }
         }
 

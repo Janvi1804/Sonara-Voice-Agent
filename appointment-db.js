@@ -11,6 +11,15 @@ export const STANDARD_DAILY_SLOTS = [
     '05:00 PM'
 ];
 
+export function isValidIndianPhone(phone) {
+    if (!phone) return false;
+    let clean = String(phone).trim().replace(/[\s\-()]/g, '');
+    if (clean.startsWith('+91')) clean = clean.slice(3);
+    else if (clean.startsWith('91') && clean.length === 12) clean = clean.slice(2);
+    else if (clean.startsWith('0') && clean.length === 11) clean = clean.slice(1);
+    return /^[6-9]\d{9}$/.test(clean);
+}
+
 export class AppointmentDB {
     constructor(options = {}) {
         this.postgresUrl = options.postgresUrl || '';
@@ -143,9 +152,21 @@ export class AppointmentDB {
      */
     async bookAppointment({ customerName, phone, email = '', service = 'Free AI Opportunity Audit', date, time, notes = '' }) {
         await this.init();
+
+        if (!isValidIndianPhone(phone)) {
+            return {
+                success: false,
+                message: 'Invalid phone number. A valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 is required to book an appointment.'
+            };
+        }
+
+        let cleanPhone = String(phone || '').trim().replace(/[\s\-()]/g, '');
+        if (cleanPhone.startsWith('+91')) cleanPhone = cleanPhone.slice(3);
+        else if (cleanPhone.startsWith('91') && cleanPhone.length === 12) cleanPhone = cleanPhone.slice(2);
+        else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = cleanPhone.slice(1);
+
         const normDate = this.normalizeDate(date);
         const normTime = this.normalizeTime(time);
-        const cleanPhone = String(phone || '').replace(/[\s-]/g, '');
 
         const avail = await this.checkAvailability(normDate, normTime);
         if (!avail.isAvailable) {

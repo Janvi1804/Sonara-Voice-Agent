@@ -2,6 +2,7 @@
  * Vercel Serverless Function: /api/transcribe
  * High-speed proxy for Groq Whisper Large V3 Turbo Audio Transcription
  */
+import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
 export const config = {
     api: {
@@ -10,16 +11,23 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
 
     if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
         return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
     }
 
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please wait a moment.' });
     }
 
     try {
@@ -53,6 +61,6 @@ export default async function handler(req, res) {
 
     } catch (err) {
         console.error('Whisper Proxy Error:', err);
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: 'Audio transcription failed.' });
     }
 }
