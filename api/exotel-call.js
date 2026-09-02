@@ -52,6 +52,11 @@ export default async function handler(req, res) {
         const callerId = process.env.EXOTEL_CALLER_ID || '09513886363';
         const appId = process.env.EXOTEL_APP_ID || '1327980';
 
+        // Warm-up ping to Render WebSocket bridge to avoid cold-start delay
+        try {
+            fetch('https://sonara-voice-agent.onrender.com/health', { signal: AbortSignal.timeout(2000) }).catch(() => {});
+        } catch (_) {}
+
         const authHeader = 'Basic ' + Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
         const endpoint = `https://api.exotel.com/v1/Accounts/${accountSid}/Calls/connect.json`;
 
