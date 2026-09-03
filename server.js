@@ -1,433 +1,409 @@
 /**
- * Sonara Voice Agent � Standalone Telephony WebSocket Bridge (Exotel / Twilio)
- * Real-time bidirectional voice streaming:
- * Exotel Audio (Mulaw 8kHz) <-> Groq Whisper (STT) <-> LLaMA 3.3-70B (LLM) <-> ElevenLabs (TTS)
+ * Sonara Voice Agent — Exotel Telephony WebSocket Bridge
+ * Production-Ready | Full 2-Way AI Phone Conversation
+ *
+ * Flow:
+ *   Exotel (mulaw 8kHz) <-> VAD <-> Groq Whisper STT <-> LLaMA 3.3-70B <-> ElevenLabs TTS
+ *
+ * Fixes applied:
+ *  - No duplicate greeting (Exotel Greeting applet handles it)
+ *  - StreamSid optional (works with or without it)
+ *  - RMS threshold tuned for real GSM telephony (speech ~2000-8000, noise ~100-400)
+ *  - Barge-in cooldown 3s so phone line noise never cancels Sonara mid-sentence
+ *  - 160-byte audio frames (20ms @ 8kHz) for Exotel compatibility
+ *  - Full error handling with automatic recovery
+ *  - Conversation history maintained across full call
  */
+
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import 'dotenv/config';
 
-const PORT = process.env.PORT || 8080;
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'cgSgspJ2msm6clMCkdW9'; // Jessica
+const PORT     = process.env.PORT             || 8080;
+const GROQ_KEY = process.env.GROQ_API_KEY     || '';
+const EL_KEY   = process.env.ELEVENLABS_API_KEY || '';
+const EL_VOICE = process.env.ELEVENLABS_VOICE_ID || 'cgSgspJ2msm6clMCkdW9'; // Jessica
 
-// ---------------------------------------------------------------------------
-// 1. Mu-law (G.711) Decoding & Encoding Tables
-// ---------------------------------------------------------------------------
-const ULAW_TO_PCM = new Int16Array(256);
-for (let i = 0; i < 256; i++) {
-    let input = ~i;
-    let sign = (input & 0x80) ? -1 : 1;
-    let exponent = (input >> 4) & 0x07;
-    let mantissa = input & 0x0F;
-    let sample = ((mantissa << 3) + 0x84) << exponent;
-    sample -= 0x84;
-    ULAW_TO_PCM[i] = sign * sample;
-}
-
-// Convert 8kHz Mu-law Buffer to 16kHz 16-bit Linear PCM (for Whisper STT)
-function mulawToPcm16k(mulawBuffer) {
-    const pcmSamples = new Int16Array(mulawBuffer.length * 2); // 8kHz -> 16kHz (2x linear interpolation)
-    for (let i = 0; i < mulawBuffer.length; i++) {
-        const s1 = ULAW_TO_PCM[mulawBuffer[i]];
-        const s2 = (i < mulawBuffer.length - 1) ? ULAW_TO_PCM[mulawBuffer[i + 1]] : s1;
-        pcmSamples[i * 2] = s1;
-        pcmSamples[i * 2 + 1] = Math.round((s1 + s2) / 2);
+// ─────────────────────────────────────────────────────────────────────────────
+// G.711 Mu-Law Decoding (Exotel sends mulaw 8kHz audio)
+// ─────────────────────────────────────────────────────────────────────────────
+const ULAW_TABLE = (() => {
+    const t = new Int16Array(256);
+    for (let i = 0; i < 256; i++) {
+        let u = ~i;
+        const sign = u & 0x80 ? -1 : 1;
+        const exp  = (u >> 4) & 0x07;
+        const mant = u & 0x0F;
+        t[i] = sign * (((mant << 3) + 0x84) << exp) - sign * 0x84;
     }
-    return Buffer.from(pcmSamples.buffer);
-}
+    return t;
+})();
 
-// Calculate RMS energy of mulaw chunk to detect voice vs silence
-function calculateRms(mulawBuffer) {
-    let sum = 0;
-    for (let i = 0; i < mulawBuffer.length; i++) {
-        const s = ULAW_TO_PCM[mulawBuffer[i]];
-        sum += s * s;
+/** Convert mulaw 8kHz buffer to 16kHz 16-bit PCM for Whisper */
+function mulaw8kTo16kPcm(buf) {
+    const out = new Int16Array(buf.length * 2);
+    for (let i = 0; i < buf.length; i++) {
+        const s1 = ULAW_TABLE[buf[i]];
+        const s2 = i < buf.length - 1 ? ULAW_TABLE[buf[i + 1]] : s1;
+        out[i * 2]     = s1;
+        out[i * 2 + 1] = Math.round((s1 + s2) / 2);
     }
-    return Math.sqrt(sum / mulawBuffer.length);
+    return Buffer.from(out.buffer);
 }
 
-// Create a WAV file buffer from 16kHz 16-bit Mono PCM
-function createWavBuffer(pcmBuffer) {
-    const header = Buffer.alloc(44);
-    const byteRate = 16000 * 2;
-    const dataSize = pcmBuffer.length;
-
-    header.write('RIFF', 0);
-    header.writeUInt32LE(dataSize + 36, 4);
-    header.write('WAVE', 8);
-    header.write('fmt ', 12);
-    header.writeUInt32LE(16, 16);          // SubChunk1Size (16 for PCM)
-    header.writeUInt16LE(1, 20);           // AudioFormat (1 for PCM)
-    header.writeUInt16LE(1, 22);           // NumChannels (1 mono)
-    header.writeUInt32LE(16000, 24);       // SampleRate
-    header.writeUInt32LE(byteRate, 28);    // ByteRate
-    header.writeUInt16LE(2, 32);           // BlockAlign
-    header.writeUInt16LE(16, 34);          // BitsPerSample
-    header.write('data', 36);
-    header.writeUInt32LE(dataSize, 40);
-
-    return Buffer.concat([header, pcmBuffer]);
+/** RMS energy — used for Voice Activity Detection */
+function rms(buf) {
+    let s = 0;
+    for (let i = 0; i < buf.length; i++) s += ULAW_TABLE[buf[i]] ** 2;
+    return Math.sqrt(s / buf.length);
 }
 
-// ---------------------------------------------------------------------------
-// 2. Master System Prompt & RAG Knowledge Base
-// ---------------------------------------------------------------------------
-const SYSTEM_PROMPT = `You are Sonara, the friendly, natural, and knowledgeable AI Customer Support & Solutions Specialist for Converse AI by Revti Digital, India.
-Speak naturally like a professional human customer specialist having a real phone conversation.
+/** Build a WAV file from 16kHz 16-bit Mono PCM */
+function toWav(pcm) {
+    const hdr = Buffer.alloc(44);
+    hdr.write('RIFF', 0);   hdr.writeUInt32LE(pcm.length + 36, 4);
+    hdr.write('WAVE', 8);   hdr.write('fmt ', 12);
+    hdr.writeUInt32LE(16, 16); hdr.writeUInt16LE(1, 20);
+    hdr.writeUInt16LE(1, 22); hdr.writeUInt32LE(16000, 24);
+    hdr.writeUInt32LE(32000, 28); hdr.writeUInt16LE(2, 32);
+    hdr.writeUInt16LE(16, 34); hdr.write('data', 36);
+    hdr.writeUInt32LE(pcm.length, 40);
+    return Buffer.concat([hdr, pcm]);
+}
 
-PERSONALITY & TONE:
-- Be warm, confident, conversational, and professional.
-- Speak in simple, spoken conversational English (or natural Hinglish if the user speaks Hindi).
-- Keep all responses to 1 to 3 short spoken sentences. Never dump long paragraphs.
-- Never use bullet points, markdown, asterisks, or formatting � output plain spoken sentences only.
+// ─────────────────────────────────────────────────────────────────────────────
+// Sonara Master System Prompt
+// ─────────────────────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are Sonara, the friendly and knowledgeable AI Solutions Specialist for Converse AI by Revti Digital, India.
 
-CORE KNOWLEDGE:
-- Company: Converse AI (theconverseai.com), operated by Revti Digital, India. Contact: contact@theconverseai.com, +91-9982323333.
-- Services: Agentic AI Systems, Inbound & Outbound Voice Agents, WhatsApp AI Automation (98% open rates), Enterprise RAG Knowledge Bases, Custom CRM/ERP AI Integrations.
+SPEAKING RULES (Phone Call — CRITICAL):
+- Respond in 1 to 3 SHORT natural spoken sentences only. Never more.
+- No bullet points, no markdown, no asterisks, no lists — plain spoken words only.
+- Be warm, confident, conversational. Like a real human specialist on the phone.
+- If user speaks Hindi or Hinglish, reply naturally in Hinglish.
+- Always end with a brief question to keep conversation going.
+
+COMPANY KNOWLEDGE:
+- Name: Converse AI (theconverseai.com) by Revti Digital, India
+- Contact: contact@theconverseai.com | +91-9982323333 | +91-7023084065
+- Services: AI Chatbots, WhatsApp AI (98% open rate), Voice AI Agents, Omni-Channel Inbox, CRM/ERP Integration, Enterprise RAG, Agentic Process Automation
 - Case Studies:
-  1) StyleMart India (Retail): 3x revenue in repeat purchases, 65% support cost reduction.
-  2) LearnSphere (EdTech): Doubled course enrolments in 90 days, cut response time by 80%.
-  3) CareFirst Clinics (Healthcare): Reduced appointment no-shows by 55%, saved 120 admin hours monthly.
-- Pricing: No rigid fixed tiers. Tailored to business scale. Every engagement starts with a 100% Free AI Opportunity & Readiness Audit.
-- Next Steps: Offer to book a Free AI Opportunity Audit or connect with our human specialist.`;
+  * StyleMart India (Retail): 3x repeat revenue, 65% support cost reduction, 94% CSAT
+  * LearnSphere (EdTech): 2x course enrolments in 90 days, 80% faster lead response
+  * CareFirst Clinics (Healthcare): 55% fewer no-shows, 120 admin hours saved monthly
+- Pricing: Custom bespoke pricing. Starts with a 100% Free AI Readiness Audit at theconverseai.com/book-demo
+- Clients: Tata Motors, Mapsor, Zapp Loans, Meghaa Modi Design Studio, Readiprint, Heritage Food Diary, 500+ businesses
 
-// ---------------------------------------------------------------------------
-// 3. AI Service Integrations: Whisper STT, LLaMA 3.3 LLM, ElevenLabs TTS
-// ---------------------------------------------------------------------------
+CALL GOAL: Qualify the caller, understand their business need, and invite them to book a Free AI Opportunity Audit.`;
 
-// Whisper STT via Groq
-async function transcribeAudio(wavBuffer) {
-    if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Services
+// ─────────────────────────────────────────────────────────────────────────────
 
-    const formData = new FormData();
-    formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'speech.wav');
-    formData.append('model', 'whisper-large-v3-turbo');
-    formData.append('temperature', '0.0');
-    formData.append('response_format', 'json');
+/** Groq Whisper STT — converts caller audio to text */
+async function stt(wavBuf) {
+    if (!GROQ_KEY) throw new Error('GROQ_API_KEY not set');
+    const form = new FormData();
+    form.append('file', new Blob([wavBuf], { type: 'audio/wav' }), 'audio.wav');
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('response_format', 'json');
+    form.append('temperature', '0');
 
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}` },
-        body: formData,
-        signal: AbortSignal.timeout(6000)
+        headers: { Authorization: `Bearer ${GROQ_KEY}` },
+        body: form,
+        signal: AbortSignal.timeout(8000)
     });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Groq Whisper failed (${res.status}): ${errText}`);
-    }
-
-    const data = await res.json();
-    return (data.text || '').trim();
+    if (!r.ok) throw new Error(`Whisper ${r.status}: ${await r.text()}`);
+    return ((await r.json()).text || '').trim();
 }
 
-// LLM via Groq LLaMA 3.3-70B
-async function generateAiResponse(history, userPrompt) {
-    if (!GROQ_API_KEY) return 'Thank you for calling Converse AI. How can I help you today?';
-
+/** Groq LLaMA 3.3-70B — generates Sonara's conversational reply */
+async function llm(history, userText) {
+    if (!GROQ_KEY) return "I'm sorry, my AI brain isn't configured. Please call back later.";
     const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        ...history.slice(-6),
-        { role: 'user', content: userPrompt }
+        ...history.slice(-8),
+        { role: 'user', content: userText }
     ];
-
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${GROQ_API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages,
-            temperature: 0.6,
-            max_tokens: 180
-        }),
-        signal: AbortSignal.timeout(6000)
+        headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.65, max_tokens: 160 }),
+        signal: AbortSignal.timeout(8000)
     });
-
-    if (!res.ok) {
-        throw new Error(`Groq LLM failed: ${res.status}`);
-    }
-
-    const data = await res.json();
-    return (data.choices?.[0]?.message?.content || '').trim().replace(/[*_#`]/g, '');
+    if (!r.ok) throw new Error(`LLM ${r.status}: ${await r.text()}`);
+    return ((await r.json()).choices?.[0]?.message?.content || '').trim().replace(/[*_#`[\]]/g, '');
 }
 
-// ElevenLabs TTS streaming mulaw 8000Hz directly for Telephony
-async function* streamTtsAudio(text) {
-    if (!ELEVENLABS_API_KEY) {
-        console.warn('[TTS] ELEVENLABS_API_KEY not configured, skipping speech output');
-        return;
-    }
-
-    const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}/stream?output_format=ulaw_8000&optimize_streaming_latency=3`;
-
-    const res = await fetch(endpoint, {
+/** ElevenLabs Jessica TTS — streams mulaw 8kHz audio back to Exotel */
+async function* tts(text) {
+    if (!EL_KEY) { console.warn('[TTS] No ELEVENLABS_API_KEY'); return; }
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=ulaw_8000&optimize_streaming_latency=4`;
+    const r = await fetch(url, {
         method: 'POST',
-        headers: {
-            'xi-api-key': ELEVENLABS_API_KEY,
-            'Content-Type': 'application/json'
-        },
+        headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
             text,
             model_id: 'eleven_turbo_v2_5',
-            voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.8,
-                style: 0.15,
-                use_speaker_boost: true
-            }
+            voice_settings: { stability: 0.45, similarity_boost: 0.80, style: 0.10, use_speaker_boost: true }
         })
     });
-
-    if (!res.ok) {
-        console.error('[TTS] ElevenLabs failed:', res.status, await res.text());
-        return;
-    }
-
-    const reader = res.body.getReader();
+    if (!r.ok) { console.error('[TTS] ElevenLabs error:', r.status, await r.text()); return; }
+    const reader = r.body.getReader();
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value && value.length > 0) {
-            yield Buffer.from(value);
-        }
+        if (value?.length) yield Buffer.from(value);
     }
 }
 
-// ---------------------------------------------------------------------------
-// 4. HTTP & WebSocket Server Setup
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP Server — Health & Resolver Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-    // Health check endpoint
-    if (req.url === '/' || req.url === '/health') {
+    const { url, headers } = req;
+
+    if (url === '/' || url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'online',
-            service: 'Sonara Exotel Telephony Bridge',
-            timestamp: new Date().toISOString()
-        }));
-        return;
+        return res.end(JSON.stringify({ status: 'online', service: 'Sonara Telephony Bridge', ts: new Date().toISOString() }));
     }
 
-    // Dynamic endpoint for Exotel Voicebot resolver
-    if (req.url === '/media' || req.url === '/exotel-voicebot') {
-        const host = req.headers.host || `localhost:${PORT}`;
-        const wsProtocol = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
+    // Exotel HTTP resolver endpoint — returns WSS URL dynamically
+    if (url === '/media' || url === '/voicebot') {
+        const host = headers['x-forwarded-host'] || headers.host || `localhost:${PORT}`;
+        const proto = headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            stream_url: `${wsProtocol}://${host}/media`
-        }));
-        return;
+        return res.end(JSON.stringify({ stream_url: `${proto}://${host}/media` }));
     }
 
-    res.writeHead(404);
-    res.end();
+    res.writeHead(404); res.end();
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WebSocket Upgrade Handler
+// ─────────────────────────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ noServer: true });
-
-server.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-    });
+server.on('upgrade', (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
 });
 
-// ---------------------------------------------------------------------------
-// 5. Active Call Session Handler
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// Active Call Session — Handles one Exotel call per WebSocket connection
+// ─────────────────────────────────────────────────────────────────────────────
 wss.on('connection', (ws, req) => {
-    console.log(`[Telephony] New WebSocket connection from: ${req.socket.remoteAddress}`);
+    const remoteIp = req.socket.remoteAddress;
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[Exotel] 📞 Incoming call connection from: ${remoteIp}`);
+    console.log('='.repeat(60));
 
-    let streamSid = null;
-    let callSid = null;
-    let isAiSpeaking = false;
-    let isProcessing = false;
-    let audioBuffer = [];
-    let silenceFrames = 0;
-    let speechFrames = 0;
-    let history = [];
+    /* ── Session State ── */
+    let streamSid       = null;
+    let isAiSpeaking    = false;
+    let isProcessing    = false;
+    let aiStartedAt     = 0;
+    let history         = [];
+    let speechBuf       = [];
+    let speechFrames    = 0;
+    let silenceFrames   = 0;
 
-    const RMS_THRESHOLD = 800;      // Higher - ignores GSM phone line noise
-    const SILENCE_TIMEOUT = 20;     // ~640ms silence to confirm utterance complete
-    const BARGE_IN_THRESHOLD = 1800; // Much higher - only real interruptions trigger barge-in
-    const BARGE_IN_COOLDOWN_MS = 2500; // 2.5s after AI starts speaking, no barge-in
-    let aiSpeakingStartTime = 0;
+    /* ── VAD Thresholds (tuned for GSM 8kHz mulaw) ── */
+    const SPEECH_RMS    = 900;   // above this = caller speaking
+    const BARGE_RMS     = 2000;  // above this = strong interruption while AI speaks
+    const SILENCE_FRAMES = 22;  // ~700ms silence @ ~32ms/frame → end of utterance
+    const MIN_SPEECH    = 5;    // minimum speech frames before processing
+    const BARGE_COOLDOWN = 3000; // ms after AI starts — barge-in disabled
 
-    // Helper: Send audio chunk to Exotel phone call
-    const sendAudioChunk = (chunkBuffer) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        const msg = { event: 'media', media: { payload: chunkBuffer.toString('base64') } };
-        if (streamSid) msg.streamSid = streamSid;
-        ws.send(JSON.stringify(msg));
+    /* ── Helpers ── */
+    const send = (obj) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
     };
 
-    // Helper: Clear audio queue on phone (Barge-in / Interruption)
-    const clearPhoneQueue = () => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        const msg = { event: 'clear' };
-        if (streamSid) msg.streamSid = streamSid;
-        ws.send(JSON.stringify(msg));
-    };
-
-    // Helper: Play AI response to caller
-    const speakAiResponse = async (responseText) => {
-        isAiSpeaking = true;
-        aiSpeakingStartTime = Date.now();
-        console.log(`[Sonara] Speaking: "${responseText}"`);
-
-        try {
-            for await (const chunk of streamTtsAudio(responseText)) {
-                if (!isAiSpeaking) {
-                    console.log('[Sonara] TTS cancelled mid-stream due to barge-in');
-                    break;
-                }
-                // Send in telephony-sized chunks (~320 bytes = 40ms)
-                for (let offset = 0; offset < chunk.length; offset += 320) {
-                    if (!isAiSpeaking) break;
-                    const slice = chunk.subarray(offset, Math.min(offset + 320, chunk.length));
-                    sendAudioChunk(slice);
-                }
-            }
-        } catch (err) {
-            console.error('[Sonara] TTS playback error:', err);
-        } finally {
-            isAiSpeaking = false;
-            audioBuffer = [];
-            silenceFrames = 0;
-            speechFrames = 0;
+    const sendAudio = (chunk) => {
+        // Exotel expects 160-byte frames (20ms at 8kHz mulaw)
+        for (let o = 0; o < chunk.length; o += 160) {
+            const frame = chunk.subarray(o, Math.min(o + 160, chunk.length));
+            const msg = { event: 'media', media: { payload: frame.toString('base64') } };
+            if (streamSid) msg.streamSid = streamSid;
+            send(msg);
         }
     };
 
-    ws.on('message', async (message) => {
+    const clearQueue = () => {
+        const msg = { event: 'clear' };
+        if (streamSid) msg.streamSid = streamSid;
+        send(msg);
+    };
+
+    /* ── Speak Response ── */
+    const speak = async (text) => {
+        if (!text) return;
+        isAiSpeaking = true;
+        aiStartedAt  = Date.now();
+        console.log(`[Sonara] 🗣️  "${text}"`);
         try {
-            const data = JSON.parse(message.toString());
-
-            switch (data.event) {
-                case 'connected':
-                    console.log('[Exotel] Handshake connected');
-                    break;
-
-                case 'start':
-                    streamSid = data.streamSid || data.start?.streamSid;
-                    callSid = data.start?.callSid;
-                    console.log(`[Exotel] Call Started � StreamSid: ${streamSid}, CallSid: ${callSid}`);
-
-                    // Initial proactive greeting from Sonara
-                    setTimeout(() => {
-                        const greeting = "Namaste! Welcome to Converse AI. I am Sonara, your AI solutions specialist. How can I help you today?";
-                        history.push({ role: 'assistant', content: greeting });
-                        speakAiResponse(greeting);
-                    }, 500);
-                    break;
-
-                case 'media':
-                    if (!data.media?.payload) return;
-                    const mulawChunk = Buffer.from(data.media.payload, 'base64');
-                    const rms = calculateRms(mulawChunk);
-
-                    // BARGE-IN: If caller speaks while Sonara is speaking, interrupt immediately!
-                    if (isAiSpeaking && rms > RMS_THRESHOLD * 1.4) {
-                        speechFrames++;
-                        if (speechFrames >= 3) {
-                            console.log('? [Barge-In] Caller interrupted Sonara. Clearing audio!');
-                            isAiSpeaking = false;
-                            clearPhoneQueue();
-                            audioBuffer = [];
-                            speechFrames = 0;
-                            silenceFrames = 0;
-                        }
-                        return;
-                    }
-
-                    if (isAiSpeaking || isProcessing) return;
-
-                    // Voice Activity Detection (VAD) with debug logging
-                    if (speechFrames === 0 && audioBuffer.length === 0 && Math.random() < 0.003) {
-                        console.log(`[VAD] Noise floor RMS: ${Math.round(rms)} (threshold: ${RMS_THRESHOLD})`);
-                    }
-                    if (rms > RMS_THRESHOLD) {
-                        if (speechFrames === 0) console.log(`[VAD] Speech onset! RMS: ${Math.round(rms)}`);
-                        speechFrames++;
-                        silenceFrames = 0;
-                        audioBuffer.push(mulawChunk);
-                    } else if (audioBuffer.length > 0) {
-                        silenceFrames++;
-                        audioBuffer.push(mulawChunk);
-
-                        // If caller was speaking and has now paused for ~450ms
-                        if (silenceFrames >= SILENCE_TIMEOUT && speechFrames >= 4) {
-                            isProcessing = true;
-                            const fullMulaw = Buffer.concat(audioBuffer);
-                            audioBuffer = [];
-                            silenceFrames = 0;
-                            speechFrames = 0;
-
-                            (async () => {
-                                try {
-                                    console.log(`[Telephony] Processing caller utterance (${fullMulaw.length} bytes)...`);
-                                    const pcm16k = mulawToPcm16k(fullMulaw);
-                                    const wavBuffer = createWavBuffer(pcm16k);
-
-                                    // 1. Transcribe with Whisper
-                                    const userSpeech = await transcribeAudio(wavBuffer);
-                                    console.log(`[Caller Said]: "${userSpeech}"`);
-
-                                    if (!userSpeech || userSpeech.length < 2) {
-                                        isProcessing = false;
-                                        return;
-                                    }
-
-                                    // 2. Generate Sonara AI Response
-                                    history.push({ role: 'user', content: userSpeech });
-                                    const aiText = await generateAiResponse(history, userSpeech);
-                                    history.push({ role: 'assistant', content: aiText });
-
-                                    // 3. Speak response over phone
-                                    await speakAiResponse(aiText);
-
-                                } catch (pipelineErr) {
-                                    console.error('[Pipeline Error]:', pipelineErr);
-                                    const fallback = "I didn't quite catch that. Could you please repeat?";
-                                    speakAiResponse(fallback);
-                                } finally {
-                                    isProcessing = false;
-                                }
-                            })();
-                        }
-                    }
-                    break;
-
-                case 'stop':
-                    console.log(`[Exotel] Call Ended � StreamSid: ${streamSid}`);
-                    ws.close();
-                    break;
+            for await (const chunk of tts(text)) {
+                if (!isAiSpeaking) { console.log('[Sonara] ⛔ TTS interrupted'); break; }
+                sendAudio(chunk);
             }
         } catch (e) {
-            console.error('[WebSocket Error]:', e.message);
+            console.error('[Sonara] TTS error:', e.message);
+        } finally {
+            isAiSpeaking = false;
+            speechBuf    = [];
+            speechFrames = 0;
+            silenceFrames = 0;
+        }
+    };
+
+    /* ── Full AI Pipeline: Speech → Text → LLM → Voice ── */
+    const processUtterance = async (mulawFrames) => {
+        isProcessing = true;
+        try {
+            const raw  = Buffer.concat(mulawFrames);
+            const pcm  = mulaw8kTo16kPcm(raw);
+            const wav  = toWav(pcm);
+
+            console.log(`[Pipeline] 🎙️  Transcribing ${raw.length} bytes of caller audio...`);
+            const userText = await stt(wav);
+            console.log(`[Caller]   💬 "${userText}"`);
+
+            if (!userText || userText.length < 2) {
+                console.log('[Pipeline] Empty transcription — skipping');
+                return;
+            }
+
+            history.push({ role: 'user', content: userText });
+            console.log('[Pipeline] 🤖 Generating Sonara response...');
+            const reply = await llm(history, userText);
+            history.push({ role: 'assistant', content: reply });
+
+            await speak(reply);
+        } catch (err) {
+            console.error('[Pipeline] ❌ Error:', err.message);
+            await speak("I'm sorry, I didn't catch that. Could you please repeat?");
+        } finally {
+            isProcessing = false;
+        }
+    };
+
+    /* ── Exotel WebSocket Message Handler ── */
+    ws.on('message', async (raw) => {
+        let data;
+        try { data = JSON.parse(raw.toString()); }
+        catch { return; }
+
+        switch (data.event) {
+
+            case 'connected':
+                console.log('[Exotel] ✅ WebSocket handshake connected');
+                break;
+
+            case 'start':
+                // Log raw start event to understand Exotel's exact field names
+                console.log('[Exotel] 📋 Start event received:', JSON.stringify(data).slice(0, 500));
+                // Try all known Exotel streamSid field locations
+                streamSid = data.streamSid
+                    || data.start?.streamSid
+                    || data.start?.stream_sid
+                    || data.CallSid
+                    || null;
+                console.log(`[Exotel] 📞 Call live. StreamSid: ${streamSid}`);
+
+                // NOTE: Greeting is handled by Exotel's own Greeting applet.
+                // We only add it to history so LLM has context.
+                history.push({ role: 'assistant', content: 'Namaste! Welcome to Converse AI. I am Sonara, your AI solutions specialist. How can I help you today?' });
+                break;
+
+            case 'media': {
+                if (!data.media?.payload) return;
+
+                const frame  = Buffer.from(data.media.payload, 'base64');
+                const energy = rms(frame);
+
+                // ── Barge-in: caller interrupts Sonara (only after 3s cooldown) ──
+                if (isAiSpeaking) {
+                    const elapsed = Date.now() - aiStartedAt;
+                    if (energy > BARGE_RMS && elapsed > BARGE_COOLDOWN) {
+                        speechFrames++;
+                        if (speechFrames >= 6) {
+                            console.log(`[Barge-In] ⚡ Caller interrupted! RMS=${Math.round(energy)}, elapsed=${elapsed}ms`);
+                            isAiSpeaking = false;
+                            clearQueue();
+                            speechBuf    = [];
+                            speechFrames = 0;
+                            silenceFrames = 0;
+                        }
+                    }
+                    return; // Don't collect speech while AI is speaking
+                }
+
+                if (isProcessing) return; // Don't collect speech while processing previous utterance
+
+                // ── Voice Activity Detection ──
+                if (energy > SPEECH_RMS) {
+                    if (speechFrames === 0) console.log(`[VAD] 🎙️  Speech onset detected. RMS=${Math.round(energy)}`);
+                    speechFrames++;
+                    silenceFrames = 0;
+                    speechBuf.push(frame);
+                } else {
+                    // Silence
+                    if (speechBuf.length > 0) {
+                        silenceFrames++;
+                        speechBuf.push(frame); // include trailing silence for natural boundaries
+
+                        if (silenceFrames >= SILENCE_FRAMES && speechFrames >= MIN_SPEECH) {
+                            // Utterance complete — process it
+                            console.log(`[VAD] ✅ Utterance complete. Frames: speech=${speechFrames}, silence=${silenceFrames}`);
+                            const frames  = [...speechBuf];
+                            speechBuf     = [];
+                            speechFrames  = 0;
+                            silenceFrames = 0;
+                            processUtterance(frames); // async — don't await
+                        }
+                    } else {
+                        // Noise floor logging (0.2% of frames)
+                        if (Math.random() < 0.002) {
+                            console.log(`[VAD] 📉 Noise floor: RMS=${Math.round(energy)} (threshold=${SPEECH_RMS})`);
+                        }
+                    }
+                }
+                break;
+            }
+
+            case 'stop':
+                console.log(`[Exotel] 📵 Call ended. StreamSid: ${streamSid}`);
+                console.log(`[Session] Conversation had ${history.length} turns`);
+                ws.close();
+                break;
+
+            default:
+                if (data.event) console.log(`[Exotel] Unknown event: ${data.event}`);
         }
     });
 
     ws.on('close', () => {
-        console.log(`[Telephony] Connection closed for stream: ${streamSid}`);
+        console.log(`[Exotel] 🔌 WebSocket closed for stream: ${streamSid}`);
         isAiSpeaking = false;
-        audioBuffer = [];
+        speechBuf    = [];
     });
 
     ws.on('error', (err) => {
-        console.error('[WebSocket Client Error]:', err.message);
+        console.error('[WebSocket] Error:', err.message);
     });
 });
 
-// Start HTTP + WebSocket Server
+// ─────────────────────────────────────────────────────────────────────────────
+// Start Server
+// ─────────────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
-    console.log(`========================================================`);
-    console.log(`?? SONARA TELEPHONY WEBSOCKET BRIDGE ONLINE`);
-    console.log(`?? Listening on Port: ${PORT}`);
-    console.log(`?? Health Check: http://localhost:${PORT}/health`);
-    console.log(`??? WebSocket URL: ws://localhost:${PORT}/media`);
-    console.log(`========================================================`);
+    console.log('='.repeat(60));
+    console.log('🚀  SONARA TELEPHONY WEBSOCKET BRIDGE — ONLINE');
+    console.log(`📡  Port        : ${PORT}`);
+    console.log(`🔗  Health      : http://localhost:${PORT}/health`);
+    console.log(`🎙️   WebSocket   : ws://localhost:${PORT}/media`);
+    console.log(`🔑  Groq Key    : ${GROQ_KEY ? '✅ Set' : '❌ MISSING'}`);
+    console.log(`🔑  ElevenLabs  : ${EL_KEY   ? '✅ Set' : '❌ MISSING'}`);
+    console.log('='.repeat(60));
 });
