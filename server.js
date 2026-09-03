@@ -220,12 +220,12 @@ wss.on('connection', (ws) => {
      *    Normal speech        : RMS  1500 – 5000
      *    Loud speech          : RMS  5000+
      */
-    const SPEECH_RMS    = 600;  // above → caller speaking
-    const BARGE_RMS     = 2500; // above → strong interruption while AI speaks
+    const SPEECH_RMS    = 700;  // above → caller speaking
+    const BARGE_RMS     = 4500; // above → strong deliberate caller interruption
     const SILENCE_FRAMES = 25;  // ~800ms silence → utterance complete
     const MIN_SPEECH_FRAMES = 8; // ~256ms minimum speech before processing
     const MIN_AUDIO_BYTES   = 3200; // ~400ms of audio (8000 * 0.4 = 3200 bytes)
-    const BARGE_COOLDOWN_MS = 3000;
+    const BARGE_COOLDOWN_MS = 4000;
 
     /* ── Audio helpers ── */
     const sendAudio = (chunk) => {
@@ -251,10 +251,23 @@ wss.on('connection', (ws) => {
         isAiSpeaking = true;
         aiStartedAt  = Date.now();
         console.log(`[Sonara] 🗣️  "${text}"`);
+        let totalSentBytes = 0;
         try {
             for await (const chunk of tts(text)) {
                 if (!isAiSpeaking) { console.log('[Sonara] ⛔ Interrupted'); break; }
                 sendAudio(chunk);
+                totalSentBytes += chunk.length;
+            }
+
+            // Synchronize with phone playback (8000 bytes = 1 second)
+            // Prevents closing AI speaking state early and cutting off last sentences
+            if (isAiSpeaking && totalSentBytes > 0) {
+                const totalDurationMs = (totalSentBytes / 8000) * 1000;
+                const streamElapsedMs = Date.now() - aiStartedAt;
+                const remainingWaitMs = Math.max(0, totalDurationMs - streamElapsedMs);
+                console.log(`[Sonara] Audio sent: ${totalSentBytes}b (${(totalDurationMs/1000).toFixed(1)}s). Waiting ${Math.round(remainingWaitMs)}ms for phone playback...`);
+                // Wait for audio to play out on phone speaker + 500ms echo margin
+                await new Promise(r => setTimeout(r, remainingWaitMs + 500));
             }
         } catch (e) {
             console.error('[TTS]', e.message);
@@ -263,6 +276,7 @@ wss.on('connection', (ws) => {
             speechBuf     = [];
             speechFrames  = 0;
             silenceFrames = 0;
+            console.log('[Sonara] 🏁 Playback complete, listening for caller response...');
         }
     };
 
@@ -353,8 +367,8 @@ wss.on('connection', (ws) => {
                     const elapsed = Date.now() - aiStartedAt;
                     if (energy > BARGE_RMS && elapsed > BARGE_COOLDOWN_MS) {
                         speechFrames++;
-                        if (speechFrames >= 8) {
-                            console.log(`[Barge-In] ⚡ Interrupt! RMS=${Math.round(energy)}, elapsed=${elapsed}ms`);
+                        if (speechFrames >= 14) {
+                            console.log(`[Barge-In] ⚡ Sustained interruption! RMS=${Math.round(energy)}, elapsed=${elapsed}ms`);
                             isAiSpeaking = false;
                             clearQueue();
                             speechBuf    = [];
