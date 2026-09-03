@@ -153,19 +153,18 @@ export class SileroVAD {
         // 7. AI-speaking gate with safe barge-in monitoring
         if (this.aiIsSpeaking) {
             // Monitor for genuine user barge-in while AI speaks.
-            // Speaker bleed from laptop speakers typically measures RMS 0.015 - 0.040.
-            // To prevent AI from interrupting itself, genuine user barge-in must be louder than speaker bleed
-            // (RMS >= 0.055) and sustained (>= 8 frames = ~256ms) with high probability (prob >= 0.88).
-            if (prob >= 0.88 && rms >= 0.055) {
+            // Speaker bleed from laptop speakers typically measures RMS 0.015 - 0.065.
+            // Genuine user speech right into mic is louder (RMS >= 0.085) and sustained (>= 12 frames = ~384ms).
+            if (prob >= 0.92 && rms >= 0.085) {
                 this._bargeInConfirmCount++;
-                if (this._bargeInConfirmCount >= this.bargeInConfirmFrames) {
+                if (this._bargeInConfirmCount >= (this.bargeInConfirmFrames || 12)) {
                     this._bargeInConfirmCount = 0;
                     this._onsetConfirmCount = 0;
                     this.isSpeaking = true;
                     this.speakingStartTime = now;
                     this.lastSpeechTime = now;
                     if (this._debugLog) {
-                        console.log('[VAD] Barge-in confirmed', {
+                        console.log('[VAD] Genuine Barge-in confirmed', {
                             prob: prob.toFixed(3), rms: rms.toFixed(4),
                             frames: this.bargeInConfirmFrames
                         });

@@ -699,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 minSpeechDurationMs: 200,
                 speechStartConfirmFrames: 2,
                 rmsFloor: 0.004,
-                bargeInConfirmFrames: 5,
+                bargeInConfirmFrames: 12,
                 debugLog: true,
                 onFrame: (data) => {
                     const probPct = Math.round(data.prob * 100);
