@@ -1,5 +1,5 @@
 /**
- * Sonara Voice Agent — Standalone Telephony WebSocket Bridge (Exotel / Twilio)
+ * Sonara Voice Agent ï¿½ Standalone Telephony WebSocket Bridge (Exotel / Twilio)
  * Real-time bidirectional voice streaming:
  * Exotel Audio (Mulaw 8kHz) <-> Groq Whisper (STT) <-> LLaMA 3.3-70B (LLM) <-> ElevenLabs (TTS)
  */
@@ -81,7 +81,7 @@ PERSONALITY & TONE:
 - Be warm, confident, conversational, and professional.
 - Speak in simple, spoken conversational English (or natural Hinglish if the user speaks Hindi).
 - Keep all responses to 1 to 3 short spoken sentences. Never dump long paragraphs.
-- Never use bullet points, markdown, asterisks, or formatting — output plain spoken sentences only.
+- Never use bullet points, markdown, asterisks, or formatting ï¿½ output plain spoken sentences only.
 
 CORE KNOWLEDGE:
 - Company: Converse AI (theconverseai.com), operated by Revti Digital, India. Contact: contact@theconverseai.com, +91-9982323333.
@@ -251,28 +251,32 @@ wss.on('connection', (ws, req) => {
     let speechFrames = 0;
     let history = [];
 
-    const RMS_THRESHOLD = 300;     // Energy threshold for speech onset in 8kHz mulaw
-    const SILENCE_TIMEOUT = 14;     // ~450ms silence at 32ms frames declares end of utterance
+    const RMS_THRESHOLD = 800;      // Higher - ignores GSM phone line noise
+    const SILENCE_TIMEOUT = 20;     // ~640ms silence to confirm utterance complete
+    const BARGE_IN_THRESHOLD = 1800; // Much higher - only real interruptions trigger barge-in
+    const BARGE_IN_COOLDOWN_MS = 2500; // 2.5s after AI starts speaking, no barge-in
+    let aiSpeakingStartTime = 0;
 
     // Helper: Send audio chunk to Exotel phone call
     const sendAudioChunk = (chunkBuffer) => {
-        if (!streamSid || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({
-            event: 'media',
-            streamSid,
-            media: { payload: chunkBuffer.toString('base64') }
-        }));
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const msg = { event: 'media', media: { payload: chunkBuffer.toString('base64') } };
+        if (streamSid) msg.streamSid = streamSid;
+        ws.send(JSON.stringify(msg));
     };
 
     // Helper: Clear audio queue on phone (Barge-in / Interruption)
     const clearPhoneQueue = () => {
-        if (!streamSid || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({ event: 'clear', streamSid }));
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const msg = { event: 'clear' };
+        if (streamSid) msg.streamSid = streamSid;
+        ws.send(JSON.stringify(msg));
     };
 
     // Helper: Play AI response to caller
     const speakAiResponse = async (responseText) => {
         isAiSpeaking = true;
+        aiSpeakingStartTime = Date.now();
         console.log(`[Sonara] Speaking: "${responseText}"`);
 
         try {
@@ -310,7 +314,7 @@ wss.on('connection', (ws, req) => {
                 case 'start':
                     streamSid = data.streamSid || data.start?.streamSid;
                     callSid = data.start?.callSid;
-                    console.log(`[Exotel] Call Started — StreamSid: ${streamSid}, CallSid: ${callSid}`);
+                    console.log(`[Exotel] Call Started ï¿½ StreamSid: ${streamSid}, CallSid: ${callSid}`);
 
                     // Initial proactive greeting from Sonara
                     setTimeout(() => {
@@ -341,8 +345,12 @@ wss.on('connection', (ws, req) => {
 
                     if (isAiSpeaking || isProcessing) return;
 
-                    // Voice Activity Detection (VAD)
+                    // Voice Activity Detection (VAD) with debug logging
+                    if (speechFrames === 0 && audioBuffer.length === 0 && Math.random() < 0.003) {
+                        console.log(`[VAD] Noise floor RMS: ${Math.round(rms)} (threshold: ${RMS_THRESHOLD})`);
+                    }
                     if (rms > RMS_THRESHOLD) {
+                        if (speechFrames === 0) console.log(`[VAD] Speech onset! RMS: ${Math.round(rms)}`);
                         speechFrames++;
                         silenceFrames = 0;
                         audioBuffer.push(mulawChunk);
@@ -394,7 +402,7 @@ wss.on('connection', (ws, req) => {
                     break;
 
                 case 'stop':
-                    console.log(`[Exotel] Call Ended — StreamSid: ${streamSid}`);
+                    console.log(`[Exotel] Call Ended ï¿½ StreamSid: ${streamSid}`);
                     ws.close();
                     break;
             }
