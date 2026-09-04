@@ -104,35 +104,37 @@ export default async function handler(req, res) {
                 const safeStatus = String(status || 'CONFIRMED').toUpperCase().slice(0, 20);
                 const safeNotes = String(notes || '').slice(0, 500);
 
-                // Check for double booking collision (if slot already taken by a different confirmed appointment)
-                if (safeStatus === 'CONFIRMED') {
-                    const conflictCheck = await pool.query(
-                        'SELECT id FROM appointments WHERE date_time = $1 AND id != $2 AND UPPER(status) = $3 LIMIT 1;',
-                        [safeDateTime, safeId, 'CONFIRMED']
-                    );
-                    if (conflictCheck.rows.length > 0) {
+                // NOTE: Double-booking prevention is enforced at the database level via
+                // the partial unique index idx_appointments_no_double_booking on (date_time)
+                // WHERE UPPER(status)='CONFIRMED'. A concurrent second booking for the same
+                // confirmed slot will receive PostgreSQL error code 23505 and be handled below.
+                try {
+                    await pool.query(`
+                        INSERT INTO appointments (id, customer_name, phone, service, date_time, status, notes, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                        ON CONFLICT (id) DO UPDATE SET
+                            customer_name = EXCLUDED.customer_name,
+                            phone = EXCLUDED.phone,
+                            service = EXCLUDED.service,
+                            date_time = EXCLUDED.date_time,
+                            status = EXCLUDED.status,
+                            notes = EXCLUDED.notes,
+                            updated_at = NOW();
+                    `, [safeId, safeName, safePhone, safeService, safeDateTime, safeStatus, safeNotes]);
+                } catch (dbErr) {
+                    // 23505 = unique_violation — the slot is already taken by a concurrent booking
+                    if (dbErr.code === '23505') {
                         return res.status(409).json({
                             success: false,
-                            error: 'Double booking conflict: This slot is already reserved by another confirmed appointment.'
+                            error: 'This slot is no longer available. Please choose a different date or time.'
                         });
                     }
+                    throw dbErr; // re-throw other DB errors to the outer handler
                 }
-
-                await pool.query(`
-                    INSERT INTO appointments (id, customer_name, phone, service, date_time, status, notes, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-                    ON CONFLICT (id) DO UPDATE SET
-                        customer_name = EXCLUDED.customer_name,
-                        phone = EXCLUDED.phone,
-                        service = EXCLUDED.service,
-                        date_time = EXCLUDED.date_time,
-                        status = EXCLUDED.status,
-                        notes = EXCLUDED.notes,
-                        updated_at = NOW();
-                `, [safeId, safeName, safePhone, safeService, safeDateTime, safeStatus, safeNotes]);
 
                 return res.status(200).json({ success: true, id: safeId, date_time: safeDateTime });
             }
+
 
             case 'check_slot': {
                 const { date_time } = data;
@@ -148,9 +150,23 @@ export default async function handler(req, res) {
             }
 
             case 'get_appointments': {
-                const result = await pool.query('SELECT id, customer_name, phone, email, service, date_time, status, notes, created_at FROM appointments ORDER BY date_time DESC LIMIT 100;');
+                // Select date_time and also split it into slot_date / slot_time so that
+                // the app.js dashboard (which renders a.slot_date @ a.slot_time) works correctly.
+                // date_time format: "YYYY-MM-DD HH:MM AM/PM"
+                const result = await pool.query(`
+                    SELECT
+                        id, customer_name, phone, email, service,
+                        date_time,
+                        SPLIT_PART(date_time, ' ', 1)                                    AS slot_date,
+                        TRIM(SUBSTR(date_time, LENGTH(SPLIT_PART(date_time, ' ', 1))+2)) AS slot_time,
+                        status, notes, created_at
+                    FROM appointments
+                    ORDER BY date_time DESC
+                    LIMIT 100;
+                `);
                 return res.status(200).json({ success: true, appointments: result.rows });
             }
+
 
             // --- CUSTOMERS ---
             case 'save_customer': {
@@ -254,10 +270,13 @@ export default async function handler(req, res) {
         }
 
     } catch (err) {
-        console.error('[API /api/db] Operation error:', err.message);
+        // Log full error server-side (safe — server logs only, not exposed to client)
+        console.error('[API /api/db] Operation error:', err.code, err.message);
         return res.status(500).json({
             success: false,
-            error: 'Database operation failed: ' + err.message
+            // Do NOT expose err.message — it can contain SQL details, table/column names, or internal state.
+            error: 'A database error occurred. Please try again or contact support.',
+            code: err.code || 'DB_ERROR'   // opaque PostgreSQL error code only — safe to expose
         });
     }
 }
