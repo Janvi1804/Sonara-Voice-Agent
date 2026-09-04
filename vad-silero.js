@@ -30,6 +30,7 @@ export class SileroVAD {
         this.session              = null;
         this.isLoading            = false;
         this.isReady              = false;
+        this.hasFailed            = false;
         this.modelPath            = options.modelPath || '/silero_vad.onnx';
 
         // Recurrent state tensor: shape [2, 1, 128] Float32Array
@@ -64,7 +65,7 @@ export class SileroVAD {
      * Initialize ONNX Runtime Web session for Silero VAD
      */
     async init() {
-        if (this.isReady || this.isLoading) return;
+        if (this.isReady || this.isLoading || this.hasFailed) return;
         this.isLoading = true;
 
         try {
@@ -98,6 +99,7 @@ export class SileroVAD {
             console.log('[SileroVAD] Neural network loaded successfully. Real Silero inference active.');
         } catch (err) {
             this.isLoading = false;
+            this.hasFailed = true;
             console.error('[SileroVAD] Failed to load ONNX model:', err.message);
             throw err;
         }
@@ -149,12 +151,8 @@ export class SileroVAD {
         const rms = Math.sqrt(sumSq / pcmData.length);
         const db = Math.max(-60, Math.min(0, Math.round(20 * Math.log10(rms + 1e-5))));
 
-        // If neural model not loaded yet, try initializing
+        // If neural model not loaded yet, emit frame for UI and return (do not infinite retry on every frame)
         if (!this.isReady || !this.session) {
-            const ort = getOrt();
-            if (ort && !this.isLoading) {
-                this.init().catch(() => {});
-            }
             this.onFrame({ prob: 0, rms, db, isSpeaking: this.isSpeaking });
             return { prob: 0, isSpeaking: this.isSpeaking, rms, db };
         }
