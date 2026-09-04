@@ -69,13 +69,19 @@ function mulawToWav8k(mulawBuf) {
 // ─────────────────────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com).
 
-PHONE CALL RULES — CRITICAL:
-- You are speaking on a live phone call. Be warm, confident, articulate, and natural like an experienced specialist.
-- Answer the caller's actual question directly first with substantive, clear details.
-- Use context and conversation history to understand short follow-up questions (e.g. "example any", "aur batao", "how?", "case study", "pricing?").
-- When asked for examples or case studies, explain: the business, the challenge, how Converse AI was deployed, the verified metrics, and business outcome.
-- Never repeat greetings or say "Namaste! Main Sonara hoon..." once the call has started.
-- Never force the same sales question at the end of every turn.
+CRITICAL ANSWER LENGTH RULE — MAXIMUM 5 LINES:
+- Live phone call answers MUST be concise: MAXIMUM 5 LINES (maximum 5 clear sentences).
+- Explain EVERYTHING in the caller's question directly, completely, and clearly within these 3 to 5 lines.
+- NO rambling, NO repetitive filler, and NO long monologues.
+- Deliver high clarity and complete explanation fast so the caller never waits through long answers.
+- Never exceed 5 lines/sentences under any circumstances.
+
+PHONE CALL RULES:
+- You are speaking on a live phone call. Be warm, confident, articulate, and natural.
+- Answer the caller's actual question directly first with substantive, clear details within the 5-line limit.
+- Use context and conversation history to understand short follow-up questions.
+- When asked for examples or case studies, summarize the client, challenge, solution, and verified metrics in 3-5 lines.
+- Never repeat greetings once the call has started.
 - Match caller's language naturally: English -> English; Hindi/Hinglish -> natural Hinglish.
 - Spoken sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
 - Never invent facts, numbers, clients, or fixed pricing.
@@ -131,7 +137,17 @@ async function stt(wavBuf) {
     return text;
 }
 
-/** Groq LLaMA 3.3-70B — generates Sonara's spoken reply */
+function clampToMax5Lines(text) {
+    if (!text) return '';
+    let clean = text.replace(/[*_#`[\]]/g, '').replace(/\s{2,}/g, ' ').trim();
+    const sentences = clean.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g);
+    if (sentences && sentences.length > 5) {
+        clean = sentences.slice(0, 5).map(s => s.trim()).join(' ');
+    }
+    return clean;
+}
+
+/** Groq LLM — generates Sonara's spoken reply */
 async function llm(history, userText) {
     if (!GROQ_KEY) return "I'm sorry, I can't respond right now. Please call back.";
     const messages = [
@@ -139,7 +155,7 @@ async function llm(history, userText) {
         ...history.slice(-12),
         { role: 'user', content: userText }
     ];
-    const candidateModels = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'];
+    const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
     let reply = '';
     let lastErr = null;
 
@@ -152,13 +168,13 @@ async function llm(history, userText) {
                     model: modelCandidate,
                     messages,
                     temperature: 0.65,
-                    max_tokens: 300
+                    max_tokens: 220
                 }),
                 signal: AbortSignal.timeout(9000)
             });
             if (r.ok) {
                 const data = await r.json();
-                reply = (data.choices?.[0]?.message?.content || '').trim().replace(/[*_#`[\]]/g, '');
+                reply = clampToMax5Lines(data.choices?.[0]?.message?.content || '');
                 break;
             } else {
                 const txt = await r.text();

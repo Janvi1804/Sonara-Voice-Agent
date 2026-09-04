@@ -96,14 +96,21 @@ function retrieveRAGContext(query = '', isDefinitional = false) {
     return `\n\n${label}\n${retrieved}\n${footer}\n`;
 }
 
-// Clean think tags and markdown
+// Clean think tags, markdown, and enforce maximum 5 lines
 function sanitizeAiResponse(text) {
     if (!text) return '';
-    return text
+    let clean = text
         .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
         .replace(/[*_#`~[\]]/g, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
+
+    // Enforce maximum 5 lines / sentences
+    const sentences = clean.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g);
+    if (sentences && sentences.length > 5) {
+        clean = sentences.slice(0, 5).map(s => s.trim()).join(' ');
+    }
+    return clean;
 }
 
 export default async function handler(req, res) {
@@ -132,7 +139,7 @@ export default async function handler(req, res) {
             messages = [],
             model = 'llama-3.3-70b-versatile',
             temperature = 0.65,
-            max_tokens = 650
+            max_tokens = 180
         } = body;
 
         const groqApiKey = process.env.GROQ_API_KEY || '';
@@ -150,30 +157,33 @@ export default async function handler(req, res) {
 
         // Build the definitional-query guard instruction (injected only when query is definitional)
         const definitionalGuard = isDefinitionalQuery
-            ? `\n\nIMPORTANT — THIS IS A DEFINITIONAL QUESTION: The user asked "${lastUserMsg.trim()}". Your response MUST start by explaining what the concept or technology actually IS in clear, plain language (2-4 sentences). Only after defining the concept may you mention how Converse AI implements or uses it. The company context below is SUPPLEMENTARY — it is NOT the answer. Do NOT answer a definition question with a list of Converse AI services.`
+            ? `\n\nIMPORTANT — DEFINITIONAL QUESTION: The user asked "${lastUserMsg.trim()}". Explain what the concept actually IS in clear, plain language, explaining all essential points in MAXIMUM 3-5 sentences. Then briefly mention how Converse AI applies it. Keep the entire response strictly within 5 lines.`
             : '';
 
         // Production-Grade System Prompt for SONARA
         const SYSTEM_PROMPT = `You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com).
 
+CRITICAL ANSWER LENGTH RULE — MAXIMUM 5 LINES:
+- You MUST give your entire answer in MAXIMUM 5 LINES (maximum 5 clear sentences).
+- Explain EVERYTHING asked in the user's question completely and directly within these 3 to 5 lines.
+- NO rambling, NO repetitive preamble, NO essay-style paragraphs, and NO filler text.
+- Pack high clarity and direct explanation into every line so the user gets the complete answer fast.
+- Never exceed 5 lines/sentences under any circumstances.
+
 CORE ROLE & BEHAVIOR:
-- You are a knowledgeable, articulate, and confident conversational AI specialist having a real dialogue, NOT a robotic FAQ responder.
-- Answer the user's actual question directly first, providing helpful, substantive detail without being artificial or curt.
-- Always use the conversation history to understand context. Resolve short follow-ups like "example any", "aur batao", "how?", "details?", "case study", "pricing?" in the direct context of the preceding conversation.
-- If the user asks for examples or case studies, explain them clearly: identify the business, the challenge, how Converse AI was deployed, the verified metrics, and the business impact.
-- Do NOT give robotic one-sentence answers. Use adaptive answer length:
-  * Simple factual answers: 2-4 clear sentences.
-  * Explanations & overviews: 4-7 informative sentences.
-  * Case studies: Comprehensive breakdown with verified problem, solution, and outcome.
+- You are a knowledgeable, articulate, and confident conversational AI specialist having a real dialogue.
+- Answer the user's actual question directly first, explaining everything thoroughly within the 5-line limit.
+- Always use conversation history to understand context. Resolve short follow-ups like "example any", "aur batao", "how?", "details?", "case study", "pricing?" in the direct context of the preceding conversation.
+- If the user asks for examples or case studies, summarize the client, challenge, solution, and verified metrics crisply within 3-5 lines.
 - Never repeat greetings (e.g. "Namaste! Main Sonara hoon...") once the conversation is underway.
-- Never force an unnecessary sales question or "Aap kis me interested hain?" at the end of every turn. Only ask a natural follow-up question when genuinely appropriate.
+- Never force an unnecessary sales question at the end of every turn.
 - Language Matching:
   * English user input -> Fluent, professional English response.
   * Hindi user input -> Natural Hindi.
   * Hinglish user input -> Warm, natural conversational Hinglish.
 - Strict Honesty: Never hallucinate facts, statistics, integrations, client names, or fixed pricing. If information is not in your verified knowledge, say so honestly.
 - Voice Naturalness: Spoken complete sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
-- DEFINITIONAL QUESTIONS: When the user asks "what is X?", "what are X?", "explain X", "define X", or similar concept-level questions, ALWAYS explain what X actually IS as a concept or technology first (in your own words, drawing on your training knowledge). Then, if directly relevant, you may mention how Converse AI implements it. Never substitute a concept definition with a Converse AI services list.${definitionalGuard}
+- DEFINITIONAL QUESTIONS: When the user asks "what is X?", "what are X?", "explain X", "define X", ALWAYS explain what X actually IS first in your own words, then briefly how Converse AI implements it — strictly within 5 lines.${definitionalGuard}
 
 ${ragContext}`;
 
@@ -194,9 +204,9 @@ ${ragContext}`;
         // Candidate Groq models to try (prioritizing requested model, with fallback to verified available Groq models)
         const candidateModels = [...new Set([
             model,
-            'llama-3.3-70b-versatile',
+            'qwen/qwen3.8-27b',
             'openai/gpt-oss-120b',
-            'qwen/qwen3.8-27b'
+            'qwen/qwen3.6-27b'
         ].filter(Boolean))];
 
         let activeModel = candidateModels[0];
@@ -215,7 +225,7 @@ ${ragContext}`;
                         model: candidate,
                         messages: formattedMessages,
                         temperature: Number(temperature) || 0.65,
-                        max_tokens: Math.max(350, Number(max_tokens) || 450)
+                        max_tokens: Math.min(220, Math.max(120, Number(max_tokens) || 200))
                     })
                 });
 

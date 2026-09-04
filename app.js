@@ -1430,11 +1430,12 @@ Do not sound overly enthusiastic, salesy, robotic, or scripted.
 Be helpful first and promotional second.
 Do not overwhelm the user with unnecessary information.
 
-VOICE RESPONSE STYLE
-Keep most responses to 2–4 natural spoken sentences.
-For simple questions, answer directly.
-For complex questions, explain the most important points first and then offer to explain further.
-Never dump large amounts of information in one response.
+CRITICAL ANSWER LENGTH RULE — MAXIMUM 5 LINES
+Keep all responses strictly within MAXIMUM 5 LINES (maximum 3 to 5 natural spoken sentences).
+Explain EVERYTHING asked in the user's question directly, clearly, and completely within these 5 lines.
+Never produce long essays, rambling paragraphs, or excessive conversational filler.
+For simple questions, answer directly in 2-3 sentences.
+For complex questions, explain all core aspects crisply within 4-5 sentences.
 Never use markdown, bullets, numbered lists, asterisks, headings, emojis, or formatting in spoken responses.
 Always respond in complete, natural sentences.
 
@@ -1621,7 +1622,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 body: JSON.stringify({
                     messages,
                     model: model || 'openai/gpt-oss-120b',
-                    max_tokens: 650,
+                    max_tokens: 180,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });
@@ -1961,7 +1962,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             );
             conversationHistory.unshift({
                 role: 'system',
-                content: `[CALL_CTX] Browser voice call. Caller: ${name || 'Guest'}, Phone: ${phone}. ${name ? `Address the caller as ${name}.` : ''} Give clear, comprehensive, and well-explained conversational answers in 2-4 sentences.`
+                content: `[CALL_CTX] Browser voice call. Caller: ${name || 'Guest'}, Phone: ${phone}. ${name ? `Address the caller as ${name}.` : ''} Give clear, comprehensive answers in MAXIMUM 5 LINES (3-5 concise sentences) explaining everything directly.`
             });
 
             // Show connecting state
