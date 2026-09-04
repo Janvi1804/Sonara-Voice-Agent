@@ -10,7 +10,12 @@
  *  - Hysteresis onset & hangover gating for clean turn-taking & barge-in
  */
 
-import * as ort from 'onnxruntime-web';
+// Resolve ONNX Runtime Web from global (window.ort) if loaded via script tag, or import
+const getOrt = () => {
+    if (typeof window !== 'undefined' && window.ort) return window.ort;
+    if (typeof globalThis !== 'undefined' && globalThis.ort) return globalThis.ort;
+    return null;
+};
 
 export class SileroVAD {
     constructor(options = {}) {
@@ -29,7 +34,7 @@ export class SileroVAD {
 
         // Recurrent state tensor: shape [2, 1, 128] Float32Array
         this.stateData            = new Float32Array(2 * 1 * 128);
-        this.srTensor             = new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]);
+        this.srTensor             = null;
 
         // Gating & onset state
         this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 2);
@@ -63,8 +68,19 @@ export class SileroVAD {
         this.isLoading = true;
 
         try {
+            const ort = getOrt();
+            if (!ort) {
+                console.warn('[SileroVAD] ONNX Runtime Web (ort) not loaded yet, will retry when available.');
+                this.isLoading = false;
+                return;
+            }
+
+            if (!this.srTensor) {
+                this.srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(16000)]), [1]);
+            }
+
             // Configure ONNX environment for browser web assembly
-            if (typeof ort !== 'undefined' && ort.env) {
+            if (ort.env) {
                 ort.env.wasm.numThreads = 1;
                 ort.env.wasm.simd = true;
                 ort.env.wasm.wasmPaths = '/';
@@ -133,8 +149,12 @@ export class SileroVAD {
         const rms = Math.sqrt(sumSq / pcmData.length);
         const db = Math.max(-60, Math.min(0, Math.round(20 * Math.log10(rms + 1e-5))));
 
-        // If neural model not loaded yet, emit frame for UI and return
+        // If neural model not loaded yet, try initializing
         if (!this.isReady || !this.session) {
+            const ort = getOrt();
+            if (ort && !this.isLoading) {
+                this.init().catch(() => {});
+            }
             this.onFrame({ prob: 0, rms, db, isSpeaking: this.isSpeaking });
             return { prob: 0, isSpeaking: this.isSpeaking, rms, db };
         }
@@ -147,6 +167,7 @@ export class SileroVAD {
         }
 
         try {
+            const ort = getOrt();
             const inputTensor = new ort.Tensor('float32', frame512, [1, 512]);
             const stateTensor = new ort.Tensor('float32', this.stateData, [2, 1, 128]);
 
