@@ -88,6 +88,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isAiSpeaking = false;
     let isSessionPaused = false;
     let turnStartTime = 0;
+    let activeChatAbortController = null;
+    let currentGenerationId = 0;
 
     // Enterprise Architecture Modules (PostgreSQL + pgvector, Memory, DBs, Tool Calling, Logger)
     const customerDB = new CustomerDB();
@@ -193,12 +195,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load saved settings from LocalStorage & Initialize default TTS Engine
     const loadSettings = () => {
-        const savedApiKey = localStorage.getItem('sonara_llm_api_key');
+        // Purge any historical sensitive keys from local storage
+        localStorage.removeItem('sonara_llm_api_key');
+        localStorage.removeItem('sonara_hf_token');
+        localStorage.removeItem('sonara_postgres_url');
+
         if (txtLlmApiKey) {
-            // BUG-001 FIX: Only load user's own saved key — never inject hardcoded key into UI
-            // All serverless calls (/api/chat) use GROQ_API_KEY from Vercel env vars automatically
-            txtLlmApiKey.value = (savedApiKey && savedApiKey.trim().length > 10) ? savedApiKey : '';
-            txtLlmApiKey.placeholder = 'Leave empty — server-side key active';
+            txtLlmApiKey.value = '';
+            txtLlmApiKey.placeholder = 'Managed securely on server';
         }
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');
@@ -215,8 +219,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
         }
-        // Whisper uses the user's own saved key if they entered one; otherwise /api/transcribe handles it server-side
-        whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : '');
+        // Whisper routes audio to /api/transcribe serverless proxy
+        whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
@@ -227,17 +231,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_system_prompt')) txtSystemPrompt.value = localStorage.getItem('sonara_system_prompt');
         
-        // BUG-002 FIX: Supabase DB URL/password is NEVER stored in client-side code.
-        // The /api/db serverless function reads POSTGRES_URL from Vercel env vars.
-        // Users can optionally add their OWN custom DB URL via Settings (stored only in localStorage).
+        // Supabase DB URL/credentials are NEVER stored on the client.
+        // /api/db serverless function reads POSTGRES_URL / DATABASE_URL from server env vars.
         const txtPostgresUrl = document.getElementById('txtPostgresUrl');
-        const userCustomDbUrl = localStorage.getItem('sonara_postgres_url') || '';
         if (txtPostgresUrl) {
-            txtPostgresUrl.value = userCustomDbUrl;
-            txtPostgresUrl.placeholder = 'Optional: paste your own PostgreSQL URL (server DB active)';
+            txtPostgresUrl.value = '';
+            txtPostgresUrl.placeholder = 'Managed securely on server';
         }
-        // DB modules use /api/db proxy (which has server-side credentials) unless user provides custom URL
-        const activeDbUrl = userCustomDbUrl; // empty = serverless proxy handles it
+        const activeDbUrl = ''; // Empty string = use server-side credentials via /api/db proxy
         ragEngine.vectorStore.setPostgresUrl(activeDbUrl);
         customerDB.setPostgresUrl(activeDbUrl);
         appointmentDB.setPostgresUrl(activeDbUrl);
@@ -296,16 +297,19 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const saveSettings = () => {
-        if (txtLlmApiKey) localStorage.setItem('sonara_llm_api_key', txtLlmApiKey.value.trim());
-        if (txtHfToken) localStorage.setItem('sonara_hf_token', txtHfToken.value.trim());
+        // SECURITY: Sensitive API keys and DB connection strings are NEVER persisted to localStorage.
+        // Clean up any historical keys from client storage.
+        localStorage.removeItem('sonara_llm_api_key');
+        localStorage.removeItem('sonara_hf_token');
+        localStorage.removeItem('sonara_postgres_url');
+
         if (selLlmModel) localStorage.setItem('sonara_llm_model', selLlmModel.value);
         if (selLlmProvider) localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
         if (txtSystemPrompt) localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
 
-        // Postgres URL
+        // Session-only override for custom Postgres URL (does not persist across sessions)
         const txtPostgresUrl = document.getElementById('txtPostgresUrl');
-        if (txtPostgresUrl) {
-            localStorage.setItem('sonara_postgres_url', txtPostgresUrl.value.trim());
+        if (txtPostgresUrl && txtPostgresUrl.value.trim()) {
             ragEngine.vectorStore.setPostgresUrl(txtPostgresUrl.value.trim());
             customerDB.setPostgresUrl(txtPostgresUrl.value.trim());
             appointmentDB.setPostgresUrl(txtPostgresUrl.value.trim());
@@ -698,6 +702,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Confirmed genuine user speech while AI TTS is playing (after bargeInConfirmFrames).
                     console.log('⚡ BARGE-IN CONFIRMED: User spoke during AI output. Interrupting TTS.');
                     if (ttsEngine) ttsEngine.interrupt();
+                    // Cancel any in-flight LLM request from previous turn
+                    if (activeChatAbortController) {
+                        try { activeChatAbortController.abort(); } catch (_) {}
+                        activeChatAbortController = null;
+                    }
+                    currentGenerationId++;
                     // ttsEngine.interrupt() calls this.onEnd() -> handleTtsEnd(). We also reset
                     // state immediately here to avoid any timing race between the two paths.
                     clearTimeout(ttsEndGraceTimer);
@@ -1567,6 +1577,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
         let fullResponse = '';
         let firstTokenTime = 0;
 
+        // Abort previous in-flight LLM request if any
+        if (activeChatAbortController) {
+            try { activeChatAbortController.abort(); } catch (_) {}
+            activeChatAbortController = null;
+        }
+        const generationSnapshot = ++currentGenerationId;
+        const abortController = new AbortController();
+        activeChatAbortController = abortController;
+
         const markFirstToken = () => {
             if (!firstTokenTime) {
                 firstTokenTime = performance.now();
@@ -1581,21 +1600,36 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             const historySlice = conversationHistory.slice(-12);
             const messages = [
                 { role: 'system', content: systemPrompt },
-                ...historySlice.map(m => ({
-                    role: m.role === 'assistant' ? 'assistant' : 'user',
-                    content: m.content
-                }))
+                ...historySlice.map((m, idx) => {
+                    let content = m.content;
+                    // If a tool was executed in this turn, append the verified tool outcome to the latest user message
+                    if (toolContext && idx === historySlice.length - 1 && m.role === 'user') {
+                        content = `${content}\n${toolContext}`;
+                    }
+                    return {
+                        role: m.role === 'assistant' ? 'assistant' : 'user',
+                        content
+                    };
+                })
             ];
 
             const apiRes = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: abortController.signal,
                 body: JSON.stringify({
                     messages,
-                    model: 'llama-3.3-70b-versatile',
+                    model: model || 'openai/gpt-oss-120b',
+                    max_tokens: 650,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });
+
+            // If user barged in while we were waiting for LLM, discard completely
+            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                console.log('[App] Discarding stale LLM response due to barge-in.');
+                return;
+            }
 
             if (!apiRes.ok) {
                 const errData = await apiRes.json().catch(() => ({}));
@@ -1604,6 +1638,11 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }
 
             const apiData = await apiRes.json();
+            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                console.log('[App] Discarding stale LLM payload due to barge-in.');
+                return;
+            }
+
             if (!apiData.text) {
                 throw new Error('Groq API error: Empty response from LLM.');
             }
@@ -1625,6 +1664,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }).catch(() => {});
 
         } catch (err) {
+            // If request was aborted by barge-in, exit cleanly without error bubble or speaking
+            if (err.name === 'AbortError' || generationSnapshot !== currentGenerationId) {
+                console.log('[App] LLM request aborted or superseded.');
+                if (aiMessageBubble && aiMessageBubble.parentNode) {
+                    aiMessageBubble.parentNode.removeChild(aiMessageBubble);
+                }
+                return;
+            }
+
             console.error('Groq LLM error:', err.message);
             // TRUTHFUL ERROR REPORTING: Zero silent fallbacks (NO Pollinations, NO HuggingFace, NO hardcoded fake responses)
             fullResponse = err.message.startsWith('Groq API error:') ? err.message : `Groq API error: ${err.message}`;
@@ -1644,12 +1692,17 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 toolCalls: toolResult ? [toolResult] : []
             }).catch(() => {});
         } finally {
-            isAiThinking = false;
-            setTimeout(() => {
-                isProcessingUtterance = false;
-                currentSpeechText = '';
-                lastInterimText = '';
-            }, 600);
+            if (generationSnapshot === currentGenerationId) {
+                isAiThinking = false;
+                if (activeChatAbortController === abortController) {
+                    activeChatAbortController = null;
+                }
+                setTimeout(() => {
+                    isProcessingUtterance = false;
+                    currentSpeechText = '';
+                    lastInterimText = '';
+                }, 600);
+            }
         }
     };
 

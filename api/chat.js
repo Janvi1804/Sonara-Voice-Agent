@@ -132,7 +132,7 @@ export default async function handler(req, res) {
             messages = [],
             model = 'llama-3.3-70b-versatile',
             temperature = 0.65,
-            max_tokens = 450
+            max_tokens = 650
         } = body;
 
         const groqApiKey = process.env.GROQ_API_KEY || '';

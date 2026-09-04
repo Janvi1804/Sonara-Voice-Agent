@@ -85,17 +85,26 @@ export class AppointmentDB {
     }
 
     /**
-     * Standardize date string to YYYY-MM-DD
+     * Standardize date string to YYYY-MM-DD (local calendar safe, avoids UTC shift)
      */
     normalizeDate(dateInput) {
         if (!dateInput) {
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
-            return tomorrow.toISOString().split('T')[0];
+            const y = tomorrow.getFullYear();
+            const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+            const d = String(tomorrow.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+            return dateInput.trim();
         }
         const d = new Date(dateInput);
         if (!isNaN(d.getTime())) {
-            return d.toISOString().split('T')[0];
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
         }
         return dateInput;
     }
@@ -199,7 +208,7 @@ export class AppointmentDB {
         // Remote PostgreSQL sync — always attempt via Vercel env var (POSTGRES_URL)
         // Client postgresUrl is optional fallback for self-hosted installs
         try {
-            await fetch('/api/db', {
+            const dbRes = await fetch('/api/db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -210,11 +219,18 @@ export class AppointmentDB {
                         phone: record.phone,
                         service: record.service,
                         date_time: `${record.slot_date} ${record.slot_time}`,
-                        status: record.status,
+                        status: 'CONFIRMED',
                         notes: record.notes
                     }
                 })
             });
+            if (dbRes.status === 409) {
+                this.inMemoryAppointments.delete(apptId);
+                return {
+                    success: false,
+                    message: `Slot ${normTime} on ${normDate} was just reserved by another client. Please choose another slot.`
+                };
+            }
         } catch (err) {
             console.warn('[AppointmentDB] Supabase save note:', err.message);
         }
@@ -255,7 +271,7 @@ export class AppointmentDB {
     }
 
     /**
-     * Cancel an appointment
+     * Cancel an appointment (syncs to Supabase / PostgreSQL backend)
      */
     async cancelAppointment(appointmentId, phone) {
         await this.init();
@@ -284,6 +300,28 @@ export class AppointmentDB {
         this.inMemoryAppointments.set(target.id, target);
         await this.saveToIndexedDB(target);
 
+        // Synchronize cancellation to remote PostgreSQL / Supabase
+        try {
+            await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save_appointment',
+                    data: {
+                        id: target.id,
+                        customer_name: target.customer_name,
+                        phone: target.phone,
+                        service: target.service,
+                        date_time: `${target.slot_date} ${target.slot_time}`,
+                        status: 'CANCELLED',
+                        notes: target.notes
+                    }
+                })
+            });
+        } catch (err) {
+            console.warn('[AppointmentDB] Supabase cancellation sync note:', err.message);
+        }
+
         return {
             success: true,
             appointmentId: target.id,
@@ -292,7 +330,7 @@ export class AppointmentDB {
     }
 
     /**
-     * Reschedule an appointment
+     * Reschedule an appointment (syncs to Supabase / PostgreSQL backend with double-booking check)
      */
     async rescheduleAppointment(appointmentId, newDate, newTime) {
         await this.init();
@@ -312,10 +350,47 @@ export class AppointmentDB {
             };
         }
 
+        const oldDate = target.slot_date;
+        const oldTime = target.slot_time;
+        const oldStatus = target.status;
+
         target.slot_date = normDate;
         target.slot_time = normTime;
-        target.status = 'rescheduled';
+        target.status = 'confirmed';
         target.updated_at = new Date().toISOString();
+
+        // Remote synchronization to PostgreSQL / Supabase backend with unique index enforcement
+        try {
+            const dbRes = await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save_appointment',
+                    data: {
+                        id: target.id,
+                        customer_name: target.customer_name,
+                        phone: target.phone,
+                        service: target.service,
+                        date_time: `${normDate} ${normTime}`,
+                        status: 'CONFIRMED',
+                        notes: target.notes
+                    }
+                })
+            });
+
+            if (dbRes.status === 409) {
+                // Revert local state if remote rejected due to concurrent booking
+                target.slot_date = oldDate;
+                target.slot_time = oldTime;
+                target.status = oldStatus;
+                return {
+                    success: false,
+                    message: `Slot ${normTime} on ${normDate} is already reserved by another client. Please choose another time.`
+                };
+            }
+        } catch (err) {
+            console.warn('[AppointmentDB] Supabase reschedule sync note:', err.message);
+        }
 
         this.inMemoryAppointments.set(target.id, target);
         await this.saveToIndexedDB(target);
