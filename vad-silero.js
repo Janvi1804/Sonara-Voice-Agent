@@ -84,7 +84,8 @@ export class SileroVAD {
             if (ort.env) {
                 ort.env.wasm.numThreads = 1;
                 ort.env.wasm.simd = true;
-                ort.env.wasm.wasmPaths = '/';
+                ort.env.wasm.proxy = false;
+                ort.env.wasm.wasmPaths = window.location.origin + '/';
             }
 
             console.log('[SileroVAD] Loading official Silero VAD ONNX model from', this.modelPath);

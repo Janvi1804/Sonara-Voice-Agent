@@ -1368,7 +1368,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const ragContext = (chkRagEnabled && chkRagEnabled.checked) ? await ragEngine.retrieveContext(userPrompt) : '';
         const memoryPrompt = memory.getMemoryPrompt();
 
-        const modelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : 'Gemma';
+        const modelOption = selLlmModel && selLlmModel.selectedIndex >= 0 ? selLlmModel.options[selLlmModel.selectedIndex] : null;
+        const modelName = modelOption ? modelOption.text : 'Groq AI';
         setAgentState('thinking', `Reasoning with ${modelName}...`);
 
         // Read from Settings field first, fallback to active Groq key
