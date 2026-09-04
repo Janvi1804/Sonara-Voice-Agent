@@ -51,9 +51,13 @@ const CONVERSE_AI_KB = [
     content: "ConverseAI has automated over 50 Million messages across 500+ businesses globally, delivering a 98% WhatsApp open rate, 60% faster customer response times, and an average 94% CSAT score across 100+ supported languages."
   }
 ];
+// Detect definitional / conceptual queries: "what is X", "explain X", "define X", "how does X work"
+const DEFINITIONAL_PATTERNS = /^(what\s+(is|are|does)|explain|define|tell\s+me\s+about|how\s+does|what\s+do\s+you\s+mean\s+by)\b/i;
 
-// RAG Retrieval Function
-function retrieveRAGContext(query = '') {
+// RAG Retrieval Function — returns relevant company knowledge, with reduced weight for broad service
+// chunk on definitional queries to avoid false positives (e.g. "what is a voice agent?" shouldn't
+// return the generic Converse AI services overview as if it IS the answer).
+function retrieveRAGContext(query = '', isDefinitional = false) {
     if (!query) return '';
     const qLower = query.toLowerCase();
     const qWords = qLower.split(/\s+/).filter(w => w.length > 2);
@@ -67,13 +71,29 @@ function retrieveRAGContext(query = '') {
             if (doc.title.toLowerCase().includes(w)) score += 3;
             if (doc.content.toLowerCase().includes(w)) score += 1;
         });
+
+        // For definitional queries, penalise the broad "services" chunk unless a keyword explicitly
+        // matched (to avoid it being returned simply because "voice" appears in the chunk body).
+        if (isDefinitional && doc.id === 'theconverseai-services') {
+            const keywordHit = doc.keywords.some(kw => qLower.includes(kw));
+            if (!keywordHit) score = Math.max(0, score - 4);
+        }
+
         return { doc, score };
     }).filter(item => item.score >= 3).sort((a, b) => b.score - a.score);
 
     if (scored.length === 0) return '';
 
     const retrieved = scored.slice(0, 3).map(item => `[${item.doc.title}]:\n${item.doc.content}`).join('\n\n');
-    return `\n\n--- TRUSTED COMPANY KNOWLEDGE (VERIFIED CONVERSE AI FACTS) ---\n${retrieved}\n(CRITICAL: Base facts, metrics, and services strictly on the verified knowledge above. Never invent facts, numbers, or clients.)\n`;
+
+    const label = isDefinitional
+        ? '--- CONVERSE AI COMPANY CONTEXT (use only if directly relevant to the user\'s question — do NOT use as the definition itself) ---'
+        : '--- TRUSTED COMPANY KNOWLEDGE (VERIFIED CONVERSE AI FACTS) ---';
+    const footer = isDefinitional
+        ? '(Use the above only as supplementary context after answering the user\'s actual question. Facts and metrics must be taken from here, never invented.)'
+        : '(CRITICAL: Base facts, metrics, and services strictly on the verified knowledge above. Never invent facts, numbers, or clients.)';
+
+    return `\n\n${label}\n${retrieved}\n${footer}\n`;
 }
 
 // Clean think tags and markdown
@@ -123,7 +143,15 @@ export default async function handler(req, res) {
         // Get latest user query for RAG lookup
         const userMessages = messages.filter(m => m.role === 'user');
         const lastUserMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
-        const ragContext = retrieveRAGContext(lastUserMsg);
+
+        // Classify query type: definitional ("what is X", "explain X") vs. service/company inquiry
+        const isDefinitionalQuery = DEFINITIONAL_PATTERNS.test(lastUserMsg.trim());
+        const ragContext = retrieveRAGContext(lastUserMsg, isDefinitionalQuery);
+
+        // Build the definitional-query guard instruction (injected only when query is definitional)
+        const definitionalGuard = isDefinitionalQuery
+            ? `\n\nIMPORTANT — THIS IS A DEFINITIONAL QUESTION: The user asked "${lastUserMsg.trim()}". Your response MUST start by explaining what the concept or technology actually IS in clear, plain language (2-4 sentences). Only after defining the concept may you mention how Converse AI implements or uses it. The company context below is SUPPLEMENTARY — it is NOT the answer. Do NOT answer a definition question with a list of Converse AI services.`
+            : '';
 
         // Production-Grade System Prompt for SONARA
         const SYSTEM_PROMPT = `You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com).
@@ -145,6 +173,7 @@ CORE ROLE & BEHAVIOR:
   * Hinglish user input -> Warm, natural conversational Hinglish.
 - Strict Honesty: Never hallucinate facts, statistics, integrations, client names, or fixed pricing. If information is not in your verified knowledge, say so honestly.
 - Voice Naturalness: Spoken complete sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
+- DEFINITIONAL QUESTIONS: When the user asks "what is X?", "what are X?", "explain X", "define X", or similar concept-level questions, ALWAYS explain what X actually IS as a concept or technology first (in your own words, drawing on your training knowledge). Then, if directly relevant, you may mention how Converse AI implements it. Never substitute a concept definition with a Converse AI services list.${definitionalGuard}
 
 ${ragContext}`;
 
