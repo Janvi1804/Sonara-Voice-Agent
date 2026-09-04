@@ -152,115 +152,113 @@ export class SileroVAD {
         const rms = Math.sqrt(sumSq / pcmData.length);
         const db = Math.max(-60, Math.min(0, Math.round(20 * Math.log10(rms + 1e-5))));
 
-        // If neural model not loaded yet, emit frame for UI and return (do not infinite retry on every frame)
-        if (!this.isReady || !this.session) {
-            this.onFrame({ prob: 0, rms, db, isSpeaking: this.isSpeaking });
-            return { prob: 0, isSpeaking: this.isSpeaking, rms, db };
-        }
+        let prob = 0;
+        const now = performance.now();
 
-        // Prepare 512-sample Float32 slice
-        let frame512 = pcmData;
-        if (pcmData.length !== 512) {
-            frame512 = new Float32Array(512);
-            frame512.set(pcmData.subarray(0, Math.min(512, pcmData.length)));
-        }
-
-        try {
-            const ort = getOrt();
-            const inputTensor = new ort.Tensor('float32', frame512, [1, 512]);
-            const stateTensor = new ort.Tensor('float32', this.stateData, [2, 1, 128]);
-
-            const feeds = {
-                input: inputTensor,
-                state: stateTensor,
-                sr: this.srTensor
-            };
-
-            const results = await this.session.run(feeds);
-            const rawProb = results.output.data[0];
-            const prob = Math.round(rawProb * 1000) / 1000;
-
-            // Update recurrent hidden state
-            if (results.stateN && results.stateN.data) {
-                this.stateData.set(results.stateN.data);
+        if (this.isReady && this.session) {
+            // Prepare 512-sample Float32 slice
+            let frame512 = pcmData;
+            if (pcmData.length !== 512) {
+                frame512 = new Float32Array(512);
+                frame512.set(pcmData.subarray(0, Math.min(512, pcmData.length)));
             }
 
-            // Emit frame stats for UI visualizer
-            this.onFrame({ prob, rms, db, isSpeaking: this.isSpeaking });
+            try {
+                const ort = getOrt();
+                const inputTensor = new ort.Tensor('float32', frame512, [1, 512]);
+                const stateTensor = new ort.Tensor('float32', this.stateData, [2, 1, 128]);
 
-            const now = performance.now();
+                const feeds = {
+                    input: inputTensor,
+                    state: stateTensor,
+                    sr: this.srTensor
+                };
 
-            // 1. AI-Speaking Gate with Genuine User Barge-In
-            if (this.aiIsSpeaking) {
-                // When AI is speaking, user must deliberately speak with high neural probability
-                // and higher energy to override speaker bleed
-                if (prob >= 0.70 && rms >= 0.040) {
-                    this._bargeInConfirmCount++;
-                    if (this._bargeInConfirmCount >= this.bargeInConfirmFrames) {
-                        this._bargeInConfirmCount = 0;
-                        this._onsetConfirmCount = 0;
-                        this.isSpeaking = true;
-                        this.speakingStartTime = now;
-                        this.lastSpeechTime = now;
-                        if (this._debugLog) {
-                            console.log('[SileroVAD] ⚡ Neural Barge-in Confirmed:', { prob, rms, frames: this.bargeInConfirmFrames });
-                        }
-                        this.onBargeIn();
-                        this.onSpeechStart();
-                    }
-                } else {
-                    this._bargeInConfirmCount = 0;
+                const results = await this.session.run(feeds);
+                const rawProb = results.output.data[0];
+                prob = Math.round(rawProb * 1000) / 1000;
+
+                // Update recurrent hidden state
+                if (results.stateN && results.stateN.data) {
+                    this.stateData.set(results.stateN.data);
                 }
-                return { prob, isSpeaking: false, rms, db };
+            } catch (inferErr) {
+                console.warn('[SileroVAD] Neural step failed, using acoustic fallback:', inferErr.message);
+                prob = rms > 0.015 ? Math.min(1.0, (rms - 0.015) * 20 + 0.5) : 0.05;
             }
+        } else {
+            // High-reliability Acoustic/Energy Fallback VAD:
+            // Ensures voice is NEVER blocked even if ONNX WebAssembly environment is loading or restricted.
+            prob = rms >= 0.012 ? Math.min(0.95, (rms - 0.012) * 25 + 0.55) : (rms > 0.005 ? 0.20 : 0.02);
+        }
 
-            // 2. Normal Speech State Machine
-            if (prob >= this.threshold) {
-                this.lastSpeechTime = now;
+        // Emit frame stats for UI visualizer
+        this.onFrame({ prob, rms, db, isSpeaking: this.isSpeaking });
 
-                if (!this.isSpeaking) {
-                    this._onsetConfirmCount++;
-                    if (this._onsetConfirmCount >= this.speechStartConfirmFrames) {
-                        this._onsetConfirmCount = 0;
-                        this.isSpeaking = true;
-                        this.speakingStartTime = now;
-                        if (this._debugLog) {
-                            console.log('[SileroVAD] 🎙️ Neural Speech Onset:', { prob, rms });
-                        }
-                        this.onSpeechStart();
+        // 1. AI-Speaking Gate with Genuine User Barge-In
+        if (this.aiIsSpeaking) {
+            if (prob >= 0.70 && rms >= 0.040) {
+                this._bargeInConfirmCount++;
+                if (this._bargeInConfirmCount >= this.bargeInConfirmFrames) {
+                    this._bargeInConfirmCount = 0;
+                    this._onsetConfirmCount = 0;
+                    this.isSpeaking = true;
+                    this.speakingStartTime = now;
+                    this.lastSpeechTime = now;
+                    if (this._debugLog) {
+                        console.log('[SileroVAD] ⚡ Barge-in Confirmed:', { prob, rms, frames: this.bargeInConfirmFrames });
                     }
+                    this.onBargeIn();
+                    this.onSpeechStart();
                 }
             } else {
-                this._onsetConfirmCount = 0;
+                this._bargeInConfirmCount = 0;
+            }
+            return { prob, isSpeaking: false, rms, db };
+        }
 
-                if (this.isSpeaking) {
-                    const silenceDuration = now - this.lastSpeechTime;
-                    const speechDuration = now - this.speakingStartTime;
+        // 2. Normal Speech State Machine
+        if (prob >= this.threshold) {
+            this.lastSpeechTime = now;
 
-                    if (silenceDuration >= this.silenceDurationMs || speechDuration >= this.maxSpeechDurationMs) {
-                        this.isSpeaking = false;
-                        this.resetState();
+            if (!this.isSpeaking) {
+                this._onsetConfirmCount++;
+                if (this._onsetConfirmCount >= this.speechStartConfirmFrames) {
+                    this._onsetConfirmCount = 0;
+                    this.isSpeaking = true;
+                    this.speakingStartTime = now;
+                    if (this._debugLog) {
+                        console.log('[SileroVAD] 🎙️ Speech Onset Detected:', { prob, rms });
+                    }
+                    this.onSpeechStart();
+                }
+            }
+        } else {
+            this._onsetConfirmCount = 0;
 
-                        if (speechDuration < this.minSpeechDurationMs) {
-                            if (this._debugLog) {
-                                console.log('[SileroVAD] Speech discarded (too short):', Math.round(speechDuration) + 'ms');
-                            }
-                            this.onSpeechSuppressed(speechDuration);
-                        } else {
-                            if (this._debugLog) {
-                                console.log('[SileroVAD] ✅ Neural Speech End:', { speechDuration: Math.round(speechDuration) + 'ms' });
-                            }
-                            this.onSpeechEnd(speechDuration);
+            if (this.isSpeaking) {
+                const silenceDuration = now - this.lastSpeechTime;
+                const speechDuration = now - this.speakingStartTime;
+
+                if (silenceDuration >= this.silenceDurationMs || speechDuration >= this.maxSpeechDurationMs) {
+                    this.isSpeaking = false;
+                    this.resetState();
+
+                    if (speechDuration < this.minSpeechDurationMs) {
+                        if (this._debugLog) {
+                            console.log('[SileroVAD] Sound discarded (too short):', Math.round(speechDuration) + 'ms');
                         }
+                        this.onSpeechSuppressed(speechDuration);
+                    } else {
+                        if (this._debugLog) {
+                            console.log('[SileroVAD] ✅ Speech End Detected:', { speechDuration: Math.round(speechDuration) + 'ms' });
+                        }
+                        this.onSpeechEnd(speechDuration);
                     }
                 }
             }
-
-            return { prob, isSpeaking: this.isSpeaking, rms, db };
-
-        } catch (inferErr) {
-            console.warn('[SileroVAD] Inference step failed:', inferErr.message);
-            return { prob: 0, isSpeaking: this.isSpeaking, rms, db };
         }
+
+        return { prob, isSpeaking: this.isSpeaking, rms, db };
     }
 }
