@@ -1,8 +1,8 @@
 /**
  * Vercel Serverless Function: /api/elevenlabs-tts
- * ElevenLabs Text-to-Speech proxy
+ * ElevenLabs Text-to-Speech proxy (ElevenLabs API ONLY)
+ * Model: eleven_flash_v2_5 (Low-latency production model)
  * Voice: Jessica (cgSgspJ2msm6clMCkdW9)
- * Model: eleven_turbo_v2_5 (Low-latency)
  */
 import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-        const { text, voice_id } = body;
+        const { text, voice_id, model_id } = body;
 
         if (!text || !String(text).trim()) {
             return res.status(400).json({ error: 'text is required' });
@@ -43,6 +43,7 @@ export default async function handler(req, res) {
 
         // Jessica — natural, human-like voice
         const voiceId = voice_id || 'cgSgspJ2msm6clMCkdW9';
+        const modelId = model_id || 'eleven_flash_v2_5';
 
         const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=3`, {
             method: 'POST',
@@ -53,11 +54,11 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 text: sanitizedText,
-                model_id: 'eleven_turbo_v2_5',
+                model_id: modelId,
                 voice_settings: {
-                    stability: 0.35,
-                    similarity_boost: 0.80,
-                    style: 0.30,
+                    stability: 0.40,
+                    similarity_boost: 0.82,
+                    style: 0.15,
                     use_speaker_boost: true
                 }
             })
@@ -65,8 +66,10 @@ export default async function handler(req, res) {
 
         if (!elRes.ok) {
             const errText = await elRes.text();
-            console.error('[ElevenLabsTTS] Error:', elRes.status, errText);
-            return res.status(elRes.status).json({ error: `ElevenLabs TTS error: ${errText}` });
+            console.error('ElevenLabs API error:', elRes.status, errText);
+            return res.status(elRes.status).json({
+                error: `ElevenLabs TTS failed (${elRes.status}): ${errText}`
+            });
         }
 
         const audioBuffer = await elRes.arrayBuffer();
@@ -75,8 +78,7 @@ export default async function handler(req, res) {
         return res.status(200).send(Buffer.from(audioBuffer));
 
     } catch (err) {
-        console.error('[ElevenLabsTTS] Handler error:', err);
-        return res.status(500).json({ error: 'TTS synthesis failed. Please try again.' });
+        console.error('ElevenLabs TTS Error:', err);
+        return res.status(500).json({ error: 'ElevenLabs TTS synthesis failed: ' + err.message });
     }
 }
-

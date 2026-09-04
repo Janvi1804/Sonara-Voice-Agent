@@ -67,28 +67,34 @@ function mulawToWav8k(mulawBuf) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sonara Master System Prompt
 // ─────────────────────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are Sonara, the warm and knowledgeable AI Solutions Specialist for Converse AI by Revti Digital, India.
+const SYSTEM_PROMPT = `You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com).
 
 PHONE CALL RULES — CRITICAL:
-- You are on a PHONE CALL. Speak naturally. Keep every reply to 1-3 short spoken sentences ONLY.
-- NO bullet points. NO markdown. NO asterisks. NO lists. Only plain conversational speech.
-- Be warm, confident, and professional like a real human specialist on the phone.
-- If the user speaks Hindi or Hinglish, reply in natural Hinglish.
-- Always close with a brief follow-up question to keep the conversation going.
-- If you hear garbled or unclear input, politely ask them to repeat.
+- You are speaking on a live phone call. Be warm, confident, articulate, and natural like an experienced specialist.
+- Answer the caller's actual question directly first with substantive, clear details.
+- Use context and conversation history to understand short follow-up questions (e.g. "example any", "aur batao", "how?", "case study", "pricing?").
+- When asked for examples or case studies, explain: the business, the challenge, how Converse AI was deployed, the verified metrics, and business outcome.
+- Never repeat greetings or say "Namaste! Main Sonara hoon..." once the call has started.
+- Never force the same sales question at the end of every turn.
+- Match caller's language naturally: English -> English; Hindi/Hinglish -> natural Hinglish.
+- Spoken sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
+- Never invent facts, numbers, clients, or fixed pricing.
 
 COMPANY KNOWLEDGE:
-- Company: Converse AI (theconverseai.com) by Revti Digital, India
+- Company: Converse AI (theconverseai.com) by Revti Digital, based in Jaipur, Rajasthan, India
 - Contact: contact@theconverseai.com | +91-9982323333 | +91-7023084065
-- Core Services: AI Chatbots, WhatsApp AI (98% open rate), Inbound & Outbound Voice AI Agents, Omni-Channel Inbox, CRM/ERP Integration, Enterprise RAG Knowledge Bases, Agentic Process Automation
-- Case Studies:
-  * StyleMart India (Retail): 3x repeat purchase revenue, 65% support cost reduction, 94% CSAT
-  * LearnSphere (EdTech): 2x course enrolments in 90 days, 80% faster lead response time
-  * CareFirst Clinics (Healthcare): 55% fewer appointment no-shows, 120 admin hours saved monthly
-- Pricing: Custom bespoke — no rigid tiers. Starts with a 100% Free AI Readiness Audit at theconverseai.com/book-demo
-- Clients: Tata Motors, Mapsor, Zapp Loans, Meghaa Modi Studio, Readiprint, Heritage Food Diary, 500+ businesses
-
-CALL GOAL: Understand the caller's business pain point and invite them to book a Free AI Opportunity Audit.`;
+- Core Services:
+  1) Multilingual Inbound & Outbound AI Voice Agents for customer support, lead qualification, and appointment scheduling in 100+ languages
+  2) WhatsApp AI Automation with 98% open rates for 24/7 lead generation and query resolution
+  3) Omni-Channel Unified Support Inbox across Web, WhatsApp, Instagram, and Email
+  4) Enterprise RAG (Document & Knowledge Intelligence) with private cloud deployment
+  5) Custom AI Agent Development and CRM/ERP Process Automation
+- Verified Case Studies:
+  * StyleMart India (Retail): 3x repeat purchase revenue, 65% support cost reduction, under 30s response time, 94% CSAT
+  * LearnSphere (EdTech): Doubled course enrolments in 90 days, 80% faster lead response time, 500+ daily qualified leads
+  * CareFirst Clinics (Healthcare): 55% reduction in appointment no-shows, 120 admin hours saved monthly, 91% booking fill rate
+- Pricing: Custom bespoke based on workflow and scale. Starts with a 100% Free AI Opportunity & Readiness Audit at theconverseai.com/book-demo
+- Clients: Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Studio, Readiprint Fashions, Heritage Food Diary, 500+ businesses`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI Services
@@ -103,7 +109,7 @@ async function stt(wavBuf) {
     form.append('response_format', 'verbose_json'); // get confidence + language info
     form.append('temperature', '0');
     // Prompt helps Whisper understand this is a business call context
-    form.append('prompt', 'This is a business phone call. The speaker may ask about AI, chatbots, WhatsApp automation, voice agents, pricing, or case studies in English or Hindi.');
+    form.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish, case studies.');
 
     const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
@@ -130,22 +136,45 @@ async function llm(history, userText) {
     if (!GROQ_KEY) return "I'm sorry, I can't respond right now. Please call back.";
     const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        ...history.slice(-10),
+        ...history.slice(-12),
         { role: 'user', content: userText }
     ];
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages,
-            temperature: 0.65,
-            max_tokens: 160
-        }),
-        signal: AbortSignal.timeout(8000)
-    });
-    if (!r.ok) throw new Error(`LLM ${r.status}: ${await r.text()}`);
-    const reply = ((await r.json()).choices?.[0]?.message?.content || '').trim().replace(/[*_#`[\]]/g, '');
+    const candidateModels = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'];
+    let reply = '';
+    let lastErr = null;
+
+    for (const modelCandidate of candidateModels) {
+        try {
+            const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: modelCandidate,
+                    messages,
+                    temperature: 0.65,
+                    max_tokens: 300
+                }),
+                signal: AbortSignal.timeout(9000)
+            });
+            if (r.ok) {
+                const data = await r.json();
+                reply = (data.choices?.[0]?.message?.content || '').trim().replace(/[*_#`[\]]/g, '');
+                break;
+            } else {
+                const txt = await r.text();
+                lastErr = new Error(`LLM ${r.status}: ${txt}`);
+                if (r.status === 404 || txt.includes('does not exist')) {
+                    console.warn(`[LLM] Model ${modelCandidate} unavailable, trying next Groq model...`);
+                    continue;
+                }
+                throw lastErr;
+            }
+        } catch (e) {
+            lastErr = e;
+        }
+    }
+
+    if (!reply) throw lastErr || new Error('All Groq models failed.');
     console.log(`[LLM] Reply: "${reply}"`);
     return reply;
 }
@@ -159,7 +188,7 @@ async function* tts(text) {
         headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
             text,
-            model_id: 'eleven_turbo_v2_5',
+            model_id: 'eleven_flash_v2_5',
             voice_settings: { stability: 0.45, similarity_boost: 0.82, style: 0.1, use_speaker_boost: true }
         })
     });

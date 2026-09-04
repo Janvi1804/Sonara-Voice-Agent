@@ -1,12 +1,11 @@
 /**
  * SONARA VOICE AI - Main Application & Full Duplex Orchestrator
- * Integrates Silero VAD, WebRTC/Web Audio DSP, Whisper v3 Turbo, Gemma 2, Kokoro-82M, Fish Speech,
+ * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
 import { SileroVAD } from './vad-silero.js';
 import { WhisperSTT } from './whisper-stt.js';
-import { KokoroTTS } from './kokoro-tts.js';
-import { FishSpeechTTS } from './fish-speech-tts.js';
+import { ElevenLabsTTS } from './elevenlabs-tts.js';
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
 import { CustomerDB } from './customer-db.js';
@@ -55,12 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // TTS Form Elements
     const selTtsEngine = document.getElementById('selTtsEngine');
-    const txtFishApiKey = document.getElementById('txtFishApiKey');
-    const txtFishCustomUrl = document.getElementById('txtFishCustomUrl');
-    const txtFishVoiceId = document.getElementById('txtFishVoiceId');
-    const rowFishApiKey = document.getElementById('rowFishApiKey');
-    const rowFishCustomUrl = document.getElementById('rowFishCustomUrl');
-    const rowFishVoiceId = document.getElementById('rowFishVoiceId');
     const selTtsVoice = document.getElementById('selTtsVoice');
     const rngSpeed = document.getElementById('rngSpeed');
     const lblSpeed = document.getElementById('lblSpeed');
@@ -87,8 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let inputAnalyser = null;
     let vadEngine = null;
     let ttsEngine = null;
-    let kokoroEngine = null;
-    let fishEngine = null;
     let speechRecognition = null;
 
     let conversationHistory = [];
@@ -133,11 +124,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const prov = selLlmProvider ? selLlmProvider.value : 'groq';
         if (rowHfToken) rowHfToken.style.display = prov === 'huggingface' ? 'flex' : 'none';
         if (rowApiKey) rowApiKey.style.display = prov !== 'huggingface' ? 'flex' : 'none';
-
-        const ttsMode = selTtsEngine ? selTtsEngine.value : 'kokoro';
-        if (rowFishApiKey) rowFishApiKey.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
-        if (rowFishCustomUrl) rowFishCustomUrl.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
-        if (rowFishVoiceId) rowFishVoiceId.style.display = ttsMode === 'fish-speech' ? 'flex' : 'none';
     };
     if (selLlmProvider) selLlmProvider.addEventListener('change', updateProviderFields);
     if (selTtsEngine) selTtsEngine.addEventListener('change', updateProviderFields);
@@ -173,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ttsCooldownUntil = Date.now() + 999999;
         if (vadEngine) vadEngine.setAiSpeakingState(true);
         if (whisperEngine) whisperEngine.clearBuffer();
-        setAgentState('speaking', `SONARA Speaking (${engineName || 'Kokoro-82M'})`);
+        setAgentState('speaking', `SONARA Speaking (${engineName || 'ElevenLabs Jessica'})`);
 
         // Safety Watchdog: If browser SpeechSynthesis hangs or fails to fire onend (e.g. after long multi-turn sessions),
         // force unlock the listening pipeline after a 15-second safety ceiling so the user is NEVER stuck!
@@ -260,28 +246,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // TTS Settings
         if (selTtsEngine) {
             const savedTts = localStorage.getItem('sonara_tts_engine');
-            selTtsEngine.value = (savedTts === 'fish-speech' || savedTts === 'native' || savedTts === 'kokoro') ? savedTts : 'kokoro';
-        }
-        if (txtFishApiKey) {
-            const savedFish = localStorage.getItem('sonara_fish_api_key');
-            txtFishApiKey.value = (savedFish && !savedFish.includes('S9_QFL')) ? savedFish : '';
-            txtFishApiKey.placeholder = 'Optional: enter your Fish Audio API Key';
-        }
-        if (txtFishCustomUrl && localStorage.getItem('sonara_fish_custom_url')) {
-            txtFishCustomUrl.value = localStorage.getItem('sonara_fish_custom_url');
-        }
-        if (txtFishVoiceId && localStorage.getItem('sonara_fish_voice_id')) {
-            txtFishVoiceId.value = localStorage.getItem('sonara_fish_voice_id');
+            selTtsEngine.value = 'elevenlabs';
         }
 
         const savedTtsVoice = localStorage.getItem('sonara_tts_voice');
-        if (savedTtsVoice && !savedTtsVoice.startsWith('am_') && !savedTtsVoice.startsWith('bm_')) {
-            selTtsVoice.value = savedTtsVoice;
-        } else {
-            selTtsVoice.value = 'af_heart';
-            localStorage.setItem('sonara_tts_voice', 'af_heart');
+        if (selTtsVoice) {
+            selTtsVoice.value = savedTtsVoice || 'cgSgspJ2msm6clMCkdW9';
         }
-        if (localStorage.getItem('sonara_tts_speed')) {
+        if (localStorage.getItem('sonara_tts_speed') && rngSpeed) {
             rngSpeed.value = localStorage.getItem('sonara_tts_speed');
             lblSpeed.textContent = `${rngSpeed.value}x`;
         }
@@ -308,43 +280,27 @@ document.addEventListener('DOMContentLoaded', () => {
             txtCustomRagUrl.value = localStorage.getItem('sonara_custom_rag_url');
         }
 
-        // Initialize Kokoro-82M Core Engine immediately on page load
-        if (!kokoroEngine) {
-            kokoroEngine = new KokoroTTS(audioContext, {
-                voice: selTtsVoice ? selTtsVoice.value : 'af_heart',
-                speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
-                onStart: () => handleTtsStart('Kokoro-82M'),
+        // Initialize ElevenLabs TTS Engine
+        if (!ttsEngine) {
+            ttsEngine = new ElevenLabsTTS(audioContext, {
+                voiceId: selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9',
+                modelId: 'eleven_flash_v2_5',
+                onStart: () => handleTtsStart('ElevenLabs (Jessica)'),
                 onEnd: handleTtsEnd
             });
         } else {
-            kokoroEngine.setVoice(selTtsVoice ? selTtsVoice.value : 'af_heart');
-            kokoroEngine.setSpeed(rngSpeed ? parseFloat(rngSpeed.value) : 1.05);
+            ttsEngine.setVoice(selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9');
         }
-
-        if (!fishEngine) {
-            fishEngine = new FishSpeechTTS(audioContext, {
-                apiKey: txtFishApiKey ? txtFishApiKey.value.trim() : '',
-                customUrl: txtFishCustomUrl ? txtFishCustomUrl.value.trim() : '',
-                voiceId: txtFishVoiceId ? txtFishVoiceId.value.trim() : '',
-                fallbackEngine: kokoroEngine,
-                speed: rngSpeed ? parseFloat(rngSpeed.value) : 1.05,
-                onStart: () => handleTtsStart('Fish Speech 🐟'),
-                onEnd: handleTtsEnd
-            });
-        }
-
-        const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'kokoro-82m';
-        ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
 
         updateProviderFields();
     };
 
     const saveSettings = () => {
-        localStorage.setItem('sonara_llm_api_key', txtLlmApiKey.value.trim());
+        if (txtLlmApiKey) localStorage.setItem('sonara_llm_api_key', txtLlmApiKey.value.trim());
         if (txtHfToken) localStorage.setItem('sonara_hf_token', txtHfToken.value.trim());
-        localStorage.setItem('sonara_llm_model', selLlmModel.value);
-        localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
-        localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
+        if (selLlmModel) localStorage.setItem('sonara_llm_model', selLlmModel.value);
+        if (selLlmProvider) localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
+        if (txtSystemPrompt) localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
 
         // Postgres URL
         const txtPostgresUrl = document.getElementById('txtPostgresUrl');
@@ -357,45 +313,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // TTS
-        if (selTtsEngine) localStorage.setItem('sonara_tts_engine', selTtsEngine.value);
-        if (txtFishApiKey) localStorage.setItem('sonara_fish_api_key', txtFishApiKey.value.trim());
-        if (txtFishCustomUrl) localStorage.setItem('sonara_fish_custom_url', txtFishCustomUrl.value.trim());
-        if (txtFishVoiceId) localStorage.setItem('sonara_fish_voice_id', txtFishVoiceId.value.trim());
-
-        localStorage.setItem('sonara_tts_voice', selTtsVoice.value);
-        localStorage.setItem('sonara_tts_speed', rngSpeed.value);
-        localStorage.setItem('sonara_vad_thresh', rngVadThreshold.value);
-        localStorage.setItem('sonara_silence_dur', rngSilenceDuration.value);
+        if (selTtsEngine) localStorage.setItem('sonara_tts_engine', 'elevenlabs');
+        if (selTtsVoice) localStorage.setItem('sonara_tts_voice', selTtsVoice.value);
+        if (rngSpeed) localStorage.setItem('sonara_tts_speed', rngSpeed.value);
+        if (rngVadThreshold) localStorage.setItem('sonara_vad_thresh', rngVadThreshold.value);
+        if (rngSilenceDuration) localStorage.setItem('sonara_silence_dur', rngSilenceDuration.value);
         if (selSttModel) localStorage.setItem('sonara_stt_model', selSttModel.value);
         if (selLanguage) localStorage.setItem('sonara_language', selLanguage.value);
         if (chkRagEnabled) localStorage.setItem('sonara_rag_enabled', chkRagEnabled.checked);
         if (txtCustomRagUrl) localStorage.setItem('sonara_custom_rag_url', txtCustomRagUrl.value.trim());
 
-        whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : '');
-        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+        if (whisperEngine) {
+            whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : '');
+            whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+        }
 
         if (vadEngine) {
             vadEngine.setThreshold(parseFloat(rngVadThreshold.value));
             vadEngine.setSilenceDuration(parseInt(rngSilenceDuration.value));
         }
-        if (fishEngine) {
-            fishEngine.setApiKey(txtFishApiKey ? txtFishApiKey.value.trim() : '');
-            fishEngine.setCustomUrl(txtFishCustomUrl ? txtFishCustomUrl.value.trim() : '');
-            fishEngine.setVoiceId(txtFishVoiceId ? txtFishVoiceId.value.trim() : '');
-            fishEngine.setSpeed(parseFloat(rngSpeed.value));
-        }
-        if (kokoroEngine) {
-            kokoroEngine.setVoice(selTtsVoice.value);
-            kokoroEngine.setSpeed(parseFloat(rngSpeed.value));
-        }
 
-        const activeTtsChoice = selTtsEngine ? selTtsEngine.value : 'kokoro-82m';
-        ttsEngine = activeTtsChoice === 'fish-speech' ? fishEngine : kokoroEngine;
+        if (ttsEngine) {
+            ttsEngine.setVoice(selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9');
+        }
 
         settingsModal.classList.remove('active');
-        const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex].text : selLlmModel.value;
-        const activeTtsName = selTtsEngine ? (selTtsEngine.value === 'fish-speech' ? 'Fish Speech 🐟' : 'Kokoro-82M ⚡') : 'TTS';
-        const activeSttName = selSttModel ? (selSttModel.value === 'whisper-large-v3-turbo' ? 'Groq Whisper Large-v3-Turbo 🎙️' : 'Web Speech') : 'STT';
+        const activeModelName = 'Groq Llama 3.3 70B Versatile ⚡';
+        const activeTtsName = 'ElevenLabs Flash v2.5 (Jessica) 🎵';
+        const activeSttName = 'Groq Whisper Large-v3-Turbo 🎙️';
         appendSystemMessage(`✅ Configuration saved! STT: ${activeSttName} • LLM: ${activeModelName} • TTS: ${activeTtsName}`);
     };
 
@@ -676,12 +621,9 @@ document.addEventListener('DOMContentLoaded', () => {
             inputAnalyser.fftSize = 256;
             micSource.connect(inputAnalyser);
 
-            // Update active audioContext on TTS engines for live visualizer wave coupling
-            if (kokoroEngine) {
-                kokoroEngine.audioContext = audioContext;
-            }
-            if (fishEngine) {
-                fishEngine.audioContext = audioContext;
+            // Update active audioContext on TTS engine for live visualizer wave coupling
+            if (ttsEngine) {
+                ttsEngine.setAudioContext(audioContext);
             }
 
             // Initialize Silero VAD Engine
@@ -1318,7 +1260,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * Process User Utterance -> Google Gemma 2 / Gemini -> Kokoro TTS
+     * Process User Utterance -> Groq Llama 3.3 70B -> ElevenLabs Flash v2.5 TTS
      */
     const processUserUtterance = async (userPrompt) => {
         if (!userPrompt || userPrompt.trim().length === 0 || isAiThinking || isProcessingUtterance) return;
@@ -1619,60 +1561,6 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             badge.innerHTML = `<i class="fa-solid fa-bolt"></i> ${toolResult.tool}: ${toolResult.message || 'Executed'}`;
             aiMessageBubble.appendChild(badge);
         }
-        // Instant Zero-Downtime Knowledge Responder based on https://theconverseai.com/
-        const generateSmartFallback = (query) => {
-            const lower = (query || '').toLowerCase();
-
-            // 1. Tool execution result handling
-            if (toolResult) {
-                if (toolResult.tool === 'check_availability') {
-                    const slots = toolResult.availableSlots ? toolResult.availableSlots.join(', ') : '10:00 AM, 11:30 AM, 02:00 PM, 03:30 PM, 05:00 PM';
-                    return `Kal ke liye hamare open demo slots hain—${slots}. Aapko inme se kaunsa time suit karega?`;
-                }
-                if (toolResult.tool === 'book_appointment') {
-                    if (toolResult.success) {
-                        return `Bilkul! Aapka demo call confirm ho gaya hai—Appointment ID ${toolResult.appointmentId || 'APPT-1001'}. Kya aapko koi aur detail chahiye?`;
-                    } else {
-                        return `Yeh slot abhi booked hai. Hamare khali slots hain: ${toolResult.availableSlots ? toolResult.availableSlots.join(', ') : '11:30 AM, 02:00 PM'}. Kya aap inme se koi choose karna chahenge?`;
-                    }
-                }
-            }
-
-            // 2. Slot & availability inquiries
-            if (lower.includes('slot') || lower.includes('available') || lower.includes('timing') || lower.includes('free time') || lower.includes('kab') || lower.includes('schedule') || lower.includes('appointment')) {
-                return 'Kal ke liye hamare open slots hain—10:00 AM, 11:30 AM, 02:00 PM, 03:30 PM, aur 05:00 PM. Aap kis time par 100% Free AI Audit demo schedule karna chahenge?';
-            }
-
-            // 3. Pricing inquiries
-            if (lower.includes('price') || lower.includes('pricing') || lower.includes('cost') || lower.includes('rate') || lower.includes('charge') || lower.includes('fees') || lower.includes('kitna')) {
-                return 'Achha! Converse AI ke paas koi rigid fixed monthly plans nahi hain—har partnership ek 100% Free AI Opportunity & Readiness Audit se shuru hoti hai, jiske baad bespoke pricing tayaar hoti hai. Kya aap apne business ke liye free audit demo schedule karna chahenge?';
-            }
-
-            // 4. Client inquiries (precise keywords)
-            if (lower.includes('client') || lower.includes('customer') || lower.includes('who uses') || lower.includes('trusted by') || lower.includes('tata') || lower.includes('company')) {
-                return 'Hamare trusted enterprise clients hain—Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Design Studio, Readiprint Fashions aur Heritage Food Diary. Kya aap inke case studies ke baare me janna chahenge?';
-            }
-
-            // 5. Products & services
-            if (lower.includes('whatsapp') || lower.includes('wa bot') || lower.includes('chatbot')) {
-                return 'Bilkul! Hamara WhatsApp AI solution 98% open rates ke sath 24/7 customer queries aur lead qualification ko autonomously handle karta hai. Kya aap iska live demo dekhna chahenge?';
-            }
-            if (lower.includes('voice') || lower.includes('call') || lower.includes('calling') || lower.includes('telephony')) {
-                return 'Bilkul! Hamare AI Voice Agents inbound aur outbound calls ko 100+ languages me bina human intervention ke naturally handle karte hain. Kya aap iske features explore karna chahenge?';
-            }
-            if (lower.includes('service') || lower.includes('product') || lower.includes('offer') || lower.includes('kya kya') || lower.includes('kya karte')) {
-                return 'Converse AI voice bots, WhatsApp AI automation, omnichannel support inbox, Enterprise RAG aur custom AI workflow solutions build aur deploy karta hai. Aap kis solution me interested hain?';
-            }
-            if (lower.includes('contact') || lower.includes('number') || lower.includes('email') || lower.includes('phone') || lower.includes('address') || lower.includes('jaipur')) {
-                return 'Aap humein contact@theconverseai.com ya phone +91-9982323333 par reach out kar sakte hain, aur hamara office Jaipur, India me hai. Kya aapko kisi particular solution me help chahiye?';
-            }
-            if (lower.includes('case study') || lower.includes('result') || lower.includes('stylemart') || lower.includes('learnsphere') || lower.includes('carefirst')) {
-                return 'StyleMart ne repeat orders me 3x revenue grow kiya, LearnSphere ne 90 days me enrolments double kiye, aur CareFirst Clinics me appointment no-shows 55% drop hue. Kya aap apne sector ke liye ROI janna chahenge?';
-            }
-            const nameGreeting = memory?.entities?.customerName ? ` ${memory.entities.customerName} ji` : '';
-            return `Namaste${nameGreeting}! Main Sonara hoon, Converse AI ki official solutions specialist. Main aapke business ke customer care aur sales ko AI Voice bots ya WhatsApp automation se scale karne me help kar sakti hoon. Aap kis service ke baare me janna chahenge?`;
-        };
-
         let fullResponse = '';
         let firstTokenTime = 0;
 
@@ -1681,228 +1569,46 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 firstTokenTime = performance.now();
                 const ttft = Math.round(firstTokenTime - turnStartTime);
                 if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
-                setAgentState('speaking', 'SONARA Speaking (Kokoro-82M)');
+                setAgentState('speaking', 'SONARA Speaking (ElevenLabs Jessica)');
             }
         };
 
         try {
-            if (provider === 'huggingface' && hfToken) {
-                // --- HUGGINGFACE INFERENCE API: Google Gemma on HF Router ---
-                const hfModelMap = {
-                    'gemma2-9b-it':  'google/gemma-3-12b-it',
-                    'gemma2-27b-it': 'google/gemma-3-27b-it',
-                    'gemma-3-12b-it': 'google/gemma-3-12b-it',
-                    'gemma-3-27b-it': 'google/gemma-3-27b-it',
-                    'gemma-3-4b-it':  'google/gemma-3-4b-it',
-                    'gemini-1.5-flash': 'google/gemma-3-12b-it',
-                    'gemini-1.5-pro':   'google/gemma-3-27b-it',
-                    'llama-3.3-70b-versatile': 'meta-llama/Llama-3.3-70B-Instruct',
-                };
-                const hfModelId = hfModelMap[model] || 'google/gemma-3-12b-it';
-                const messages = [
-                    { role: 'system', content: systemPrompt },
-                    ...conversationHistory.slice(-8)
-                ];
+            // Groq API (whisper-large-v3-turbo -> llama-3.3-70b-versatile -> eleven_flash_v2_5)
+            const historySlice = conversationHistory.slice(-12);
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...historySlice.map(m => ({
+                    role: m.role === 'assistant' ? 'assistant' : 'user',
+                    content: m.content
+                }))
+            ];
 
-                let serverSuccess = false;
+            const apiRes = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages,
+                    model: 'llama-3.3-70b-versatile',
+                    ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
+                })
+            });
 
-                // 1. Call Vercel Serverless Function (/api/chat) — 100% CORS-free on Vercel
-                try {
-                    const apiRes = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            provider: 'huggingface',
-                            model: hfModelId,
-                            messages,
-                            max_tokens: 120,
-                            ragContext,
-                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
-                        })
-                    });
-
-                    if (apiRes.ok) {
-                        const apiData = await apiRes.json();
-                        if (apiData.text) {
-                            fullResponse = apiData.text.trim();
-                            serverSuccess = true;
-                        }
-                    } else {
-                        const errData = await apiRes.json().catch(() => ({}));
-                        if (errData.error) {
-                            console.warn('/api/chat response:', errData.error);
-                            if (errData.error.includes('terms') || errData.error.includes('403') || errData.error.includes('401')) {
-                                throw new Error(errData.error);
-                            }
-                        }
-                    }
-                } catch (apiErr) {
-                    if (apiErr.message && (apiErr.message.includes('terms') || apiErr.message.includes('403') || apiErr.message.includes('401'))) {
-                        throw apiErr;
-                    }
-                    console.warn('/api/chat unavailable, attempting direct fallback:', apiErr.message);
-                }
-
-                // 2. Direct fallback to HuggingFace Router or Pollinations AI
-                if (!serverSuccess) {
-                    try {
-                        const routerUrl = 'https://router.huggingface.co/v1/chat/completions';
-                        const hfRes = await fetch(routerUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${hfToken}`
-                            },
-                            body: JSON.stringify({
-                                model: hfModelId,
-                                messages,
-                                max_tokens: 250,
-                                temperature: 0.65
-                            })
-                        });
-
-                        if (hfRes.ok) {
-                            const hfData = await hfRes.json();
-                            fullResponse = hfData.choices?.[0]?.message?.content?.trim() || '';
-                        }
-                    } catch (e) {
-                        console.warn('Direct HF attempt failed:', e.message);
-                    }
-
-                    // 3. Resilient universal client fallback if HF had quota limits (402/429)
-                    if (!fullResponse) {
-                        try {
-                            const pollRes = await fetch('https://text.pollinations.ai/openai', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    model: 'openai-fast',
-                                    messages,
-                                    max_tokens: 200,
-                                    temperature: 0.7,
-                                    private: true
-                                })
-                            });
-                            if (pollRes.ok) {
-                                const pollData = await pollRes.json();
-                                fullResponse = pollData.choices?.[0]?.message?.content || (typeof pollData === 'string' ? pollData : '');
-                            }
-                        } catch (e) {
-                            console.warn('Pollinations fallback failed:', e.message);
-                        }
-                    }
-                }
-
-                if (!fullResponse) throw new Error('AI engine is warming up. Please speak again.');
-
-                fullResponse = sanitizeAiResponse(fullResponse);
-                markFirstToken();
-                aiMessageBubble.textContent = fullResponse;
-                if (ttsEngine) ttsEngine.speak(fullResponse);
-
-            } else if (provider === 'gemini' && apiKey) {
-                // --- GOOGLE GEMINI API ---
-                const geminiModel = (model === 'gemma2-9b-it' || model === 'gemma2-27b-it') ? 'gemini-1.5-flash' : model;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
-                const contents = conversationHistory.map(m => ({
-                    role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content }]
-                }));
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        systemInstruction: { parts: [{ text: systemPrompt }] },
-                        contents,
-                        generationConfig: { maxOutputTokens: 300, temperature: 0.65 }
-                    })
-                });
-                const data = await res.json();
-                if (data.error) throw new Error(data.error.message);
-                fullResponse = sanitizeAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I'm here to help!");
-                markFirstToken();
-                aiMessageBubble.textContent = fullResponse;
-                if (ttsEngine) ttsEngine.speak(fullResponse);
-
-            } else {
-                // --- GROQ (Default): High-Speed Vercel Serverless /api/chat Proxy (Server-side GROQ_API_KEY) ---
-                const historySlice = conversationHistory.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-12);
-                const messages = [
-                    { role: 'system', content: systemPrompt },
-                    ...historySlice.map(m => ({
-                        role: m.role === 'assistant' ? 'assistant' : 'user',
-                        content: m.content
-                    }))
-                ];
-
-                let serverSuccess = false;
-
-                try {
-                    const apiRes = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            messages,
-                            max_tokens: 120,
-                            ragContext,
-                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
-                        })
-                    });
-
-                    if (apiRes.ok) {
-                        const apiData = await apiRes.json();
-                        if (apiData.text) {
-                            fullResponse = apiData.text.trim();
-                            serverSuccess = true;
-                        }
-                    } else {
-                        const errData = await apiRes.json().catch(() => ({}));
-                        console.warn('/api/chat status:', apiRes.status, errData);
-                    }
-                } catch (e) {
-                    console.warn('/api/chat fetch error:', e.message);
-                }
-
-                // Direct client fallback only if user provided a key and serverless proxy failed
-                if (!serverSuccess && apiKey) {
-                    try {
-                        const groqModel = 'openai/gpt-oss-120b';
-                        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${apiKey}`
-                            },
-                            body: JSON.stringify({
-                                model: groqModel,
-                                messages: [
-                                    { role: 'system', content: systemPrompt },
-                                    ...conversationHistory.slice(-12)
-                                ],
-                                temperature: 0.65,
-                                max_completion_tokens: 450
-                            })
-                        });
-
-                        if (res.ok) {
-                            const data = await res.json();
-                            fullResponse = data.choices?.[0]?.message?.content?.trim() || '';
-                            if (fullResponse) serverSuccess = true;
-                        }
-                    } catch (e) {
-                        console.warn('Direct Groq fallback error:', e.message);
-                    }
-                }
-
-                if (!fullResponse) {
-                    fullResponse = generateSmartFallback(userPrompt);
-                }
-
-                fullResponse = sanitizeAiResponse(fullResponse);
-                markFirstToken();
-                aiMessageBubble.textContent = fullResponse;
-                if (ttsEngine) ttsEngine.speak(fullResponse);
+            if (!apiRes.ok) {
+                const errData = await apiRes.json().catch(() => ({}));
+                const detail = errData.error || `HTTP ${apiRes.status}`;
+                throw new Error(`Groq API error: ${detail}`);
             }
+
+            const apiData = await apiRes.json();
+            if (!apiData.text) {
+                throw new Error('Groq API error: Empty response from LLM.');
+            }
+
+            fullResponse = sanitizeAiResponse(apiData.text.trim());
+            markFirstToken();
+            aiMessageBubble.textContent = fullResponse;
+            if (ttsEngine) ttsEngine.speak(fullResponse);
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
@@ -1916,11 +1622,12 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }).catch(() => {});
 
         } catch (err) {
-            console.warn('External LLM API unavailable, engaging instant verified smart responder:', err.message);
-
-            fullResponse = generateSmartFallback(userPrompt);
+            console.error('Groq LLM error:', err.message);
+            // TRUTHFUL ERROR REPORTING: Zero silent fallbacks (NO Pollinations, NO HuggingFace, NO hardcoded fake responses)
+            fullResponse = err.message.startsWith('Groq API error:') ? err.message : `Groq API error: ${err.message}`;
             markFirstToken();
             aiMessageBubble.textContent = fullResponse;
+            aiMessageBubble.classList.add('error-bubble');
             if (ttsEngine) ttsEngine.speak(fullResponse);
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
@@ -1929,7 +1636,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             logger.logTurn({
                 userInput: userPrompt,
                 aiResponse: fullResponse,
-                latencyTtftMs: 60,
+                latencyTtftMs: 0,
                 latencyTtsMs: totalDuration,
                 toolCalls: toolResult ? [toolResult] : []
             }).catch(() => {});

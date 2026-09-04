@@ -58,21 +58,18 @@ export class ConversationLogger {
         this.inMemoryLogs.push(record);
         await this.saveToIndexedDB(record);
 
-        // Remote PostgreSQL sync if connection string configured
-        if (this.postgresUrl) {
-            try {
-                await fetch('/api/db', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'save_log',
-                        postgresUrl: this.postgresUrl,
-                        data: record
-                    })
-                });
-            } catch (err) {
-                console.warn('Postgres log sync note:', err);
-            }
+        // Remote PostgreSQL sync via backend API (uses server-side DATABASE_URL/POSTGRES_URL)
+        try {
+            await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save_log',
+                    data: record
+                })
+            });
+        } catch (err) {
+            console.warn('Postgres log sync note:', err);
         }
 
         return record;

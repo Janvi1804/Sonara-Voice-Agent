@@ -1,137 +1,241 @@
 /**
- * Conversation endpoint for Sonara.
- * The server owns the Groq configuration and builds the complete LLM context.
+ * Vercel Serverless Function: /api/chat
+ * Groq API LLM Engine with verified theconverseai.com RAG & context-aware multi-turn reasoning.
+ * STRICT GROQ CLOUD ONLY — NO alternate provider fallbacks.
  */
+
 import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
-const MAX_HISTORY_MESSAGES = 12;
-const MAX_MESSAGE_CHARS = 1_200;
-const MAX_RAG_CHARS = 3_200;
-
-const KNOWLEDGE = [
-    ['services', ['service', 'offer', 'product', 'voice agent', 'whatsapp', 'chatbot', 'rag', 'integration'], 'Converse AI builds AI chatbots, WhatsApp automation, inbound and outbound voice agents, omnichannel support, CRM and ERP integrations, enterprise RAG, and agentic workflow automation.'],
-    ['pricing', ['price', 'pricing', 'cost', 'charge', 'fee', 'quote', 'package', 'plan', 'kitna'], 'Converse AI uses bespoke pricing based on the workflow, integrations, usage, and implementation scope. Every engagement starts with a free AI Opportunity and Readiness Audit.'],
-    ['stylemart', ['stylemart'], 'StyleMart India achieved a three-times increase in repeat-purchase revenue and a 65 percent reduction in support costs with Converse AI.'],
-    ['learnsphere', ['learnsphere'], 'LearnSphere doubled course enrolments in 90 days and reduced lead response time by 80 percent.'],
-    ['carefirst', ['carefirst'], 'CareFirst Clinics reduced appointment no-shows by 55 percent and improved patient satisfaction by 28 NPS points.'],
-    ['contact', ['contact', 'email', 'phone', 'call you', 'reach'], 'The official contact details are contact@theconverseai.com, +91-9982323333, and +91-7023084065. Converse AI is operated by Revti Digital in India.'],
-    ['company', ['converse ai', 'converseai', 'revti', 'what do you do', 'about you'], 'Converse AI, operated by Revti Digital, designs and runs bespoke agentic AI systems for voice, WhatsApp, and automated customer workflows.']
+// 100% Verified Knowledge Base from https://theconverseai.com/
+const CONVERSE_AI_KB = [
+  {
+    id: "theconverseai-overview",
+    title: "ConverseAI Overview & Value Proposition",
+    keywords: ["overview", "what is converseai", "what is converse ai", "about", "introduction", "who are you", "revti digital", "company", "converse ai"],
+    content: "ConverseAI (theconverseai.com) is an enterprise Agentic AI and customer engagement platform powered by Revti Digital, founded in 2021 and based in Jaipur, Rajasthan, India. We scope the problem, build bespoke AI agents, and run them in production across Voice, WhatsApp, and automated workflows with zero AI team needed on the client's end. Meta Tech Provider Partner."
+  },
+  {
+    id: "theconverseai-location-contact",
+    title: "ConverseAI Contact & Location",
+    keywords: ["where", "location", "address", "contact", "phone", "email", "office", "headquarters", "jaipur", "reach out", "support"],
+    content: "ConverseAI is operated by Revti Digital, based in Jaipur, Rajasthan, India. Contact: email contact@theconverseai.com, phone +91-9982323333 and +91-7023084065. All infrastructure is compliant with India DPDP, GDPR, and CCPA standards."
+  },
+  {
+    id: "theconverseai-services",
+    title: "ConverseAI Core Services & Products",
+    keywords: ["services", "products", "offer", "features", "solutions", "what do you do", "voice bot", "whatsapp", "rag", "omnichannel", "automation"],
+    content: "ConverseAI provides 5 core enterprise services: 1) Inbound & Outbound AI Voice Agents for customer support, lead qualification, and appointment scheduling in 100+ languages. 2) WhatsApp AI Automation with 98% open rates for 24/7 lead capture, catalog commerce, and query resolution. 3) Omni-Channel Unified Support Inbox connecting Website, WhatsApp, Instagram, Facebook Messenger, and Email. 4) Enterprise RAG (Document & Knowledge Intelligence) allowing teams to query internal SOPs, contracts, and CRM securely in private cloud. 5) Custom AI Agent Development and Agentic Workflow Automation integrated with CRM (Salesforce, HubSpot) and ERPs."
+  },
+  {
+    id: "theconverseai-casestudies",
+    title: "Verified Case Studies & Client Results",
+    keywords: ["case study", "case studies", "results", "example", "examples", "proof", "metrics", "stylemart", "learnsphere", "carefirst"],
+    content: "ConverseAI has 3 verified enterprise case studies: 1) StyleMart India (Retail): Deployed WhatsApp AI Chatbot, driving 3x repeat purchase revenue, 65% reduction in customer support costs, under 30s response time, and 94% CSAT. 2) LearnSphere (EdTech): Automated lead qualification bot doubled course enrolments in 90 days, cut response times by 80%, qualified 500+ leads daily, and lowered cost per qualified lead by 45%. 3) CareFirst Clinics (Healthcare): Unified patient communication over WhatsApp and web chat, slashing appointment no-shows by 55%, saving 120 admin hours monthly, with a 91% booking fill rate and +28 point NPS increase."
+  },
+  {
+    id: "theconverseai-pricing",
+    title: "ConverseAI Pricing & Free Opportunity Audit",
+    keywords: ["pricing", "price", "cost", "how much", "charges", "rate", "packages", "quote", "subscription", "plans"],
+    content: "ConverseAI uses custom, bespoke pricing based on specific business workflows, scale, integrations, and usage requirements. We do not have rigid one-size-fits-all tiers. Every partnership starts with a 100% Free AI Opportunity & Readiness Audit (bookable at theconverseai.com/book-demo) where our engineers assess your systems and deliver a clear build plan and ROI estimate with zero overhead."
+  },
+  {
+    id: "theconverseai-clients",
+    title: "ConverseAI Enterprise Clients",
+    keywords: ["clients", "customers", "who uses", "companies", "tata motors", "mapsor", "zapp loans", "meghaa modi", "readiprint", "heritage food diary"],
+    content: "ConverseAI is trusted by leading enterprise clients including Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Design Studio, Readiprint Fashions, and Heritage Food Diary, alongside 500+ businesses worldwide."
+  },
+  {
+    id: "theconverseai-stats",
+    title: "Performance Metrics & Scale",
+    keywords: ["stats", "metrics", "numbers", "messages automated", "open rate", "languages"],
+    content: "ConverseAI has automated over 50 Million messages across 500+ businesses globally, delivering a 98% WhatsApp open rate, 60% faster customer response times, and an average 94% CSAT score across 100+ supported languages."
+  }
 ];
 
-export function normalizeConversation(messages) {
-    if (!Array.isArray(messages)) return [];
-    return messages
-        .filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
-        .map(({ role, content }) => ({ role, content: content.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE_CHARS) }))
-        .filter((message) => message.content)
-        .slice(-MAX_HISTORY_MESSAGES);
+// RAG Retrieval Function
+function retrieveRAGContext(query = '') {
+    if (!query) return '';
+    const qLower = query.toLowerCase();
+    const qWords = qLower.split(/\s+/).filter(w => w.length > 2);
+
+    const scored = CONVERSE_AI_KB.map(doc => {
+        let score = 0;
+        doc.keywords.forEach(kw => {
+            if (qLower.includes(kw)) score += 5;
+        });
+        qWords.forEach(w => {
+            if (doc.title.toLowerCase().includes(w)) score += 3;
+            if (doc.content.toLowerCase().includes(w)) score += 1;
+        });
+        return { doc, score };
+    }).filter(item => item.score >= 3).sort((a, b) => b.score - a.score);
+
+    if (scored.length === 0) return '';
+
+    const retrieved = scored.slice(0, 3).map(item => `[${item.doc.title}]:\n${item.doc.content}`).join('\n\n');
+    return `\n\n--- TRUSTED COMPANY KNOWLEDGE (VERIFIED CONVERSE AI FACTS) ---\n${retrieved}\n(CRITICAL: Base facts, metrics, and services strictly on the verified knowledge above. Never invent facts, numbers, or clients.)\n`;
 }
 
-export function responseTokenBudget(value) {
-    const requested = Number.parseInt(value, 10);
-    if (!Number.isFinite(requested)) return 120;
-    return Math.max(40, Math.min(requested, 180));
-}
-
-export function retrieveRAGContext(query = '') {
-    const normalized = String(query).toLowerCase();
-    const terms = normalized.match(/[a-z0-9]{3,}/g) || [];
-    const matches = KNOWLEDGE.map(([id, keywords, content]) => ({
-        id,
-        content,
-        score: keywords.reduce((score, keyword) => score + (normalized.includes(keyword) ? 4 : 0), 0)
-            + terms.reduce((score, term) => score + (content.toLowerCase().includes(term) ? 1 : 0), 0)
-    })).filter((item) => item.score >= 4).sort((a, b) => b.score - a.score).slice(0, 3);
-
-    if (!matches.length) return '';
-    return matches.map((item, index) => `Source ${index + 1}: ${item.content}`).join('\n').slice(0, MAX_RAG_CHARS);
-}
-
-export function mergeRagContext(retrievedContext = '', suppliedContext = '') {
-    const cleanSupplied = String(suppliedContext || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_RAG_CHARS);
-    return [retrievedContext, cleanSupplied].filter(Boolean).join('\n').slice(0, MAX_RAG_CHARS);
-}
-
-export function buildSystemPrompt(ragContext = '') {
-    return `You are Sonara, Converse AI by Revti Digital's warm, accurate voice solutions specialist.
-
-Voice response rules:
-- Reply in the user's language; use natural Roman-script Hinglish when they use Hindi or Hinglish.
-- Answer the current question first in one to three short spoken sentences. No markdown, lists, headings, emojis, tags, or internal commentary.
-- Use the prior conversation to resolve references such as "that", "it", "the second one", and "what about it". Never greet again after the first greeting or ask for information already supplied.
-- Ask exactly one specific follow-up only when it would help progress a business requirement, booking, or unclear request. Do not add a follow-up after a complete factual answer, a clear goodbye, or when the user has declined.
-- Do not invent pricing, availability, integrations, results, clients, or actions. Say when a verified detail is unavailable.
-- Only confirm a booking or other action when an explicit tool result in the conversation says it succeeded.
-
-Verified company knowledge:
-${ragContext || 'No retrieved source applies. Give a concise general answer and do not claim unverified company facts.'}`;
-}
-
-export function sanitizeAiResponse(text) {
-    const cleaned = String(text || '')
+// Clean think tags and markdown
+function sanitizeAiResponse(text) {
+    if (!text) return '';
+    return text
         .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-        .replace(/<[^>]*>/g, '')
-        .replace(/[\r\n]+/g, ' ')
-        .replace(/[*_#`]/g, '')
+        .replace(/[*_#`~[\]]/g, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
-    if (!cleaned) return '';
-    // Preserve a short, listenable answer even if a provider ignores the prompt.
-    const sentences = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
-    return sentences.slice(0, 3).join(' ').replace(/\s{2,}/g, ' ').trim().slice(0, 650);
-}
-
-export function contextualFallback(history, query, ragContext) {
-    const lower = String(query).toLowerCase();
-    if (/\b(bye|goodbye|alvida|bas itna)\b/.test(lower)) return 'Thank you for speaking with Converse AI. Take care.';
-    if (ragContext) return ragContext.split('\n')[0].replace(/^Source 1: /, '');
-    const previousUser = [...history].reverse().find((message) => message.role === 'user' && message.content !== query)?.content;
-    if (/\b(that|it|this|second one|uska|iske)\b/.test(lower) && previousUser) {
-        return `I can help with the point you just raised about ${previousUser.slice(0, 110)}. Which outcome matters most to your business?`;
-    }
-    return 'I can help with Converse AI solutions, pricing approach, or a free AI Opportunity and Readiness Audit. What would you like to explore?';
 }
 
 export default async function handler(req, res) {
     const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
-    if (req.method === 'OPTIONS') return corsAllowed ? res.status(200).end() : res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
-    if (!corsAllowed && req.headers.origin) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed. Use POST.' });
-    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 })) return res.status(429).json({ error: 'Rate limit exceeded. Please slow down.' });
+
+    if (req.method === 'OPTIONS') {
+        if (!corsAllowed) return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+        return res.status(200).end();
+    }
+
+    if (!corsAllowed && req.headers.origin) {
+        return res.status(403).json({ error: 'Forbidden: CORS origin not allowed.' });
+    }
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    if (!checkRateLimit(req, { maxRequests: 60, windowMs: 60000 })) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please slow down.' });
+    }
 
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-        const history = normalizeConversation(body.messages);
-        const latestUserMessage = [...history].reverse().find((message) => message.role === 'user')?.content || '';
-        if (!latestUserMessage) return res.status(400).json({ error: 'A user message is required.' });
+        const {
+            messages = [],
+            model = 'llama-3.3-70b-versatile',
+            temperature = 0.65,
+            max_tokens = 450
+        } = body;
 
-        const ragContext = body.ragEnabled === false ? '' : mergeRagContext(retrieveRAGContext(latestUserMessage), body.ragContext);
-        const messages = [{ role: 'system', content: buildSystemPrompt(ragContext) }, ...history];
-        const groqApiKey = process.env.GROQ_API_KEY;
-        const model = process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL;
-        const max_completion_tokens = responseTokenBudget(body.max_tokens);
+        const groqApiKey = process.env.GROQ_API_KEY || '';
+        if (!groqApiKey) {
+            return res.status(500).json({ error: 'GROQ_API_KEY is not configured on server.' });
+        }
 
-        if (groqApiKey) {
-            const groqResponse = await fetch(GROQ_ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqApiKey}` },
-                body: JSON.stringify({ model, messages, temperature: 0.45, max_completion_tokens }),
-                signal: AbortSignal.timeout(8_000)
+        // Get latest user query for RAG lookup
+        const userMessages = messages.filter(m => m.role === 'user');
+        const lastUserMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
+        const ragContext = retrieveRAGContext(lastUserMsg);
+
+        // Production-Grade System Prompt for SONARA
+        const SYSTEM_PROMPT = `You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com).
+
+CORE ROLE & BEHAVIOR:
+- You are a knowledgeable, articulate, and confident conversational AI specialist having a real dialogue, NOT a robotic FAQ responder.
+- Answer the user's actual question directly first, providing helpful, substantive detail without being artificial or curt.
+- Always use the conversation history to understand context. Resolve short follow-ups like "example any", "aur batao", "how?", "details?", "case study", "pricing?" in the direct context of the preceding conversation.
+- If the user asks for examples or case studies, explain them clearly: identify the business, the challenge, how Converse AI was deployed, the verified metrics, and the business impact.
+- Do NOT give robotic one-sentence answers. Use adaptive answer length:
+  * Simple factual answers: 2-4 clear sentences.
+  * Explanations & overviews: 4-7 informative sentences.
+  * Case studies: Comprehensive breakdown with verified problem, solution, and outcome.
+- Never repeat greetings (e.g. "Namaste! Main Sonara hoon...") once the conversation is underway.
+- Never force an unnecessary sales question or "Aap kis me interested hain?" at the end of every turn. Only ask a natural follow-up question when genuinely appropriate.
+- Language Matching:
+  * English user input -> Fluent, professional English response.
+  * Hindi user input -> Natural Hindi.
+  * Hinglish user input -> Warm, natural conversational Hinglish.
+- Strict Honesty: Never hallucinate facts, statistics, integrations, client names, or fixed pricing. If information is not in your verified knowledge, say so honestly.
+- Voice Naturalness: Spoken complete sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
+
+${ragContext}`;
+
+        // Ensure clean, standard message history for Groq
+        const formattedMessages = [
+            { role: 'system', content: SYSTEM_PROMPT }
+        ];
+
+        // Filter and append conversation turns (keep last 12 turns)
+        const recentTurns = messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-12);
+        for (const turn of recentTurns) {
+            formattedMessages.push({
+                role: turn.role,
+                content: String(turn.content || '').trim()
             });
-            if (groqResponse.ok) {
-                const data = await groqResponse.json();
-                const text = sanitizeAiResponse(data.choices?.[0]?.message?.content);
-                if (text) return res.status(200).json({ text, model, provider: 'groq' });
-            } else {
-                console.warn('Groq completion failed:', groqResponse.status);
+        }
+
+        // Candidate Groq models to try (prioritizing requested model, with fallback to verified available Groq models)
+        const candidateModels = [...new Set([
+            model,
+            'llama-3.3-70b-versatile',
+            'openai/gpt-oss-120b',
+            'qwen/qwen3.8-27b'
+        ].filter(Boolean))];
+
+        let activeModel = candidateModels[0];
+        let groqData = null;
+        let lastError = '';
+
+        for (const candidate of candidateModels) {
+            try {
+                const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${groqApiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: candidate,
+                        messages: formattedMessages,
+                        temperature: Number(temperature) || 0.65,
+                        max_tokens: Math.max(350, Number(max_tokens) || 450)
+                    })
+                });
+
+                if (groqRes.ok) {
+                    groqData = await groqRes.json();
+                    activeModel = candidate;
+                    break;
+                } else {
+                    const errData = await groqRes.json().catch(() => ({}));
+                    const errMsg = errData.error?.message || `Groq error status ${groqRes.status}`;
+                    lastError = errMsg;
+                    // If model doesn't exist (404), try the next candidate on Groq
+                    if (groqRes.status === 404 || errMsg.toLowerCase().includes('does not exist')) {
+                        console.warn(`[Groq LLM] Model ${candidate} not available, trying next Groq model...`);
+                        continue;
+                    }
+                    // For rate limits (429) or auth errors (401), exit immediately
+                    return res.status(groqRes.status).json({
+                        error: `Groq LLM failed: ${errMsg}`,
+                        provider: 'groq'
+                    });
+                }
+            } catch (err) {
+                lastError = err.message;
             }
         }
 
-        return res.status(200).json({ text: contextualFallback(history, latestUserMessage, ragContext), provider: 'contextual-fallback' });
-    } catch (error) {
-        console.error('Chat API error:', error.message);
-        return res.status(200).json({ text: 'I am sorry, I could not complete that response. Please try again.', provider: 'recovery' });
+        if (!groqData) {
+            console.error('[Groq LLM] All Groq candidate models failed. Last error:', lastError);
+            return res.status(502).json({
+                error: `Groq LLM failed: ${lastError}`,
+                provider: 'groq'
+            });
+        }
+
+        const rawContent = groqData.choices?.[0]?.message?.content || '';
+        const cleanContent = sanitizeAiResponse(rawContent);
+
+        return res.status(200).json({
+            text: cleanContent,
+            model: activeModel,
+            provider: 'groq'
+        });
+
+    } catch (err) {
+        console.error('[API /api/chat] Server error:', err);
+        return res.status(500).json({
+            error: 'Groq LLM request failed: ' + err.message,
+            provider: 'groq'
+        });
     }
 }

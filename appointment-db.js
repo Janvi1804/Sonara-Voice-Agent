@@ -204,7 +204,6 @@ export class AppointmentDB {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'save_appointment',
-                    postgresUrl: this.postgresUrl || undefined,
                     data: {
                         id: record.id,
                         customer_name: record.customer_name,

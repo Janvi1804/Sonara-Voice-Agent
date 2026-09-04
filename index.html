@@ -26,7 +26,7 @@
                 </div>
                 <div class="brand-text">
                     <h1>SONARA <span>VOICE AI</span></h1>
-                    <span class="pipeline-badge">Duplex v3.3 &bull; Whisper Large-v3-Turbo + Gemma 2 + Kokoro</span>
+                    <span class="pipeline-badge">Production Stack &bull; Groq Whisper V3 Turbo + Groq LLM + ElevenLabs + Silero VAD</span>
                 </div>
             </div>
 
@@ -36,9 +36,9 @@
                     <span>Latency:</span>
                     <strong id="latencyE2E">0 ms</strong>
                 </div>
-                <div class="stat-pill" title="VAD Speech Probability">
+                <div class="stat-pill" title="Silero VAD Speech Detection">
                     <i class="fa-solid fa-wave-square text-cyan"></i>
-                    <span>VAD:</span>
+                    <span>Silero VAD:</span>
                     <strong id="vadStatus">SILENCE</strong>
                 </div>
                 <button id="btnReindex" class="icon-btn" title="Re-index theconverseai.com to PostgreSQL + pgvector">
@@ -58,95 +58,69 @@
             <div class="handoff-content">
                 <div class="handoff-icon"><i class="fa-solid fa-headset"></i></div>
                 <div class="handoff-text">
-                    <strong>Human Specialist Escalation Active</strong>
-                    <span id="handoffReason">Customer requested live agent support.</span>
-                </div>
-                <div class="handoff-actions">
-                    <a href="https://wa.me/919982323333" target="_blank" class="handoff-btn wa-btn"><i class="fa-brands fa-whatsapp"></i> Chat on WhatsApp</a>
-                    <a href="tel:+919982323333" class="handoff-btn call-btn"><i class="fa-solid fa-phone"></i> Call +91-9982323333</a>
+                    <strong>Live Human Escalation Triggered</strong>
+                    <p id="handoffReason">Connecting to Converse AI specialist desk...</p>
                 </div>
             </div>
         </div>
 
-        <!-- Responsive Main Content Layout (Split View on Desktop, Stacked on Mobile) -->
-        <div class="main-content-layout">
-            <!-- Main Visualizer & Interaction Stage -->
-            <main class="main-stage">
-                <!-- Center Glowing Voice Orb & Canvas -->
-                <div class="orb-wrapper">
-                    <canvas id="visualizerCanvas" width="560" height="560"></canvas>
+        <!-- ── Main Workspace: Voice Visualizer & Transcript ──────────────── -->
+        <div class="main-layout">
+            <!-- Left Panel: Voice AI Orb Visualizer -->
+            <section class="visualizer-panel" aria-label="Audio Visualizer">
+                <div class="orb-container">
                     <div class="orb-core" id="orbCore">
-                        <div class="orb-ring ring-1"></div>
-                        <div class="orb-ring ring-2"></div>
-                        <div class="orb-ring ring-3"></div>
-                        <div class="orb-center-icon">
-                            <i id="orbStateIcon" class="fa-solid fa-microphone-slash"></i>
-                        </div>
+                        <i class="fa-solid fa-microphone" id="orbStateIcon"></i>
                     </div>
+                    <canvas id="visualizerCanvas" width="300" height="300"></canvas>
+                </div>
 
-                    <!-- Floating Status Badge -->
-                    <div class="agent-status-tag" id="agentStatusTag">
+                <div class="agent-status-card">
+                    <div class="status-indicator">
                         <span class="status-dot"></span>
-                        <span class="status-label" id="agentStatusText">Agent Inactive &bull; Click to Start</span>
+                        <span id="agentStatusText">Agent Inactive • Click to Start</span>
+                    </div>
+                    <div class="vad-meter-wrap" title="Silero VAD Neural Confidence">
+                        <div class="vad-meter-bar">
+                            <div class="vad-meter-fill" id="vadConfidenceBar"></div>
+                            <div class="vad-threshold-marker" id="vadThresholdMarker"></div>
+                        </div>
+                        <span class="vad-meter-val" id="vadConfidenceLabel">0%</span>
+                    </div>
+                    <div class="audio-level-wrap" title="Input Microphone Level">
+                        <div class="audio-level-bar">
+                            <div class="audio-level-fill" id="audioLevelBar"></div>
+                        </div>
+                        <span class="audio-level-val" id="audioLevelLabel">-60 dB</span>
                     </div>
                 </div>
 
-                <!-- Real-time Speech Probability & Audio Level Bar -->
-                <div class="audio-metrics-bar">
-                    <div class="metric-item">
-                        <div class="metric-header">
-                            <span><i class="fa-solid fa-shield-halved"></i> Silero VAD Confidence</span>
-                            <span id="vadConfidenceLabel">0%</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="progress-fill vad-fill" id="vadConfidenceBar" style="width: 0%;"></div>
-                            <div class="threshold-marker" id="vadThresholdMarker" style="left: 45%;" title="Silence/Speech Threshold (45%)"></div>
-                        </div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-header">
-                            <span><i class="fa-solid fa-volume-high"></i> DSP Audio Input Level (AEC + NS)</span>
-                            <span id="audioLevelLabel">0 dB</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="progress-fill audio-fill" id="audioLevelBar" style="width: 0%;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Action Controls -->
-                <div class="stage-controls">
-                    <button id="btnToggleVoice" class="primary-call-btn">
-                        <div class="btn-glow"></div>
+                <div class="voice-controls">
+                    <button id="btnToggleVoice" class="voice-main-btn" aria-label="Start Voice Call">
                         <i class="fa-solid fa-phone" id="callBtnIcon"></i>
                         <span id="callBtnText">Start Real-Time Voice</span>
                     </button>
-                    <button id="btnInterrupt" class="action-pill-btn" title="Barge-in / Interrupt Agent" disabled>
-                        <i class="fa-solid fa-hand"></i> Interrupt (Barge-in)
-                    </button>
-                    <button id="btnClearChat" class="action-pill-btn" title="Clear Conversation Transcript">
-                        <i class="fa-solid fa-trash-can"></i> Clear Log
+                    <button id="btnInterrupt" class="interrupt-btn" title="Barge-in Interrupt AI" disabled>
+                        <i class="fa-solid fa-hand"></i>
+                        <span>Interrupt</span>
                     </button>
                 </div>
-            </main>
+            </section>
 
-            <!-- Live Streaming Conversation Drawer -->
-            <section class="transcript-section">
-                <div class="transcript-header">
-                    <div class="transcript-title">
-                        <i class="fa-solid fa-comments"></i>
-                        <span>Live Duplex Transcript</span>
+            <!-- Right Panel: Live Transcript & Interaction Log -->
+            <section class="chat-panel" aria-label="Conversation Log">
+                <div class="chat-header">
+                    <div class="chat-title">
+                        <i class="fa-solid fa-comments text-cyan"></i>
+                        <span>Real-Time Interaction Transcript</span>
                     </div>
-                    <div class="model-tags-bar">
-                        <span class="tag-chip"><i class="fa-solid fa-bolt"></i> Whisper v3 Turbo</span>
-                        <span class="tag-chip"><i class="fa-solid fa-microchip"></i> Gemma 2 (27B)</span>
-                        <span class="tag-chip"><i class="fa-solid fa-music"></i> Kokoro-82M (af_heart)</span>
-                    </div>
+                    <button id="btnClearChat" class="text-btn" title="Clear Transcript">
+                        <i class="fa-solid fa-trash-can"></i> Clear
+                    </button>
                 </div>
 
-                <div class="transcript-body" id="transcriptContainer">
-                    <div class="chat-message system">
-                        <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="transcript-container" id="transcriptContainer">
+                    <div class="chat-message system-message">
                         <div class="message-content">
                             <div class="message-author">CONVERSE AI SUPPORT &bull; System Ready</div>
                             <div class="message-bubble">
@@ -167,8 +141,6 @@
         </div>
 
         <!-- ── Call Agent Widget ──────────────────────────────────────────── -->
-        <!-- Separate from the chat section. User enters details and starts   -->
-        <!-- a browser voice call — reuses the existing STT/LLM/TTS pipeline. -->
         <section class="call-agent-section" id="callAgentSection" aria-label="Call Agent">
             <div class="call-agent-card">
                 <div class="call-agent-card-left">
@@ -219,8 +191,6 @@
     </div>
 
     <!-- ── Phone Call Overlay ─────────────────────────────────────────────── -->
-    <!-- Fullscreen phone-call-style UI shown during an active browser call.  -->
-    <!-- Hidden by default; becomes visible when call starts.                 -->
     <div
         class="call-phone-overlay"
         id="callPhoneOverlay"
@@ -230,11 +200,7 @@
         aria-hidden="true"
     >
         <div class="call-phone-screen">
-
-            <!-- Brand header -->
             <div class="call-phone-brand" aria-hidden="true">SONARA VOICE AI</div>
-
-            <!-- Animated avatar orb -->
             <div class="call-phone-avatar" aria-hidden="true">
                 <div class="call-avatar-ring call-avatar-ring-1"></div>
                 <div class="call-avatar-ring call-avatar-ring-2"></div>
@@ -242,51 +208,52 @@
                     <i class="fa-solid fa-brain"></i>
                 </div>
             </div>
-
-            <!-- Caller display name -->
             <div class="call-phone-caller-name" id="callOverlayCallerName">Connecting…</div>
-
-            <!-- Connection status -->
             <div class="call-phone-status">
-                <span class="call-status-dot-live" aria-hidden="true"></span>
-                <span id="callStatusLabel">Connected</span>
+                <span class="call-phone-status-dot" aria-hidden="true"></span>
+                <span id="callOverlayStatusText">Ready</span>
             </div>
-
-            <!-- Current voice state (listening / speaking / processing) -->
-            <div class="call-phone-state" id="callStateText" aria-live="polite" aria-atomic="true">
-                🎙️ Listening…
+            <div class="call-phone-timer" id="callOverlayTimer" aria-live="off">00:00</div>
+            <div class="call-phone-subtext" id="callOverlaySubtext">
+                Speak naturally. Sonara is listening…
             </div>
-
-            <!-- Audio wave visualizer bars -->
-            <div class="call-wave-bars" aria-hidden="true">
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-                <span class="wave-bar"></span>
-            </div>
-
-            <!-- Call duration -->
-            <div class="call-duration-display" id="callDurationDisplay" aria-label="Call duration">00:00</div>
-
-            <!-- End call button -->
             <div class="call-phone-actions">
-                <button id="btnEndCall" class="btn-end-call-overlay" aria-label="End voice call">
+                <button
+                    class="call-phone-btn call-phone-btn-mute"
+                    id="btnOverlayMute"
+                    aria-label="Mute microphone"
+                    title="Mute microphone"
+                >
+                    <i class="fa-solid fa-microphone" aria-hidden="true"></i>
+                    <span>Mute</span>
+                </button>
+                <button
+                    class="call-phone-btn call-phone-btn-interrupt"
+                    id="btnOverlayInterrupt"
+                    aria-label="Interrupt Sonara"
+                    title="Interrupt Sonara while she is speaking"
+                >
+                    <i class="fa-solid fa-hand" aria-hidden="true"></i>
+                    <span>Interrupt</span>
+                </button>
+                <button
+                    class="call-phone-btn call-phone-btn-end"
+                    id="btnOverlayEnd"
+                    aria-label="End call"
+                    title="End call"
+                >
                     <i class="fa-solid fa-phone-slash" aria-hidden="true"></i>
-                    <span>End Call</span>
+                    <span>End</span>
                 </button>
             </div>
-
         </div>
     </div>
 
-    <!-- Configuration Modal / Settings Drawer -->
+    <!-- ── Settings Modal ─────────────────────────────────────────────────── -->
     <div class="modal-overlay" id="settingsModal">
         <div class="modal-card">
             <div class="modal-header">
-                <h2><i class="fa-solid fa-sliders"></i> Engine Configuration & Models</h2>
+                <h2><i class="fa-solid fa-sliders text-cyan"></i> Engine & Voice Configuration</h2>
                 <button class="close-modal-btn" id="btnCloseSettings"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
@@ -294,53 +261,37 @@
                 <div class="settings-grid">
                     <!-- LLM Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-brain"></i> LLM Reasoning Engine</label>
+                        <label class="group-title"><i class="fa-solid fa-brain"></i> LLM Reasoning Engine (Groq)</label>
                         <div class="form-row">
-                            <label>Model Architecture</label>
+                            <label>Groq Model</label>
                             <select id="selLlmModel" class="form-input">
-                                <option value="openai/gpt-oss-120b" selected>⚡ Groq GPT-OSS 120B (Sub-100ms Ultra-Fast • Recommended)</option>
-                                <option value="openai/gpt-oss-20b">⚡ Groq GPT-OSS 20B (Sub-50ms Instant Voice)</option>
-                                <option value="qwen/qwen3.6-27b">⚡ Groq Qwen 3.6 (27B High IQ • Active)</option>
-                                <option value="gemma2-9b-it">🤗 Google Gemma 3 (12B • HuggingFace)</option>
-                                <option value="gemini-1.5-flash">✨ Google Gemini 1.5 Flash</option>
+                                <option value="llama-3.3-70b-versatile" selected>⚡ Groq LLaMA 3.3 70B Versatile (Sub-150ms • Recommended)</option>
+                                <option value="llama-3.1-8b-instant">⚡ Groq LLaMA 3.1 8B Instant (Ultra-Fast Voice)</option>
                             </select>
                         </div>
                         <div class="form-row">
                             <label>Provider Backend</label>
-                            <select id="selLlmProvider" class="form-input">
-                                <option value="groq" selected>⚡ Groq Cloud (Sub-100ms Ultra-Fast Streaming • Recommended)</option>
-                                <option value="huggingface">🤗 HuggingFace Router (Google Gemma 3)</option>
-                                <option value="gemini">✨ Google Gemini AI Studio API</option>
-                                <option value="openrouter">🌐 OpenRouter API</option>
+                            <select id="selLlmProvider" class="form-input" disabled>
+                                <option value="groq" selected>⚡ Groq API (High-Speed LLM Inference)</option>
                             </select>
                         </div>
-                        <div class="form-row" id="rowHfToken">
-                            <label>🤗 HuggingFace Token (for Gemma 2)</label>
-                            <input type="password" id="txtHfToken" class="form-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-                            <small class="helper-text">
-                                Get free token: <a href="https://huggingface.co/settings/tokens" target="_blank" style="color:var(--accent-cyan)">huggingface.co/settings/tokens</a>
-                                &bull; Then accept Gemma 2 terms: <a href="https://huggingface.co/google/gemma-2-9b-it" target="_blank" style="color:var(--accent-cyan)">Gemma 2 model page</a>
-                            </small>
-                        </div>
-                        <div class="form-row" id="rowApiKey">
-                            <label>API Key (Groq / Gemini / OpenRouter)</label>
-                            <input type="password" id="txtLlmApiKey" class="form-input" placeholder="gsk_... or AIzaSy... (Saved locally in browser)" />
-                            <small class="helper-text">For Groq/Gemini/OpenRouter providers only.</small>
+                        <div class="form-row" id="rowApiKey" style="display:none;">
+                            <label>Groq API Key (Optional Override)</label>
+                            <input type="password" id="txtLlmApiKey" class="form-input" placeholder="Managed securely server-side" />
                         </div>
                         <div class="form-row">
                             <label>System Instructions (Persona)</label>
-                            <textarea id="txtSystemPrompt" class="form-input text-area" rows="2">You are Sonara, the friendly, natural, and knowledgeable AI Customer Support & Solutions Specialist for Converse AI by Revti Digital, India. You help visitors understand Converse AI, automation solutions, use cases, services, case studies, and pricing. Speak naturally in 2–4 conversational sentences.</textarea>
+                            <textarea id="txtSystemPrompt" class="form-input text-area" rows="2">You are Sonara, the official Conversational AI Solutions Specialist for Converse AI by Revti Digital, India (theconverseai.com). Answer directly, adapt response length, explain case studies and examples thoroughly, and converse naturally in English, Hindi, or Hinglish.</textarea>
                         </div>
                     </div>
 
                     <!-- STT Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text (STT)</label>
+                        <label class="group-title"><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text (STT: Groq Whisper)</label>
                         <div class="form-row">
                             <label>STT Model</label>
-                            <select id="selSttModel" class="form-input">
-                                <option value="whisper-large-v3-turbo" selected>Groq Whisper Large-v3-Turbo (Sub-150ms • Multilingual • Recommended)</option>
-                                <option value="web-speech">Native Web Speech Recognition (Built-in Browser)</option>
+                            <select id="selSttModel" class="form-input" disabled>
+                                <option value="whisper-large-v3-turbo" selected>Groq Whisper Large-v3-Turbo (Sub-150ms • Multilingual)</option>
                             </select>
                         </div>
                         <div class="form-row">
@@ -354,38 +305,17 @@
 
                     <!-- TTS Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS Engine)</label>
+                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS: ElevenLabs)</label>
                         <div class="form-row">
-                            <label>TTS Engine Architecture</label>
-                            <select id="selTtsEngine" class="form-input">
-                                <option value="fish-speech">🐟 Fish Speech (Fish Audio Cloud / Self-Hosted • Zero-Shot Voice Cloning)</option>
-                                <option value="kokoro" selected>⚡ Kokoro-82M (Ultra-Fast Built-in • 100% Free • Recommended)</option>
-                                <option value="native">🌐 Native Web Speech API</option>
+                            <label>TTS Provider & Model</label>
+                            <select id="selTtsEngine" class="form-input" disabled>
+                                <option value="elevenlabs" selected>⚡ ElevenLabs API (eleven_flash_v2_5 • Low-Latency)</option>
                             </select>
                         </div>
-                        <div class="form-row" id="rowFishApiKey">
-                            <label>🐟 Fish Audio API Key</label>
-                            <input type="password" id="txtFishApiKey" class="form-input" placeholder="sk-fish-... (from fish.audio/app/api-keys)" />
-                            <small class="helper-text">Optional. Auto-falls back to Kokoro-82M if key has no credits.</small>
-                        </div>
-                        <div class="form-row" id="rowFishCustomUrl">
-                            <label>🐟 Custom Fish Speech Endpoint (Self-Hosted / RunPod)</label>
-                            <input type="text" id="txtFishCustomUrl" class="form-input" placeholder="https://api.fish.audio/v1/tts or http://localhost:8080/v1/tts" />
-                        </div>
-                        <div class="form-row" id="rowFishVoiceId">
-                            <label>🐟 Fish Voice Clone Reference ID (Optional)</label>
-                            <input type="text" id="txtFishVoiceId" class="form-input" placeholder="e.g. 7f92f8afb8ec43bf81429cc1c9199cb1" />
-                        </div>
                         <div class="form-row">
-                            <label>Kokoro Built-in Voice Profile</label>
+                            <label>ElevenLabs Voice Profile</label>
                             <select id="selTtsVoice" class="form-input">
-                                <option value="af_heart" selected>Kokoro-82M - Heart (Warm & Natural Female • Recommended)</option>
-                                <option value="af_bella">Kokoro-82M - Bella (Expressive Female)</option>
-                                <option value="af_nicole">Kokoro-82M - Nicole (Calm & Clear Female)</option>
-                                <option value="bf_emma">Kokoro-82M - Emma (British Female)</option>
-                                <option value="am_adam">Kokoro-82M - Adam (Natural Deep Male)</option>
-                                <option value="am_michael">Kokoro-82M - Michael (Professional Male)</option>
-                                <option value="bm_george">Kokoro-82M - George (British Male)</option>
+                                <option value="cgSgspJ2msm6clMCkdW9" selected>Jessica (Official Converse AI Voice • Natural & Warm)</option>
                             </select>
                         </div>
                         <div class="form-row">
@@ -398,9 +328,9 @@
                     <div class="settings-group">
                         <label class="group-title"><i class="fa-solid fa-database"></i> 🐘 PostgreSQL + pgvector Vector Store</label>
                         <div class="form-row">
-                            <label>PostgreSQL Connection URL (Optional)</label>
-                            <input type="password" id="txtPostgresUrl" class="form-input" placeholder="postgres://user:password@host:5432/dbname" />
-                            <small class="helper-text">Supports Supabase, Neon, AWS RDS, Render, or Self-hosted Postgres. (Leaves empty for local zero-setup store).</small>
+                            <label>Server-Managed Database</label>
+                            <input type="text" class="form-input" value="Configured securely via server environment variables" disabled />
+                            <small class="helper-text">Database connection credentials stay strictly server-side for security.</small>
                         </div>
                         <div class="form-row" style="display:flex;gap:10px;margin-top:10px;">
                             <button type="button" id="btnModalReindex" class="btn-action" style="flex:1;">
@@ -413,7 +343,7 @@
                     <div class="settings-group">
                         <label class="group-title"><i class="fa-solid fa-book-bookmark"></i> RAG Website & Knowledge Engine</label>
                         <div class="form-row checkbox-row">
-                            <label><input type="checkbox" id="chkRagEnabled" checked /> Enable RAG Grounding (theconverseai.com pgvector)</label>
+                            <label><input type="checkbox" id="chkRagEnabled" checked /> Enable RAG Grounding (theconverseai.com verified knowledge)</label>
                         </div>
                         <div class="form-row">
                             <label>Custom Website / Docs URL to Index (Optional)</label>
@@ -422,21 +352,21 @@
                         </div>
                     </div>
 
-                    <!-- VAD & DSP Configuration -->
+                    <!-- VAD & Audio DSP Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-sliders"></i> Silero VAD & Audio DSP</label>
+                        <label class="group-title"><i class="fa-solid fa-sliders"></i> Silero VAD (ONNX Neural Model)</label>
                         <div class="form-row checkbox-row">
                             <label><input type="checkbox" id="chkAec" checked /> Acoustic Echo Cancellation (AEC)</label>
                             <label><input type="checkbox" id="chkNoiseSuppression" checked /> Noise Suppression (NS)</label>
                             <label><input type="checkbox" id="chkAutoGain" checked /> Automatic Gain Control (AGC)</label>
                         </div>
                         <div class="form-row">
-                            <label>VAD Sensitivity Threshold: <span id="lblVadThreshold">0.45</span></label>
-                            <input type="range" id="rngVadThreshold" min="0.3" max="0.95" step="0.05" value="0.45" class="slider" />
+                            <label>Silero VAD Threshold: <span id="lblVadThreshold">0.50</span></label>
+                            <input type="range" id="rngVadThreshold" min="0.2" max="0.9" step="0.05" value="0.50" class="slider" />
                         </div>
                         <div class="form-row">
-                            <label>Silence Hangover Duration: <span id="lblSilenceDuration">450 ms</span></label>
-                            <input type="range" id="rngSilenceDuration" min="300" max="2500" step="50" value="450" class="slider" />
+                            <label>Silence Hangover Duration: <span id="lblSilenceDuration">800 ms</span></label>
+                            <input type="range" id="rngSilenceDuration" min="300" max="2500" step="50" value="800" class="slider" />
                         </div>
                     </div>
                 </div>

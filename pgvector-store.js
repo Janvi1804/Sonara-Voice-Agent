@@ -128,21 +128,18 @@ export class PgVectorStore {
             records.push(record);
         }
 
-        // 1. If remote PostgreSQL URL provided, sync via backend API
-        if (this.postgresUrl) {
-            try {
-                await fetch('/api/pgvector', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'upsert',
-                        postgresUrl: this.postgresUrl,
-                        records
-                    })
-                });
-            } catch (err) {
-                console.warn('Postgres remote sync failed, saved to local pgvector store:', err);
-            }
+        // 1. Sync via backend API (uses server-side DATABASE_URL/POSTGRES_URL)
+        try {
+            await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'upsert_embeddings',
+                    data: { records }
+                })
+            });
+        } catch (err) {
+            console.warn('Postgres remote sync failed, saved to local pgvector store:', err);
         }
 
         // 2. Save to local high-speed vector store (IndexedDB & In-Memory)
@@ -160,31 +157,27 @@ export class PgVectorStore {
 
         const queryVector = await this.embeddings.embedText(query);
 
-        // 1. If Postgres URL is available, execute remote pgvector query:
-        // SELECT id, page_url, title, content, 1 - (embedding <=> query_vector) AS similarity FROM knowledge_embeddings ORDER BY embedding <=> query_vector LIMIT topK;
-        if (this.postgresUrl) {
-            try {
-                const res = await fetch('/api/db', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'search_embeddings',
-                        postgresUrl: this.postgresUrl,
-                        data: {
-                            query_embedding: queryVector,
-                            limit: topK
-                        }
-                    })
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data.results) && data.results.length > 0) {
-                        return data.results;
+        // 1. Attempt remote pgvector query via backend API
+        try {
+            const res = await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'search_embeddings',
+                    data: {
+                        query_embedding: queryVector,
+                        limit: topK
                     }
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data.results) && data.results.length > 0) {
+                    return data.results;
                 }
-            } catch (err) {
-                console.warn('Remote pgvector query note (using local store):', err.message);
             }
+        } catch (err) {
+            console.warn('Remote pgvector query note (using local store):', err.message);
         }
 
         // 2. High-Speed Local Cosine Distance Search Fallback
