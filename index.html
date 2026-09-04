@@ -64,63 +64,85 @@
             </div>
         </div>
 
-        <!-- ── Main Workspace: Voice Visualizer & Transcript ──────────────── -->
-        <div class="main-layout">
-            <!-- Left Panel: Voice AI Orb Visualizer -->
-            <section class="visualizer-panel" aria-label="Audio Visualizer">
-                <div class="orb-container">
+        <!-- Responsive Main Content Layout (Split View on Desktop, Stacked on Mobile) -->
+        <div class="main-content-layout">
+            <!-- Main Visualizer & Interaction Stage -->
+            <main class="main-stage">
+                <!-- Center Glowing Voice Orb & Canvas -->
+                <div class="orb-wrapper">
+                    <canvas id="visualizerCanvas" width="560" height="560"></canvas>
                     <div class="orb-core" id="orbCore">
-                        <i class="fa-solid fa-microphone" id="orbStateIcon"></i>
+                        <div class="orb-ring ring-1"></div>
+                        <div class="orb-ring ring-2"></div>
+                        <div class="orb-ring ring-3"></div>
+                        <div class="orb-center-icon">
+                            <i id="orbStateIcon" class="fa-solid fa-microphone-slash"></i>
+                        </div>
                     </div>
-                    <canvas id="visualizerCanvas" width="300" height="300"></canvas>
-                </div>
 
-                <div class="agent-status-card">
-                    <div class="status-indicator">
+                    <!-- Floating Status Badge -->
+                    <div class="agent-status-tag" id="agentStatusTag">
                         <span class="status-dot"></span>
-                        <span id="agentStatusText">Agent Inactive • Click to Start</span>
-                    </div>
-                    <div class="vad-meter-wrap" title="Silero VAD Neural Confidence">
-                        <div class="vad-meter-bar">
-                            <div class="vad-meter-fill" id="vadConfidenceBar"></div>
-                            <div class="vad-threshold-marker" id="vadThresholdMarker"></div>
-                        </div>
-                        <span class="vad-meter-val" id="vadConfidenceLabel">0%</span>
-                    </div>
-                    <div class="audio-level-wrap" title="Input Microphone Level">
-                        <div class="audio-level-bar">
-                            <div class="audio-level-fill" id="audioLevelBar"></div>
-                        </div>
-                        <span class="audio-level-val" id="audioLevelLabel">-60 dB</span>
+                        <span class="status-label" id="agentStatusText">Agent Inactive &bull; Click to Start</span>
                     </div>
                 </div>
 
-                <div class="voice-controls">
-                    <button id="btnToggleVoice" class="voice-main-btn" aria-label="Start Voice Call">
+                <!-- Real-time Speech Probability & Audio Level Bar -->
+                <div class="audio-metrics-bar">
+                    <div class="metric-item">
+                        <div class="metric-header">
+                            <span><i class="fa-solid fa-shield-halved"></i> Silero VAD Confidence</span>
+                            <span id="vadConfidenceLabel">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill vad-fill" id="vadConfidenceBar" style="width: 0%;"></div>
+                            <div class="threshold-marker" id="vadThresholdMarker" style="left: 45%;" title="Silence/Speech Threshold (45%)"></div>
+                        </div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-header">
+                            <span><i class="fa-solid fa-volume-high"></i> DSP Audio Input Level (AEC + NS)</span>
+                            <span id="audioLevelLabel">0 dB</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill audio-fill" id="audioLevelBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Action Controls -->
+                <div class="stage-controls">
+                    <button id="btnToggleVoice" class="primary-call-btn">
+                        <div class="btn-glow"></div>
                         <i class="fa-solid fa-phone" id="callBtnIcon"></i>
                         <span id="callBtnText">Start Real-Time Voice</span>
                     </button>
-                    <button id="btnInterrupt" class="interrupt-btn" title="Barge-in Interrupt AI" disabled>
-                        <i class="fa-solid fa-hand"></i>
-                        <span>Interrupt</span>
+                    <button id="btnInterrupt" class="action-pill-btn" title="Barge-in / Interrupt Agent" disabled>
+                        <i class="fa-solid fa-hand"></i> Interrupt (Barge-in)
+                    </button>
+                    <button id="btnClearChat" class="action-pill-btn" title="Clear Conversation Transcript">
+                        <i class="fa-solid fa-trash-can"></i> Clear Log
                     </button>
                 </div>
-            </section>
+            </main>
 
-            <!-- Right Panel: Live Transcript & Interaction Log -->
-            <section class="chat-panel" aria-label="Conversation Log">
-                <div class="chat-header">
-                    <div class="chat-title">
-                        <i class="fa-solid fa-comments text-cyan"></i>
-                        <span>Real-Time Interaction Transcript</span>
+            <!-- Live Streaming Conversation Drawer -->
+            <section class="transcript-section">
+                <div class="transcript-header">
+                    <div class="transcript-title">
+                        <i class="fa-solid fa-comments"></i>
+                        <span>Live Duplex Transcript</span>
                     </div>
-                    <button id="btnClearChat" class="text-btn" title="Clear Transcript">
-                        <i class="fa-solid fa-trash-can"></i> Clear
-                    </button>
+                    <div class="model-tags-bar">
+                        <span class="tag-chip"><i class="fa-solid fa-bolt"></i> Whisper v3 Turbo</span>
+                        <span class="tag-chip"><i class="fa-solid fa-brain"></i> Groq LLM</span>
+                        <span class="tag-chip"><i class="fa-solid fa-music"></i> ElevenLabs Jessica</span>
+                    </div>
                 </div>
 
-                <div class="transcript-container" id="transcriptContainer">
-                    <div class="chat-message system-message">
+                <div class="transcript-body" id="transcriptContainer">
+                    <div class="chat-message system">
+                        <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
                         <div class="message-content">
                             <div class="message-author">CONVERSE AI SUPPORT &bull; System Ready</div>
                             <div class="message-bubble">
