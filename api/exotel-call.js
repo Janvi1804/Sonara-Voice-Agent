@@ -45,12 +45,19 @@ export default async function handler(req, res) {
         // Exotel expects Indian phone numbers with leading 0 (e.g. 09057201392)
         const exotelFormattedPhone = `0${normalizedPhone}`;
 
-        // Exotel Configuration (Reads from environment variables with verified account fallback)
-        const accountSid = process.env.EXOTEL_ACCOUNT_SID || 'revtidigital1';
-        const apiKey = process.env.EXOTEL_API_KEY || '94e31eb1b4f9f4b2f8ef04122cab520ee886dfd53171b25b';
-        const apiToken = process.env.EXOTEL_API_TOKEN || '2d3bc60401eefffb50ad17826d2f8db9ceb88f8eb0bcd6df';
-        const callerId = process.env.EXOTEL_CALLER_ID || '09513886363';
-        const appId = process.env.EXOTEL_APP_ID || '1327980';
+        // Exotel Configuration — read exclusively from server-side environment variables.
+        // No hardcoded fallbacks. If any variable is absent the request is rejected with HTTP 500.
+        const accountSid = process.env.EXOTEL_ACCOUNT_SID;
+        const apiKey     = process.env.EXOTEL_API_KEY;
+        const apiToken   = process.env.EXOTEL_API_TOKEN;
+        const callerId   = process.env.EXOTEL_CALLER_ID;
+        const appId      = process.env.EXOTEL_APP_ID;
+
+        if (!accountSid || !apiKey || !apiToken || !callerId || !appId) {
+            return res.status(500).json({
+                error: 'Exotel configuration incomplete. Set EXOTEL_ACCOUNT_SID, EXOTEL_API_KEY, EXOTEL_API_TOKEN, EXOTEL_CALLER_ID, and EXOTEL_APP_ID on the server.'
+            });
+        }
 
         // Warm-up ping to Render WebSocket bridge to avoid cold-start delay
         try {
