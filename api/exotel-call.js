@@ -61,7 +61,7 @@ export default async function handler(req, res) {
 
         // Warm-up ping to Render WebSocket bridge to avoid cold-start delay
         try {
-            fetch('https://sonara-voice-agent.onrender.com/health', { signal: AbortSignal.timeout(2000) }).catch(() => {});
+            await fetch('https://sonara-voice-agent.onrender.com/health', { signal: AbortSignal.timeout(3000) }).catch(() => {});
         } catch (_) {}
 
         const authHeader = 'Basic ' + Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
         const params = new URLSearchParams();
         params.append('From', exotelFormattedPhone);
         params.append('CallerId', callerId);
-        params.append('Url', `http://my.exotel.com/${accountSid}/exml/start_voice/${appId}`);
+        params.append('Url', `http://my.exotel.com/${accountSid}/exoml/start_voice/${appId}`);
         params.append('CallType', 'trans');
 
         const exotelRes = await fetch(endpoint, {

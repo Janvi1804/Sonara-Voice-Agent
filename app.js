@@ -2038,6 +2038,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             _statusEl.style.display = 'block';
         };
 
+        // Pre-warm Render bridge in background to ensure zero cold-start delay
+        const _prewarmBridge = () => {
+            try {
+                fetch('https://sonara-voice-agent.onrender.com/health', { mode: 'no-cors' }).catch(() => {});
+            } catch (_) {}
+        };
+        _inputPhone?.addEventListener('focus', _prewarmBridge, { once: true });
+        _btnExotel?.addEventListener('mouseenter', _prewarmBridge, { once: true });
+
         _btnExotel?.addEventListener('click', async () => {
             const name  = _inputName?.value.trim()  || '';
             const phone = _inputPhone?.value.trim()  || '';

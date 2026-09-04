@@ -205,6 +205,15 @@ async function* tts(text) {
 // HTTP Server
 // ─────────────────────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        return res.end();
+    }
+
     if (req.url === '/' || req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ status: 'online', service: 'Sonara Telephony Bridge', ts: new Date().toISOString() }));
@@ -241,6 +250,7 @@ wss.on('connection', (ws) => {
     let speechFrames  = 0;
     let silenceFrames = 0;
     let frameCount    = 0;
+    let greetingTimer = null;
 
     /* ── VAD tuning for GSM 8kHz mulaw ──
      *  Typical values:
@@ -261,16 +271,23 @@ wss.on('connection', (ws) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         for (let o = 0; o < chunk.length; o += 160) {
             const frame = chunk.subarray(o, Math.min(o + 160, chunk.length));
-            const msg = { event: 'media', media: { payload: frame.toString('base64') } };
-            if (streamSid) msg.streamSid = streamSid;
+            const msg = {
+                event: 'media',
+                stream_sid: streamSid,
+                streamSid: streamSid,
+                media: { payload: frame.toString('base64') }
+            };
             ws.send(JSON.stringify(msg));
         }
     };
 
     const clearQueue = () => {
         if (ws.readyState !== WebSocket.OPEN) return;
-        const msg = { event: 'clear' };
-        if (streamSid) msg.streamSid = streamSid;
+        const msg = {
+            event: 'clear',
+            stream_sid: streamSid,
+            streamSid: streamSid
+        };
         ws.send(JSON.stringify(msg));
     };
 
@@ -376,8 +393,17 @@ wss.on('connection', (ws) => {
                 console.log('[Exotel] 📋 Raw start:', JSON.stringify(data).slice(0, 500));
                 streamSid = data.streamSid || data.start?.streamSid || data.start?.stream_sid || null;
                 console.log(`[Exotel] 📞 Call live. StreamSid: ${streamSid}`);
-                // Add greeting to history (Exotel's own Greeting applet already spoke it)
+                // Add greeting to history (in case Exotel's Greeting applet spoke it)
                 history.push({ role: 'assistant', content: 'Namaste! Welcome to Converse AI. I am Sonara, your AI solutions specialist. How can I help you today?' });
+
+                // Proactive greeting fallback: if the caller or flow doesn't speak within 3.5s, greet the caller
+                if (greetingTimer) clearTimeout(greetingTimer);
+                greetingTimer = setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN && speechFrames === 0 && !isAiSpeaking && !isProcessing) {
+                        console.log('[Exotel] ⏱️ No audio detected after connect — speaking proactive greeting');
+                        speak('Namaste! Welcome to Converse AI. I am Sonara. How can I help you today?');
+                    }
+                }, 3500);
                 break;
 
             case 'media': {
@@ -412,6 +438,7 @@ wss.on('connection', (ws) => {
 
                 // ── Voice Activity Detection ──
                 if (energy > SPEECH_RMS) {
+                    if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
                     if (speechFrames === 0) console.log(`[VAD] 🎙️  Speech onset! RMS=${Math.round(energy)}`);
                     speechFrames++;
                     silenceFrames = 0;
@@ -435,6 +462,7 @@ wss.on('connection', (ws) => {
 
             case 'stop':
                 console.log(`[Exotel] 📵 Call ended. Total frames: ${frameCount}, Turns: ${Math.floor(history.length / 2)}`);
+                if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
                 ws.close();
                 break;
 
@@ -445,6 +473,7 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         console.log('[WS] Connection closed\n' + '═'.repeat(60));
+        if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
         isAiSpeaking = false;
         isProcessing = false;
         speechBuf = [];
