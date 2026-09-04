@@ -1715,10 +1715,9 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                             provider: 'huggingface',
                             model: hfModelId,
                             messages,
-                            hfToken,
-                            apiKey,
-                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
-                            customUrl: txtCustomRagUrl ? txtCustomRagUrl.value.trim() : ''
+                            max_tokens: 120,
+                            ragContext,
+                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                         })
                     });
 
@@ -1827,7 +1826,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
 
             } else {
                 // --- GROQ (Default): High-Speed Vercel Serverless /api/chat Proxy (Server-side GROQ_API_KEY) ---
-                const historySlice = conversationHistory.slice(-12);
+                const historySlice = conversationHistory.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-12);
                 const messages = [
                     { role: 'system', content: systemPrompt },
                     ...historySlice.map(m => ({
@@ -1843,12 +1842,10 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            provider: 'groq',
-                            model: model || 'openai/gpt-oss-120b',
                             messages,
-                            apiKey: apiKey || undefined,
-                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
-                            customUrl: txtCustomRagUrl ? txtCustomRagUrl.value.trim() : ''
+                            max_tokens: 120,
+                            ragContext,
+                            ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                         })
                     });
 
