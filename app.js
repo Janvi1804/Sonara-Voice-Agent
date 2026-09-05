@@ -207,8 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');
             if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound') || savedModel.includes('llama')) {
-                selLlmModel.value = 'openai/gpt-oss-120b';
-                localStorage.setItem('sonara_llm_model', 'openai/gpt-oss-120b');
+                selLlmModel.value = 'qwen/qwen3.8-27b';
+                localStorage.setItem('sonara_llm_model', 'qwen/qwen3.8-27b');
             } else {
                 selLlmModel.value = savedModel;
             }
@@ -1621,8 +1621,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 signal: abortController.signal,
                 body: JSON.stringify({
                     messages,
-                    model: model || 'openai/gpt-oss-120b',
-                    max_tokens: 180,
+                    model: model || 'qwen/qwen3.8-27b',
+                    max_tokens: 220,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });

@@ -201,12 +201,12 @@ ${ragContext}`;
             });
         }
 
-        // Candidate Groq models to try (prioritizing requested model, with fallback to verified available Groq models)
+        // Candidate Groq models to try (prioritizing fast instruction models over reasoning models)
         const candidateModels = [...new Set([
-            model,
             'qwen/qwen3.8-27b',
-            'openai/gpt-oss-120b',
-            'qwen/qwen3.6-27b'
+            model,
+            'qwen/qwen3.6-27b',
+            'openai/gpt-oss-120b'
         ].filter(Boolean))];
 
         let activeModel = candidateModels[0];
@@ -225,12 +225,18 @@ ${ragContext}`;
                         model: candidate,
                         messages: formattedMessages,
                         temperature: Number(temperature) || 0.65,
-                        max_tokens: Math.min(220, Math.max(120, Number(max_tokens) || 200))
+                        max_tokens: Math.min(250, Math.max(120, Number(max_tokens) || 200))
                     })
                 });
 
                 if (groqRes.ok) {
-                    groqData = await groqRes.json();
+                    const data = await groqRes.json();
+                    const content = (data.choices?.[0]?.message?.content || '').trim();
+                    if (!content) {
+                        console.warn(`[Groq LLM] Model ${candidate} returned empty content (reasoning exhausted), trying next candidate...`);
+                        continue;
+                    }
+                    groqData = data;
                     activeModel = candidate;
                     break;
                 } else {
