@@ -323,19 +323,16 @@ wss.on('connection', (ws) => {
     const MIN_AUDIO_BYTES   = 4000; // ~250ms of audio (16,000 bytes/sec * 0.25)
     const BARGE_COOLDOWN_MS = 1000; // allow interruption after 1.0s
 
-    /* ── Audio helpers: Send 16-bit Linear PCM in 320-byte chunks ── */
-    const sendAudio = (chunk) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        for (let o = 0; o < chunk.length; o += 320) {
-            const frame = chunk.subarray(o, Math.min(o + 320, chunk.length));
-            const msg = {
-                event: 'media',
-                stream_sid: streamSid,
-                streamSid: streamSid,
-                media: { payload: frame.toString('base64') }
-            };
-            ws.send(JSON.stringify(msg));
-        }
+    /* ── Audio helpers: Exotel requires chunks in multiples of 320 bytes (min 3.2 KB = 3200 bytes) ── */
+    const sendMediaPayload = (buf) => {
+        if (ws.readyState !== WebSocket.OPEN || !streamSid) return;
+        const msg = {
+            event: 'media',
+            stream_sid: streamSid,
+            streamSid: streamSid,
+            media: { payload: buf.toString('base64') }
+        };
+        ws.send(JSON.stringify(msg));
     };
 
     const clearQueue = () => {
@@ -348,28 +345,60 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify(msg));
     };
 
-    /* ── Speak a text response ── */
+    /* ── Speak a text response with smooth paced 3.2KB streaming ── */
     const speak = async (text) => {
         if (!text) return;
         isAiSpeaking = true;
         aiStartedAt  = Date.now();
         log('Sonara', `🗣️ "${text}"`);
         let totalSentBytes = 0;
+        let audioQueue = Buffer.alloc(0);
+        const CHUNK_SIZE = 3200; // Exotel standard chunk: 3.2 KB (exactly 10 * 320 bytes)
+        let isDoneTts = false;
+
+        // Pacer loop: streams 3200-byte frames smoothly at ~180ms cadence
+        const pacerPromise = (async () => {
+            while (isAiSpeaking) {
+                if (audioQueue.length >= CHUNK_SIZE) {
+                    const frame = audioQueue.subarray(0, CHUNK_SIZE);
+                    audioQueue = audioQueue.subarray(CHUNK_SIZE);
+                    sendMediaPayload(frame);
+                    totalSentBytes += frame.length;
+                    // 3200 bytes = 200ms audio at 8kHz PCM16; wait 180ms to prevent jitter underruns
+                    await new Promise(r => setTimeout(r, 180));
+                } else if (isDoneTts) {
+                    if (audioQueue.length > 0) {
+                        // Pad trailing audio to exact multiple of 320 bytes to prevent 20ms pause penalty
+                        const rem = audioQueue.length % 320;
+                        if (rem !== 0) {
+                            audioQueue = Buffer.concat([audioQueue, Buffer.alloc(320 - rem, 0)]);
+                        }
+                        sendMediaPayload(audioQueue);
+                        totalSentBytes += audioQueue.length;
+                        audioQueue = Buffer.alloc(0);
+                    }
+                    break;
+                } else {
+                    // Wait for more chunks to arrive from ElevenLabs
+                    await new Promise(r => setTimeout(r, 25));
+                }
+            }
+        })();
+
         try {
             for await (const chunk of tts(text)) {
-                if (!isAiSpeaking) { log('Sonara', '⛔ Interrupted by caller'); break; }
-                sendAudio(chunk);
-                totalSentBytes += chunk.length;
+                if (!isAiSpeaking) {
+                    log('Sonara', '⛔ Interrupted by caller');
+                    break;
+                }
+                audioQueue = Buffer.concat([audioQueue, chunk]);
             }
+            isDoneTts = true;
+            await pacerPromise;
 
-            // Synchronize with phone playback (16,000 bytes = 1 second of 16-bit 8kHz PCM)
+            // Wait brief trailing buffer for phone speaker playback (~200ms)
             if (isAiSpeaking && totalSentBytes > 0) {
-                const totalDurationMs = (totalSentBytes / 16000) * 1000;
-                const streamElapsedMs = Date.now() - aiStartedAt;
-                const remainingWaitMs = Math.max(0, totalDurationMs - streamElapsedMs);
-                log('Sonara', `Sent ${totalSentBytes}b (${(totalDurationMs/1000).toFixed(1)}s). Waiting ${Math.round(remainingWaitMs)}ms playback.`);
-                // Reduced echo margin to 80ms so caller's response is never locked out
-                await new Promise(r => setTimeout(r, remainingWaitMs + 80));
+                await new Promise(r => setTimeout(r, 200));
             }
         } catch (e) {
             logErr('TTS', e.message);
@@ -450,7 +479,7 @@ wss.on('connection', (ws) => {
                 break;
 
             case 'start':
-                log('Exotel', `📋 Start payload: ${JSON.stringify(data).slice(0, 300)}`);
+                log('Exotel', `📋 Start payload: ${JSON.stringify(data).slice(0, 600)}`);
                 streamSid = data.streamSid || data.start?.streamSid || data.start?.stream_sid || null;
                 log('Exotel', `📞 Call live. StreamSid: ${streamSid}`);
                 
