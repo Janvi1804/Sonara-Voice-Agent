@@ -198,12 +198,59 @@ export class ElevenLabsTTS {
             } catch (err) {
                 if (err.name === 'AbortError') {
                     console.log('[ElevenLabsTTS] Synthesis aborted.');
+                    resolve();
                 } else {
-                    console.error('[ElevenLabsTTS] Error:', err.message);
+                    console.warn('[ElevenLabsTTS] Quota exceeded or synthesis error, falling back to Web Speech API:', err.message);
+                    this.speakWebSpeechFallback(spokenText, resolve);
                 }
-                resolve();
             }
         });
+    }
+
+    /**
+     * Browser Web Speech Fallback: Plays audio smoothly when ElevenLabs quota is exhausted
+     */
+    speakWebSpeechFallback(text, resolve) {
+        if (!('speechSynthesis' in window)) {
+            resolve();
+            return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        const available = window.speechSynthesis.getVoices();
+        const isDevanagari = /[\u0900-\u097F]/.test(text);
+
+        if (isDevanagari) {
+            const hindiVoices = available.filter(v =>
+                (v.lang && v.lang.toLowerCase().startsWith('hi')) ||
+                v.name.toLowerCase().includes('hindi') ||
+                v.name.toLowerCase().includes('swara')
+            );
+            const matchedHindi = hindiVoices.find(v => !v.name.toLowerCase().includes('male')) || hindiVoices[0];
+            if (matchedHindi) { utterance.voice = matchedHindi; utterance.lang = matchedHindi.lang || 'hi-IN'; }
+            else { utterance.lang = 'hi-IN'; }
+        } else {
+            const enVoices = available.filter(v => v.lang && (v.lang.toLowerCase().startsWith('en-us') || v.lang.toLowerCase().startsWith('en-in')));
+            const preferred = enVoices.find(v => v.name.toLowerCase().includes('google') && !v.name.toLowerCase().includes('female')) ||
+                              enVoices.find(v => !v.name.toLowerCase().includes('male')) ||
+                              enVoices[0];
+            if (preferred) { utterance.voice = preferred; utterance.lang = preferred.lang; }
+            else { utterance.lang = 'en-US'; }
+        }
+
+        utterance.pitch = 1.05;
+        utterance.rate  = 1.05;
+
+        utterance.onend = () => { resolve(); };
+        utterance.onerror = (e) => {
+            if (e.error !== 'interrupted' && e.error !== 'canceled') {
+                console.warn('[ElevenLabsTTS] Web Speech fallback error:', e.error);
+            }
+            resolve();
+        };
+
+        window.speechSynthesis.speak(utterance);
+        console.log('[ElevenLabsTTS] 🗣️ Playing via Web Speech Fallback:', text.substring(0, 60));
     }
 
     /**
@@ -224,6 +271,10 @@ export class ElevenLabsTTS {
                 this.activeSource.disconnect();
             } catch (_) {}
             this.activeSource = null;
+        }
+
+        if ('speechSynthesis' in window) {
+            try { window.speechSynthesis.cancel(); } catch (_) {}
         }
 
         this.isPlaying = false;

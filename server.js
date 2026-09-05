@@ -197,18 +197,26 @@ async function llm(history, userText) {
 
 /** ElevenLabs Jessica TTS — streams mulaw 8kHz audio to phone */
 async function* tts(text) {
-    if (!EL_KEY) { console.warn('[TTS] No ELEVENLABS_API_KEY'); return; }
+    const elKey = process.env.ELEVENLABS_API_KEY || EL_KEY;
+    if (!elKey) { console.warn('[TTS] No ELEVENLABS_API_KEY configured'); return; }
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=ulaw_8000&optimize_streaming_latency=4`;
     const r = await fetch(url, {
         method: 'POST',
-        headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json' },
+        headers: { 'xi-api-key': elKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
             text,
             model_id: 'eleven_flash_v2_5',
             voice_settings: { stability: 0.45, similarity_boost: 0.82, style: 0.1, use_speaker_boost: true }
         })
     });
-    if (!r.ok) { console.error('[TTS] Error:', r.status, await r.text()); return; }
+    if (!r.ok) {
+        const errText = await r.text();
+        console.error('[TTS] Error:', r.status, errText);
+        if (r.status === 401 && errText.includes('quota_exceeded')) {
+            console.error('\n⚠️ [TTS Alert] ElevenLabs character quota is 100% EXHAUSTED! Please paste a fresh ELEVENLABS_API_KEY into .env.\n');
+        }
+        return;
+    }
     const reader = r.body.getReader();
     while (true) {
         const { done, value } = await reader.read();
