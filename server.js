@@ -1,7 +1,7 @@
 /**
  * Sonara Voice Agent — Exotel Telephony WebSocket Bridge
  * Production-Ready v2 | Full 2-Way AI Phone Conversation
- * Telephony VAD Calibrated for GSM/VoLTE (RMS 380)
+ * Exotel Native Protocol: Linear PCM 16-bit (s16le) 8000 Hz Mono
  * Live In-Memory Logs (/logs) & Health Diagnostics (/health)
  */
 
@@ -35,52 +35,41 @@ function logErr(tag, msg) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// G.711 Mu-Law → Linear PCM Decode Table (8kHz native)
+// Exotel Native Audio: 16-bit Linear PCM (s16le), 8000 Hz Mono
 // ─────────────────────────────────────────────────────────────────────────────
-const ULAW_TABLE = (() => {
-    const t = new Int16Array(256);
-    for (let i = 0; i < 256; i++) {
-        const u    = ~i & 0xFF;
-        const sign = u & 0x80;
-        const exp  = (u >> 4) & 0x07;
-        const mant = u & 0x0F;
-        let s = ((mant << 3) | 0x84) << exp;
-        t[i] = sign ? -s : s;
-    }
-    return t;
-})();
 
-/** RMS energy of a mulaw buffer — used for VAD */
-function rmsOf(buf) {
+/** RMS energy of a 16-bit Linear PCM buffer */
+function rmsOfPcm16(buf) {
     let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += ULAW_TABLE[buf[i]] ** 2;
-    return Math.sqrt(sum / buf.length);
+    const numSamples = Math.floor(buf.length / 2);
+    if (numSamples === 0) return 0;
+    for (let i = 0; i < buf.length - 1; i += 2) {
+        const sample = buf.readInt16LE(i);
+        sum += sample * sample;
+    }
+    return Math.sqrt(sum / numSamples);
 }
 
 /**
- * Build a VALID 8 kHz, 16-bit, Mono WAV from raw mulaw bytes.
- * Whisper handles native 8 kHz WAV without distortion or upsampling artifacts.
+ * Build a valid 8 kHz, 16-bit Mono WAV from raw Linear PCM 16-bit bytes.
+ * Prepend a standard 44-byte WAV header — no re-encoding or distortion.
  */
-function mulawToWav8k(mulawBuf) {
-    const samples = new Int16Array(mulawBuf.length);
-    for (let i = 0; i < mulawBuf.length; i++) samples[i] = ULAW_TABLE[mulawBuf[i]];
-    const pcm = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
-
+function pcm16ToWav8k(pcmBuf) {
     const hdr = Buffer.alloc(44);
     hdr.write('RIFF', 0);
-    hdr.writeUInt32LE(pcm.length + 36, 4);
+    hdr.writeUInt32LE(pcmBuf.length + 36, 4);
     hdr.write('WAVE', 8);
     hdr.write('fmt ', 12);
-    hdr.writeUInt32LE(16,    16);   // Subchunk1Size
-    hdr.writeUInt16LE(1,     20);   // PCM = 1
-    hdr.writeUInt16LE(1,     22);   // Mono
+    hdr.writeUInt32LE(16,    16);   // Subchunk1Size = 16 for PCM
+    hdr.writeUInt16LE(1,     20);   // AudioFormat = 1 (Linear PCM)
+    hdr.writeUInt16LE(1,     22);   // NumChannels = 1 (Mono)
     hdr.writeUInt32LE(8000,  24);   // SampleRate = 8000 Hz
-    hdr.writeUInt32LE(16000, 28);   // ByteRate = 8000 * 1 * 2
-    hdr.writeUInt16LE(2,     32);   // BlockAlign = 1 * 2
+    hdr.writeUInt32LE(16000, 28);   // ByteRate = 8000 * 1 * 2 = 16000
+    hdr.writeUInt16LE(2,     32);   // BlockAlign = 1 * 2 = 2
     hdr.writeUInt16LE(16,    34);   // BitsPerSample = 16
     hdr.write('data', 36);
-    hdr.writeUInt32LE(pcm.length, 40);
-    return Buffer.concat([hdr, pcm]);
+    hdr.writeUInt32LE(pcmBuf.length, 40);
+    return Buffer.concat([hdr, pcmBuf]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,14 +204,15 @@ async function llm(history, userText) {
     return reply;
 }
 
-/** ElevenLabs Jessica TTS — streams mulaw 8kHz audio to phone */
+/** ElevenLabs Jessica TTS — streams Linear PCM 16-bit 8kHz audio to Exotel */
 async function* tts(text) {
     const elKey = process.env.ELEVENLABS_API_KEY || EL_KEY;
     if (!elKey) {
         logErr('TTS', 'No ELEVENLABS_API_KEY configured in environment!');
         return;
     }
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=ulaw_8000&optimize_streaming_latency=4`;
+    // Exotel requires 16-bit Linear PCM at 8000 Hz
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=pcm_8000&optimize_streaming_latency=4`;
     const r = await fetch(url, {
         method: 'POST',
         headers: { 'xi-api-key': elKey, 'Content-Type': 'application/json' },
@@ -267,7 +257,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
             status: 'online',
-            service: 'Sonara Telephony Bridge v2',
+            service: 'Sonara Telephony Bridge v2 (PCM16-8k)',
             groqConfigured: !!groq,
             groqKeySuffix: groq ? `...${groq.slice(-6)}` : null,
             elevenLabsConfigured: !!el,
@@ -318,24 +308,26 @@ wss.on('connection', (ws) => {
     let frameCount    = 0;
     let greetingTimer = null;
 
-    /* ── VAD tuning for GSM 8kHz mulaw telephony ──
-     *  Typical values:
-     *    Line noise / baseline: RMS  120 – 240
-     *    Normal mobile voice  : RMS  350 – 900
-     *    Loud voice           : RMS  1200+
+    /* ── VAD tuning for Exotel Linear PCM 16-bit 8kHz ──
+     *  Linear PCM 16-bit values (-32768 to 32767):
+     *    Digital silence   : RMS   0 – 40
+     *    Line noise        : RMS  30 – 120
+     *    Soft mobile speech: RMS 250 – 700
+     *    Normal speech     : RMS 700 – 3500
+     *    Loud speech       : RMS 3500+
      */
-    const SPEECH_RMS        = 380;  // lowered to 380 for natural mobile speech pickup
-    const BARGE_RMS         = 1800; // caller interruption threshold
-    const SILENCE_FRAMES    = 20;   // ~400ms silence (at 20ms/frame) → utterance finished
+    const SPEECH_RMS        = 250;  // above → caller speaking
+    const BARGE_RMS         = 1500; // caller interruption threshold
+    const SILENCE_FRAMES    = 16;   // ~320ms silence (at ~20ms/frame) → utterance finished
     const MIN_SPEECH_FRAMES = 5;    // ~100ms min speech to reject quick noise clicks
-    const MIN_AUDIO_BYTES   = 2000; // ~250ms of audio
+    const MIN_AUDIO_BYTES   = 4000; // ~250ms of audio (16,000 bytes/sec * 0.25)
     const BARGE_COOLDOWN_MS = 1000; // allow interruption after 1.0s
 
-    /* ── Audio helpers ── */
+    /* ── Audio helpers: Send 16-bit Linear PCM in 320-byte chunks ── */
     const sendAudio = (chunk) => {
         if (ws.readyState !== WebSocket.OPEN) return;
-        for (let o = 0; o < chunk.length; o += 160) {
-            const frame = chunk.subarray(o, Math.min(o + 160, chunk.length));
+        for (let o = 0; o < chunk.length; o += 320) {
+            const frame = chunk.subarray(o, Math.min(o + 320, chunk.length));
             const msg = {
                 event: 'media',
                 stream_sid: streamSid,
@@ -370,14 +362,14 @@ wss.on('connection', (ws) => {
                 totalSentBytes += chunk.length;
             }
 
-            // Synchronize with phone playback (8000 bytes = 1 second)
+            // Synchronize with phone playback (16,000 bytes = 1 second of 16-bit 8kHz PCM)
             if (isAiSpeaking && totalSentBytes > 0) {
-                const totalDurationMs = (totalSentBytes / 8000) * 1000;
+                const totalDurationMs = (totalSentBytes / 16000) * 1000;
                 const streamElapsedMs = Date.now() - aiStartedAt;
                 const remainingWaitMs = Math.max(0, totalDurationMs - streamElapsedMs);
                 log('Sonara', `Sent ${totalSentBytes}b (${(totalDurationMs/1000).toFixed(1)}s). Waiting ${Math.round(remainingWaitMs)}ms playback.`);
-                // Reduced echo margin to 100ms so caller's response is never locked out
-                await new Promise(r => setTimeout(r, remainingWaitMs + 100));
+                // Reduced echo margin to 80ms so caller's response is never locked out
+                await new Promise(r => setTimeout(r, remainingWaitMs + 80));
             }
         } catch (e) {
             logErr('TTS', e.message);
@@ -395,7 +387,7 @@ wss.on('connection', (ws) => {
         isProcessing = true;
         try {
             const raw = Buffer.concat(frames);
-            log('Pipeline', `🎙️ Processing ${raw.length} bytes (${(raw.length / 8000).toFixed(2)}s audio)`);
+            log('Pipeline', `🎙️ Processing ${raw.length} bytes (${(raw.length / 16000).toFixed(2)}s PCM audio)`);
 
             // Minimum audio duration guard
             if (raw.length < MIN_AUDIO_BYTES) {
@@ -403,8 +395,8 @@ wss.on('connection', (ws) => {
                 return;
             }
 
-            // Convert to WAV
-            const wav = mulawToWav8k(raw);
+            // Convert PCM16 to WAV (native 8kHz 16-bit PCM)
+            const wav = pcm16ToWav8k(raw);
 
             // STT
             let userText;
@@ -420,7 +412,7 @@ wss.on('connection', (ws) => {
             const cleaned = userText.replace(/[^a-zA-Z\u0900-\u097F0-9\s]/g, '').trim();
             if (!cleaned || cleaned.length < 2) {
                 log('Pipeline', `⚠️ Transcription too short or empty: "${userText}" (audio bytes: ${raw.length})`);
-                if (raw.length >= 8000) {
+                if (raw.length >= 16000) {
                     // Caller spoke for >= 1s, but STT missed it — prompt caller
                     await speak("I'm sorry, I didn't quite catch that. Could you please repeat your question?");
                 }
@@ -479,7 +471,7 @@ wss.on('connection', (ws) => {
                 if (!data.media?.payload) return;
                 frameCount++;
                 const frame  = Buffer.from(data.media.payload, 'base64');
-                const energy = rmsOf(frame);
+                const energy = rmsOfPcm16(frame);
 
                 // Periodic noise floor log (every ~5 seconds = 250 frames at 20ms each)
                 if (frameCount % 250 === 0) {
@@ -525,7 +517,7 @@ wss.on('connection', (ws) => {
                         speechFrames  = 0;
                         silenceFrames = 0;
                         processUtterance(frames);
-                    } else if (silenceFrames > 35 && speechFrames < MIN_SPEECH_FRAMES) {
+                    } else if (silenceFrames > 30 && speechFrames < MIN_SPEECH_FRAMES) {
                         // Discard false noise blip / breath click to prevent buffer accumulation
                         speechBuf     = [];
                         speechFrames  = 0;
@@ -562,7 +554,7 @@ wss.on('connection', (ws) => {
 // ─────────────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
     log('Server', '═'.repeat(55));
-    log('Server', '🚀 SONARA TELEPHONY BRIDGE — PRODUCTION v2');
+    log('Server', '🚀 SONARA TELEPHONY BRIDGE — PRODUCTION v2 (PCM16)');
     log('Server', `📡 Port      : ${PORT}`);
     log('Server', `🔑 Groq      : ${GROQ_KEY ? '✅ CONFIGURED' : '❌ MISSING'}`);
     log('Server', `🔑 ElevenLabs: ${EL_KEY   ? '✅ CONFIGURED' : '❌ MISSING'}`);
