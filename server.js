@@ -493,7 +493,7 @@ wss.on('connection', (ws) => {
                         log('Exotel', '⏱️ Speaking initial proactive greeting');
                         speak('Namaste! Welcome to Converse AI. I am Sonara. How can I help you today?');
                     }
-                }, 2500);
+                }, 700);
                 break;
 
             case 'media': {

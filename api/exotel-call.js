@@ -72,6 +72,8 @@ export default async function handler(req, res) {
         params.append('CallerId', callerId);
         params.append('Url', `http://my.exotel.com/${accountSid}/exoml/start_voice/${appId}`);
         params.append('CallType', 'trans');
+        params.append('TimeLimit', '600');
+        params.append('TimeOut', '45');
 
         const exotelRes = await fetch(endpoint, {
             method: 'POST',
