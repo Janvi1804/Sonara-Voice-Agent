@@ -168,38 +168,32 @@ export class ElevenLabsTTS {
                 }
 
                 const arrayBuffer = await ttsRes.arrayBuffer();
-
                 if (this.isInterrupted) { resolve(); return; }
 
-                const audioCtx = this.audioContext || new AudioContext();
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                }
-                const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+                // Native HTML5 Audio playback — guarantees direct speaker output across all browsers
+                const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+                const audioUrl = URL.createObjectURL(blob);
+                const audio = new Audio(audioUrl);
+                audio.volume = 1.0;
+                this.activeAudioElement = audio;
 
-                if (this.isInterrupted) { resolve(); return; }
-
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                }
-
-                const source = audioCtx.createBufferSource();
-                source.buffer = decoded;
-                this.activeSource = source;
-
-                // Guarantee audio always routes directly to speakers (audioCtx.destination)
-                source.connect(audioCtx.destination);
-                if (this.gainNode && this.analyser) {
-                    try { source.connect(this.gainNode); } catch (_) {}
-                }
-
-                source.onended = () => {
-                    this.activeSource = null;
+                let isCleanedUp = false;
+                const cleanup = () => {
+                    if (isCleanedUp) return;
+                    isCleanedUp = true;
+                    this.activeAudioElement = null;
+                    try { URL.revokeObjectURL(audioUrl); } catch (_) {}
                     resolve();
                 };
 
-                source.start(0);
+                audio.onended = cleanup;
+                audio.onerror = (e) => {
+                    console.warn('[ElevenLabsTTS] HTML5 Audio error, resolving:', e);
+                    cleanup();
+                };
+
                 console.log('[ElevenLabsTTS] 🗣️ Playing:', spokenText.substring(0, 60));
+                await audio.play();
 
             } catch (err) {
                 if (err.name === 'AbortError') {
@@ -269,6 +263,14 @@ export class ElevenLabsTTS {
         if (this.activeAbortController) {
             try { this.activeAbortController.abort(); } catch (_) {}
             this.activeAbortController = null;
+        }
+
+        if (this.activeAudioElement) {
+            try {
+                this.activeAudioElement.pause();
+                this.activeAudioElement.currentTime = 0;
+            } catch (_) {}
+            this.activeAudioElement = null;
         }
 
         if (this.activeSource) {
