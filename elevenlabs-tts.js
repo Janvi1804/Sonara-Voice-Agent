@@ -172,19 +172,25 @@ export class ElevenLabsTTS {
                 if (this.isInterrupted) { resolve(); return; }
 
                 const audioCtx = this.audioContext || new AudioContext();
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
                 const decoded = await audioCtx.decodeAudioData(arrayBuffer);
 
                 if (this.isInterrupted) { resolve(); return; }
+
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
 
                 const source = audioCtx.createBufferSource();
                 source.buffer = decoded;
                 this.activeSource = source;
 
-                // Connect to destination through gain & analyser
+                // Guarantee audio always routes directly to speakers (audioCtx.destination)
+                source.connect(audioCtx.destination);
                 if (this.gainNode && this.analyser) {
-                    source.connect(this.gainNode);
-                } else {
-                    source.connect(audioCtx.destination);
+                    try { source.connect(this.gainNode); } catch (_) {}
                 }
 
                 source.onended = () => {

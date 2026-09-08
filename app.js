@@ -154,23 +154,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let ttsEndGraceTimer = null;
     let ttsSafetyWatchdog = null;
 
-    const handleTtsStart = (engineName) => {
-        clearTimeout(ttsEndGraceTimer);
+    const kickTtsWatchdog = (reason = '') => {
         clearTimeout(ttsSafetyWatchdog);
-        isAiSpeaking = true;
-        ttsCooldownUntil = Date.now() + 999999;
-        if (vadEngine) vadEngine.setAiSpeakingState(true);
-        if (whisperEngine) whisperEngine.clearBuffer();
-        setAgentState('speaking', `SONARA Speaking (${engineName || 'ElevenLabs Jessica'})`);
-
-        // Safety Watchdog: If browser SpeechSynthesis hangs or fails to fire onend (e.g. after long multi-turn sessions),
-        // force unlock the listening pipeline after a 15-second safety ceiling so the user is NEVER stuck!
+        // Safety Watchdog: force unlock only if speech is completely stuck for 35s without completing sentences
         ttsSafetyWatchdog = setTimeout(() => {
             if (isAiSpeaking) {
                 console.warn('[TTS] Safety watchdog triggered: Force-unlocking listening state');
                 handleTtsEnd();
             }
-        }, 15000);
+        }, 35000);
+    };
+
+    const handleTtsStart = (engineName) => {
+        clearTimeout(ttsEndGraceTimer);
+        isAiSpeaking = true;
+        ttsCooldownUntil = Date.now() + 999999;
+        if (vadEngine) vadEngine.setAiSpeakingState(true);
+        if (whisperEngine) whisperEngine.clearBuffer();
+        setAgentState('speaking', `SONARA Speaking (${engineName || 'ElevenLabs Jessica'})`);
+        kickTtsWatchdog('start');
     };
 
     const handleTtsEnd = () => {
@@ -287,6 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 voiceId: selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9',
                 modelId: 'eleven_flash_v2_5',
                 onStart: () => handleTtsStart('ElevenLabs (Jessica)'),
+                onSentenceStart: (sentence) => kickTtsWatchdog('sentence'),
                 onEnd: handleTtsEnd
             });
         } else {
