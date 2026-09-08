@@ -270,13 +270,25 @@ export default async function handler(req, res) {
         }
 
     } catch (err) {
-        // Log full error server-side (safe — server logs only, not exposed to client)
+        // Log full error server-side
         console.error('[API /api/db] Operation error:', err.code, err.message);
+        
+        // If DB host is unreachable/expired (ENOTFOUND, ECONNREFUSED, ETIMEDOUT), fallback gracefully without 500
+        if (['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT'].includes(err.code) || err.message?.includes('getaddrinfo')) {
+            return res.status(200).json({
+                success: false,
+                fallback: true,
+                message: 'PostgreSQL database unreachable. Operating in local storage mode.',
+                appointments: [],
+                customers: [],
+                logs: []
+            });
+        }
+
         return res.status(500).json({
             success: false,
-            // Do NOT expose err.message — it can contain SQL details, table/column names, or internal state.
             error: 'A database error occurred. Please try again or contact support.',
-            code: err.code || 'DB_ERROR'   // opaque PostgreSQL error code only — safe to expose
+            code: err.code || 'DB_ERROR'
         });
     }
 }
