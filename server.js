@@ -251,7 +251,10 @@ const server = http.createServer((req, res) => {
         return res.end();
     }
 
-    if (req.url === '/' || req.url === '/health') {
+    const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = urlObj.pathname;
+
+    if (pathname === '/' || pathname === '/health') {
         const groq = process.env.GROQ_API_KEY || GROQ_KEY;
         const el   = process.env.ELEVENLABS_API_KEY || EL_KEY;
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -268,16 +271,21 @@ const server = http.createServer((req, res) => {
         }));
     }
 
-    if (req.url === '/logs') {
+    if (pathname === '/logs') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end(LOGS.length ? LOGS.join('\n') : 'No call logs recorded yet. Initiate a phone call to view live bridge logs.');
     }
 
-    if (req.url === '/media' || req.url === '/voicebot') {
+    if (pathname === '/media' || pathname === '/voicebot') {
         const host  = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
-        const proto = req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
+        const proto = req.headers['x-forwarded-proto'] === 'http' ? 'ws' : 'wss';
+        const wsUrl = `${proto}://${host}/media`;
+        log('Exotel', `📥 HTTP ${req.method} ${pathname} resolved -> returning ${wsUrl}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ stream_url: `${proto}://${host}/media` }));
+        return res.end(JSON.stringify({
+            url: wsUrl,
+            stream_url: wsUrl
+        }));
     }
 
     res.writeHead(404); res.end();
@@ -285,6 +293,7 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 server.on('upgrade', (req, socket, head) => {
+    log('Exotel', `⚡ WebSocket upgrade requested for ${req.url}`);
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
 });
 
