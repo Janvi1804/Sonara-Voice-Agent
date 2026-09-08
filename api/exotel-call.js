@@ -47,15 +47,15 @@ export default async function handler(req, res) {
 
         // Exotel Configuration — read exclusively from server-side environment variables.
         // No hardcoded fallbacks. If any variable is absent the request is rejected with HTTP 500.
-        const accountSid = process.env.EXOTEL_ACCOUNT_SID;
+        const accountSid = process.env.EXOTEL_ACCOUNT_SID || 'revtidigital3';
         const apiKey     = process.env.EXOTEL_API_KEY;
         const apiToken   = process.env.EXOTEL_API_TOKEN;
-        const callerId   = process.env.EXOTEL_CALLER_ID;
-        const appId      = process.env.EXOTEL_APP_ID;
+        const callerId   = process.env.EXOTEL_CALLER_ID || '08047280434';
+        const appId      = process.env.EXOTEL_APP_ID || '1336879';
 
-        if (!accountSid || !apiKey || !apiToken || !callerId || !appId) {
+        if (!apiKey || !apiToken) {
             return res.status(500).json({
-                error: 'Exotel configuration incomplete. Set EXOTEL_ACCOUNT_SID, EXOTEL_API_KEY, EXOTEL_API_TOKEN, EXOTEL_CALLER_ID, and EXOTEL_APP_ID on the server.'
+                error: 'Exotel configuration incomplete. Set EXOTEL_API_KEY and EXOTEL_API_TOKEN on the server.'
             });
         }
 
@@ -72,8 +72,6 @@ export default async function handler(req, res) {
         params.append('CallerId', callerId);
         params.append('Url', `http://my.exotel.com/${accountSid}/exoml/start_voice/${appId}`);
         params.append('CallType', 'trans');
-        params.append('TimeLimit', '600');
-        params.append('TimeOut', '45');
 
         const exotelRes = await fetch(endpoint, {
             method: 'POST',
