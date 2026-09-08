@@ -269,12 +269,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_silence_dur')) {
             const savedSilence = parseInt(localStorage.getItem('sonara_silence_dur'));
-            // Old defaults were 1200ms/600ms — optimize to ultra-fast 450ms
-            rngSilenceDuration.value = (savedSilence >= 600) ? 450 : savedSilence;
+            rngSilenceDuration.value = (savedSilence < 600) ? 800 : savedSilence;
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         } else if (rngSilenceDuration) {
-            rngSilenceDuration.value = 450;
-            lblSilenceDuration.textContent = '450 ms';
+            rngSilenceDuration.value = 800;
+            lblSilenceDuration.textContent = '800 ms';
         }
         if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
             chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
@@ -644,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 450,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 800,
                 minSpeechDurationMs: 200,
                 speechStartConfirmFrames: 2,
                 rmsFloor: 0.004,
