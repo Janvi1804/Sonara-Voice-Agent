@@ -2069,7 +2069,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
 
             _btnExotel.disabled = true;
             _btnExotel.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Calling Phone…</span>';
-            _showExotelStatus('⏳ Connecting to Exotel to dial your phone number (via 09513886363)...', 'loading');
+            _showExotelStatus('⏳ Connecting to Exotel to dial your phone number (via 08047280434)...', 'loading');
 
             try {
                 const res = await fetch('/api/exotel-call', {
@@ -2081,8 +2081,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    _showExotelStatus(`✅ <strong>Call Initiated!</strong> Your phone will ring shortly from Exophone <strong>09513886363</strong>. Please pick up the call to talk to Sonara.`, 'success');
-                    appendSystemMessage(`📞 Exotel phone call dispatched to +91-${cleanPhone}. Caller ID: 09513886363.`);
+                    _showExotelStatus(`✅ <strong>Call Initiated!</strong> Your phone will ring shortly from Exophone <strong>08047280434</strong>. Please pick up the call to talk to Sonara.`, 'success');
+                    appendSystemMessage(`📞 Exotel phone call dispatched to +91-${cleanPhone}. Caller ID: 08047280434.`);
                 } else {
                     const errMsg = data.error || 'Failed to place call';
                     if (errMsg.toLowerCase().includes('kyc') || errMsg.toLowerCase().includes('unverified') || errMsg.toLowerCase().includes('not yet kyc compliant')) {
