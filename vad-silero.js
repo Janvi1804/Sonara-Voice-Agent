@@ -39,7 +39,9 @@ export class SileroVAD {
 
         // Gating & onset state
         this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 2);
-        this.bargeInConfirmFrames     = Math.max(1, options.bargeInConfirmFrames !== undefined ? options.bargeInConfirmFrames : 6);
+        this.bargeInConfirmFrames     = Math.max(1, options.bargeInConfirmFrames !== undefined ? options.bargeInConfirmFrames : 14);
+        this.bargeInThreshold         = options.bargeInThreshold || 0.85;
+        this.bargeInMinRms            = options.bargeInMinRms || 0.080;
 
         // Callbacks
         this.onSpeechStart        = options.onSpeechStart || (() => {});
@@ -155,6 +157,10 @@ export class SileroVAD {
         let prob = 0;
         const now = performance.now();
 
+        if (!this.session && !this.isLoading && !this.hasFailed && getOrt()) {
+            this.init().catch(() => {});
+        }
+
         if (this.isReady && this.session) {
             // Prepare 512-sample Float32 slice
             let frame512 = pcmData;
@@ -197,16 +203,22 @@ export class SileroVAD {
 
         // 1. AI-Speaking Gate with Genuine User Barge-In
         if (this.aiIsSpeaking) {
-            if (prob >= 0.70 && rms >= 0.040) {
+            // Echo cancellation safety: In acoustic fallback mode (no ONNX session), speaker bleed easily reaches RMS 0.04-0.06.
+            // Barge-in must require genuine loud direct user voice (RMS >= 0.095) and sustained frames so speaker audio never self-interrupts.
+            const minRms = this.session ? this.bargeInMinRms : Math.max(this.bargeInMinRms, 0.10);
+            const minProb = this.session ? this.bargeInThreshold : 0.92;
+            const requiredFrames = this.session ? this.bargeInConfirmFrames : Math.max(this.bargeInConfirmFrames, 18);
+
+            if (prob >= minProb && rms >= minRms) {
                 this._bargeInConfirmCount++;
-                if (this._bargeInConfirmCount >= this.bargeInConfirmFrames) {
+                if (this._bargeInConfirmCount >= requiredFrames) {
                     this._bargeInConfirmCount = 0;
                     this._onsetConfirmCount = 0;
                     this.isSpeaking = true;
                     this.speakingStartTime = now;
                     this.lastSpeechTime = now;
                     if (this._debugLog) {
-                        console.log('[SileroVAD] ⚡ Barge-in Confirmed:', { prob, rms, frames: this.bargeInConfirmFrames });
+                        console.log('[SileroVAD] ⚡ Barge-in Confirmed:', { prob, rms, frames: requiredFrames });
                     }
                     this.onBargeIn();
                     this.onSpeechStart();

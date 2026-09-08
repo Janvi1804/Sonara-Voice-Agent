@@ -86,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSpeechText = '';
     let isAiThinking = false;
     let isAiSpeaking = false;
+    let isWelcomeGreetingPlaying = false;
     let isSessionPaused = false;
     let turnStartTime = 0;
     let activeChatAbortController = null;
@@ -176,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleTtsEnd = () => {
+        isWelcomeGreetingPlaying = false;
         clearTimeout(ttsSafetyWatchdog);
         clearTimeout(ttsEndGraceTimer);
         isAiSpeaking = false;
@@ -647,7 +649,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 minSpeechDurationMs: 200,
                 speechStartConfirmFrames: 2,
                 rmsFloor: 0.004,
-                bargeInConfirmFrames: 12,
+                bargeInConfirmFrames: 14,
+                bargeInThreshold: 0.85,
+                bargeInMinRms: 0.080,
                 debugLog: true,
                 onFrame: (data) => {
                     const probPct = Math.round(data.prob * 100);
@@ -701,6 +705,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('[App] Short sound suppressed, Whisper buffer cleared. Duration:', Math.round(duration) + 'ms');
                 },
                 onBargeIn: () => {
+                    // Suppress barge-in during initial welcome greeting to prevent laptop speaker bleed cut-off
+                    if (isWelcomeGreetingPlaying) {
+                        console.log('🔇 Barge-in suppressed during initial welcome greeting to prevent speaker echo cut-off.');
+                        return;
+                    }
                     // Confirmed genuine user speech while AI TTS is playing (after bargeInConfirmFrames).
                     console.log('⚡ BARGE-IN CONFIRMED: User spoke during AI output. Interrupting TTS.');
                     if (ttsEngine) ttsEngine.interrupt();
@@ -1217,7 +1226,12 @@ document.addEventListener('DOMContentLoaded', () => {
         appendChatMessage('assistant', welcomeText);
         conversationHistory.push({ role: 'assistant', content: welcomeText });
         if (ttsEngine) {
+            isWelcomeGreetingPlaying = true;
             ttsEngine.speak(welcomeText);
+            // Safety: greeting takes ~4.5s; release flag after 6s max
+            setTimeout(() => {
+                isWelcomeGreetingPlaying = false;
+            }, 6000);
         }
     };
 
