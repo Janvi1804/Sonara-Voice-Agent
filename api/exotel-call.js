@@ -51,7 +51,10 @@ export default async function handler(req, res) {
         const apiKey     = process.env.EXOTEL_API_KEY;
         const apiToken   = process.env.EXOTEL_API_TOKEN;
         const callerId   = process.env.EXOTEL_CALLER_ID || '08047280434';
-        const appId      = process.env.EXOTEL_APP_ID || '1336879';
+        // Sonara Voicebot Flow ID in revtidigital3 is 1336879 (ignore legacy 1327980 Landing Flow)
+        const appId      = (process.env.EXOTEL_APP_ID && process.env.EXOTEL_APP_ID !== '1327980') 
+            ? process.env.EXOTEL_APP_ID 
+            : '1336879';
 
         if (!apiKey || !apiToken) {
             return res.status(500).json({
@@ -59,9 +62,9 @@ export default async function handler(req, res) {
             });
         }
 
-        // Warm-up ping to Render WebSocket bridge to avoid cold-start delay
+        // Warm-up ping to Render WebSocket bridge to avoid cold-start delay (allow up to 6s)
         try {
-            await fetch('https://sonara-voice-agent.onrender.com/health', { signal: AbortSignal.timeout(3000) }).catch(() => {});
+            await fetch('https://sonara-voice-agent.onrender.com/health', { signal: AbortSignal.timeout(6000) }).catch(() => {});
         } catch (_) {}
 
         const authHeader = 'Basic ' + Buffer.from(`${apiKey}:${apiToken}`).toString('base64');
