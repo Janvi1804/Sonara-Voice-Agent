@@ -45,16 +45,12 @@ export default async function handler(req, res) {
         // Exotel expects Indian phone numbers with leading 0 (e.g. 09057201392)
         const exotelFormattedPhone = `0${normalizedPhone}`;
 
-        // Exotel Configuration — read exclusively from server-side environment variables.
-        // No hardcoded fallbacks. If any variable is absent the request is rejected with HTTP 500.
-        const accountSid = process.env.EXOTEL_ACCOUNT_SID || 'revtidigital3';
+        // Exotel Configuration — defaults to verified converseai2 account
+        const accountSid = process.env.EXOTEL_ACCOUNT_SID || 'converseai2';
         const apiKey     = process.env.EXOTEL_API_KEY;
         const apiToken   = process.env.EXOTEL_API_TOKEN;
-        const callerId   = process.env.EXOTEL_CALLER_ID || '08047280434';
-        // Sonara Voicebot Flow ID in revtidigital3 is 1336879 (ignore legacy 1327980 Landing Flow)
-        const appId      = (process.env.EXOTEL_APP_ID && process.env.EXOTEL_APP_ID !== '1327980') 
-            ? process.env.EXOTEL_APP_ID 
-            : '1336879';
+        const callerId   = process.env.EXOTEL_CALLER_ID || '01414940075';
+        const appId      = process.env.EXOTEL_APP_ID || '1338545';
 
         if (!apiKey || !apiToken) {
             return res.status(500).json({
