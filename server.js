@@ -116,7 +116,17 @@ APPOINTMENT & DEMO BOOKING (LIVE CALL ACTION):
 - When caller asks to book an appointment or demo:
   1. Enthusiastically accept: "Ji bilkul! Mai aapka appointment abhi book kar deti hu."
   2. Ask for their Name, preferred Date (e.g. kal ya koi specific date), and Time slot (e.g. 10 AM, 11:30 AM, 2 PM, 3:30 PM, ya 5 PM).
-  3. Once they provide their details, confirm warmly: "Aapka [Date] ko [Time] baje appointment confirm ho gaya hai! Hamari team aapse connect karegi."`;
+  3. Once they provide their details, confirm warmly: "Aapka [Date] ko [Time] baje appointment confirm ho gaya hai! Hamari team aapse connect karegi."
+
+STRICT ANTI-HALLUCINATION & FACTUAL GROUNDING:
+- Answer ONLY using the verified company knowledge provided above.
+- NEVER invent facts, statistics, fake clients, fixed prices, or capabilities not listed.
+- If caller's question was cut off, incomplete, or unclear, say: "Maaf kijiye, mai theek se sun nahi payi. Kya aap dobaara bol sakte hain?"
+- NEVER guess or make up what the caller was asking.
+
+PRONUNCIATION & STEADY PACING:
+- Speak at a calm, natural, and steady pace. Do NOT rush words.
+- Keep sentences short, clean, and well-punctuated so speech sounds clear and natural on the phone.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI Services
@@ -131,7 +141,7 @@ async function stt(wavBuf) {
     form.append('model', 'whisper-large-v3-turbo');
     form.append('response_format', 'verbose_json');
     form.append('temperature', '0');
-    form.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish, case studies.');
+    form.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, pricing, services, or booking.');
 
     const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
@@ -164,7 +174,31 @@ function clampToMax5Lines(text) {
     return clean;
 }
 
-/** Groq LLM — generates Sonara's spoken reply */
+/** Pre-process and format text for natural, steady ElevenLabs spoken delivery */
+function humanizeForTts(text) {
+    if (!text) return '';
+    return text
+        .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+        .replace(/[*_#`~[\]()<>{}]/g, '')
+        .replace(/https?:\/\/[^\s]+/gi, '')
+        .replace(/\btheconverseai\.com\/[^\s]*/gi, 'the converse a i website')
+        .replace(/\btheconverseai\.com\b/gi, 'the converse a i dot com')
+        .replace(/\bAI\b/g, 'A I ')
+        .replace(/\bAPI\b/g, 'A P I ')
+        .replace(/\bCRM\b/g, 'C R M ')
+        .replace(/\bERP\b/g, 'E R P ')
+        .replace(/\bRAG\b/g, 'R A G ')
+        .replace(/\bCSAT\b/g, 'C SAT ')
+        .replace(/\+91[-\s]?(\d{5})[-\s]?(\d{5})/g, '$1 $2')
+        .replace(/(\d{1,2}):00\s*(AM|am)/gi, '$1 AM')
+        .replace(/(\d{1,2}):00\s*(PM|pm)/gi, '$1 PM')
+        .replace(/(\d{1,2}):30\s*(AM|am)/gi, '$1 30 AM')
+        .replace(/(\d{1,2}):30\s*(PM|pm)/gi, '$1 30 PM')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+/** Groq LLM — generates Sonara's spoken reply with strict low temperature to eliminate hallucinations */
 async function llm(history, userText) {
     const groqKey = process.env.GROQ_API_KEY || GROQ_KEY;
     if (!groqKey) return "I'm sorry, my language system is temporarily offline. Please try calling back in a moment.";
@@ -186,7 +220,7 @@ async function llm(history, userText) {
                 body: JSON.stringify({
                     model: modelCandidate,
                     messages,
-                    temperature: 0.65,
+                    temperature: 0.2,
                     max_tokens: 220
                 }),
                 signal: AbortSignal.timeout(9000)
@@ -219,15 +253,24 @@ async function* tts(text) {
         logErr('TTS', 'No ELEVENLABS_API_KEY configured in environment!');
         return;
     }
+    const cleanSpokenText = humanizeForTts(text);
+    if (!cleanSpokenText) return;
+
     // Exotel requires 16-bit Linear PCM at 8000 Hz
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=pcm_8000&optimize_streaming_latency=4`;
+    // eleven_turbo_v2_5 + stability 0.70 ensures steady, clear pronunciation without rushing
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}/stream?output_format=pcm_8000&optimize_streaming_latency=3`;
     const r = await fetch(url, {
         method: 'POST',
         headers: { 'xi-api-key': elKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            text,
-            model_id: 'eleven_flash_v2_5',
-            voice_settings: { stability: 0.45, similarity_boost: 0.82, style: 0.1, use_speaker_boost: true }
+            text: cleanSpokenText,
+            model_id: 'eleven_turbo_v2_5',
+            voice_settings: {
+                stability: 0.70,
+                similarity_boost: 0.85,
+                style: 0.0,
+                use_speaker_boost: true
+            }
         })
     });
     if (!r.ok) {
@@ -333,11 +376,11 @@ wss.on('connection', (ws) => {
      *    Normal speech     : RMS 700 – 3500
      *    Loud speech       : RMS 3500+
      */
-    const SPEECH_RMS        = 250;  // above → caller speaking
-    const BARGE_RMS         = 1500; // caller interruption threshold
-    const SILENCE_FRAMES    = 16;   // ~320ms silence (at ~20ms/frame) → utterance finished
-    const MIN_SPEECH_FRAMES = 5;    // ~100ms min speech to reject quick noise clicks
-    const MIN_AUDIO_BYTES   = 4000; // ~250ms of audio (16,000 bytes/sec * 0.25)
+    const SPEECH_RMS        = 320;  // above → caller speaking (filters background hum and line hiss)
+    const BARGE_RMS         = 1600; // caller interruption threshold
+    const SILENCE_FRAMES    = 42;   // ~840ms silence (at ~20ms/frame) → allows caller natural pause time without cutting off
+    const MIN_SPEECH_FRAMES = 10;   // ~200ms min speech to reject quick noise clicks/breath
+    const MIN_AUDIO_BYTES   = 8000; // ~500ms min audio to prevent false triggers
     const BARGE_COOLDOWN_MS = 1000; // allow interruption after 1.0s
 
     /* ── Audio helpers: Exotel requires chunks in multiples of 320 bytes (min 3.2 KB = 3200 bytes) ── */
@@ -462,6 +505,19 @@ wss.on('connection', (ws) => {
                     // Caller spoke for >= 1s, but STT missed it — prompt caller
                     await speak("I'm sorry, I didn't quite catch that. Could you please repeat your question?");
                 }
+                return;
+            }
+
+            // Filter common Whisper phantom hallucinations triggered by background phone noise
+            const lower = userText.toLowerCase().trim();
+            const isPhantom = [
+                'thank you for watching', 'thanks for watching', 'subtitles by',
+                'subscribe to', 'translated by', 'copyright', 'amara.org',
+                'you', 'thank you', 'namaste.'
+            ].some(h => lower === h || lower === `${h}.`);
+
+            if (isPhantom && raw.length < 24000) {
+                log('Pipeline', `⚠️ Discarded Whisper phantom hallucination: "${userText}"`);
                 return;
             }
 

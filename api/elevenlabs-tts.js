@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
         // Jessica — natural, human-like voice
         const voiceId = voice_id || 'cgSgspJ2msm6clMCkdW9';
-        const modelId = model_id || 'eleven_flash_v2_5';
+        const modelId = model_id || 'eleven_turbo_v2_5';
 
         const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=3`, {
             method: 'POST',
@@ -56,9 +56,9 @@ export default async function handler(req, res) {
                 text: sanitizedText,
                 model_id: modelId,
                 voice_settings: {
-                    stability: 0.40,
-                    similarity_boost: 0.82,
-                    style: 0.15,
+                    stability: 0.70,
+                    similarity_boost: 0.85,
+                    style: 0.0,
                     use_speaker_boost: true
                 }
             })
