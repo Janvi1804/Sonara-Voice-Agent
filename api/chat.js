@@ -224,7 +224,7 @@ ${ragContext}`;
                     body: JSON.stringify({
                         model: candidate,
                         messages: formattedMessages,
-                        temperature: Number(temperature) || 0.65,
+                        temperature: typeof temperature !== 'undefined' && !isNaN(Number(temperature)) ? Number(temperature) : 0.15,
                         max_tokens: Math.min(250, Math.max(120, Number(max_tokens) || 200))
                     })
                 });

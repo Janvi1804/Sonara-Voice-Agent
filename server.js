@@ -190,6 +190,7 @@ function humanizeForTts(text) {
         .replace(/\bRAG\b/g, 'R A G ')
         .replace(/\bCSAT\b/g, 'C SAT ')
         .replace(/\+91[-\s]?(\d{5})[-\s]?(\d{5})/g, '$1 $2')
+        .replace(/\b([6-9]\d{4})[-\s]?(\d{5})\b/g, '$1 $2')
         .replace(/(\d{1,2}):00\s*(AM|am)/gi, '$1 AM')
         .replace(/(\d{1,2}):00\s*(PM|pm)/gi, '$1 PM')
         .replace(/(\d{1,2}):30\s*(AM|am)/gi, '$1 30 AM')
@@ -220,7 +221,7 @@ async function llm(history, userText) {
                 body: JSON.stringify({
                     model: modelCandidate,
                     messages,
-                    temperature: 0.2,
+                    temperature: 0.15,
                     max_tokens: 220
                 }),
                 signal: AbortSignal.timeout(9000)
@@ -378,7 +379,7 @@ wss.on('connection', (ws) => {
      */
     const SPEECH_RMS        = 320;  // above → caller speaking (filters background hum and line hiss)
     const BARGE_RMS         = 1600; // caller interruption threshold
-    const SILENCE_FRAMES    = 42;   // ~840ms silence (at ~20ms/frame) → allows caller natural pause time without cutting off
+    const SILENCE_FRAMES    = 43;   // ~860ms silence (at ~20ms/frame) → optimal 850ms sweet spot for natural speech pause
     const MIN_SPEECH_FRAMES = 10;   // ~200ms min speech to reject quick noise clicks/breath
     const MIN_AUDIO_BYTES   = 8000; // ~500ms min audio to prevent false triggers
     const BARGE_COOLDOWN_MS = 1000; // allow interruption after 1.0s
