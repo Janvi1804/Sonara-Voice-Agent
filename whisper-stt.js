@@ -94,8 +94,33 @@ export class WhisperSTT {
         if (!result || !result.text) return '';
 
         const text = result.text.trim();
+
+        // ── Post-transcription junk filter ──
+        // Discard Whisper hallucination artifacts that are purely punctuation/noise
+        // e.g. ",", ",,", ".", "..", "...", "،" (Arabic comma), etc.
+        const strippedJunk = text.replace(/[,.\s،؟!?।।]+/g, '').trim();
+        if (strippedJunk.length === 0) {
+            console.log('[GroqWhisper] Discarding junk-only transcript:', JSON.stringify(text));
+            this.audioChunks = [];
+            return '';
+        }
+
+        // Discard Whisper phantom single-word hallucinations from background noise
+        const lowerText = text.toLowerCase().trim().replace(/[^a-z0-9\u0900-\u097f\s]/g, '').trim();
+        const phantomPhrases = [
+            'you', 'thank you', 'thanks', 'namaste', 'um', 'uh', 'hmm', 'hm',
+            'music', 'applause', 'laughter', 'silence', 'background noise',
+            'hindi', 'english', 'hinglish'
+        ];
+        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.5) {
+            console.log('[GroqWhisper] Discarding phantom hallucination (high no_speech_prob):', JSON.stringify(text));
+            this.audioChunks = [];
+            return '';
+        }
+
         this.onTranscript(text);
         return text;
+
     }
 
     encodeWAV(samples) {

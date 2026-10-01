@@ -56,10 +56,10 @@ export default async function handler(req, res) {
                 text: sanitizedText,
                 model_id: modelId,
                 voice_settings: {
-                    stability: 0.70,
-                    similarity_boost: 0.85,
-                    style: 0.0,
-                    use_speaker_boost: true
+                    stability: 0.45,          // Lower = more natural variation (was 0.70 — too monotone/robotic)
+                    similarity_boost: 0.85,   // Keep voice consistent with original
+                    style: 0.35,              // Add expressiveness (was 0.0 — completely flat/robotic)
+                    use_speaker_boost: true   // Enhances clarity and presence
                 }
             })
         });

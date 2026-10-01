@@ -122,6 +122,29 @@ document.addEventListener('DOMContentLoaded', () => {
     appointmentDB.init().catch(() => {});
     logger.init().catch(() => {});
 
+    // ── ElevenLabs Error Banner: displayed when API key missing/quota exhausted ──
+    // Prevents silent robot voice without any visible warning for the developer.
+    let elevenLabsErrorShown = false;
+    window.addEventListener('elevenlabs-error', (e) => {
+        if (elevenLabsErrorShown) return;
+        elevenLabsErrorShown = true;
+        const banner = document.getElementById('humanHandoffBanner') || document.querySelector('.system-banner');
+        if (banner) {
+            banner.style.display = 'block';
+            const reasonEl = document.getElementById('handoffReason');
+            if (reasonEl) {
+                reasonEl.textContent = `⚠️ ElevenLabs TTS Failed — Robot voice fallback active. Check ELEVENLABS_API_KEY on Vercel & quota. Error: ${e.detail?.message || 'Unknown'}`;
+            }
+        }
+        // Also log prominently in console
+        console.error('══════════════════════════════════════════════');
+        console.error('❌ ELEVENLABS TTS OFFLINE — ROBOT VOICE ACTIVE');
+        console.error('Fix: 1) Set ELEVENLABS_API_KEY in Vercel env vars');
+        console.error('     2) Check ElevenLabs dashboard for quota exhaustion');
+        console.error('     3) Redeploy after adding/refreshing the API key');
+        console.error('══════════════════════════════════════════════');
+    });
+
     // Show/hide token fields dynamically based on provider & TTS engine
     const updateProviderFields = () => {
         const prov = selLlmProvider ? selLlmProvider.value : 'groq';

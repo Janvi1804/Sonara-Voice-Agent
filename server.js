@@ -267,9 +267,9 @@ async function* tts(text) {
             text: cleanSpokenText,
             model_id: 'eleven_turbo_v2_5',
             voice_settings: {
-                stability: 0.70,
+                stability: 0.45,          // Lower = more natural variation
                 similarity_boost: 0.85,
-                style: 0.0,
+                style: 0.35,              // Add expressiveness (was 0.0 — completely flat)
                 use_speaker_boost: true
             }
         })

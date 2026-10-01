@@ -56,24 +56,23 @@ export class ElevenLabsTTS {
     }
 
     /**
-     * Clean text of markdown, latex, emojis and robotic syntax for fluent human speech
+     * Clean text of markdown and special characters for fluent ElevenLabs speech.
+     * IMPORTANT: Do NOT expand acronyms with spaces (like "A I", "C R M") —
+     * ElevenLabs reads spaced letters choppy and robotically.
+     * ElevenLabs naturally pronounces "AI", "CRM", "API", "ROI" correctly.
      */
     humanizeSpokenText(text) {
         if (!text) return '';
         let cleaned = text
             .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-            .replace(/\bAI\b/g, 'A I')
-            .replace(/\bAPI\b/g, 'A P I')
-            .replace(/\bCRM\b/g, 'C R M')
-            .replace(/\bERP\b/g, 'E R P')
-            .replace(/\bRAG\b/g, 'R A G')
-            .replace(/\bCSAT\b/g, 'C SAT')
-            .replace(/\bNPS\b/g, 'N P S')
-            .replace(/\bROI\b/g, 'R O I')
-            .replace(/theconverseai\.com/gi, 'the converse A I dot com')
-            .replace(/contact@theconverseai\.com/gi, 'contact at the converse A I dot com')
-            .replace(/\+91-(\d{5})(\d{5})/g, '+91 $1 $2')
+            // Remove markdown formatting characters
             .replace(/[*_#`~[\]]/g, '')
+            // Make URLs speakable
+            .replace(/theconverseai\.com/gi, 'the Converse AI website')
+            .replace(/contact@theconverseai\.com/gi, 'contact at theconverseai dot com')
+            // Format phone numbers with spaces for natural reading
+            .replace(/\+91-(\d{5})(\d{5})/g, '+91 $1 $2')
+            // Remove excessive whitespace
             .replace(/\s+/g, ' ')
             .trim();
 
@@ -200,7 +199,12 @@ export class ElevenLabsTTS {
                     console.log('[ElevenLabsTTS] Synthesis aborted.');
                     resolve();
                 } else {
-                    console.warn('[ElevenLabsTTS] Quota exceeded or synthesis error, falling back to Web Speech API:', err.message);
+                    // Log clearly so it's visible in DevTools console
+                    console.error('[ElevenLabsTTS] ❌ ElevenLabs API FAILED — check ELEVENLABS_API_KEY & quota on Vercel:', err.message);
+                    // Dispatch event so UI can show a warning banner
+                    window.dispatchEvent(new CustomEvent('elevenlabs-error', { detail: { message: err.message } }));
+                    // Fallback to browser Web Speech API (will sound robotic — fix by renewing ElevenLabs key/quota)
+                    console.warn('[ElevenLabsTTS] ⚠️ Falling back to Web Speech API (robot voice). To restore ElevenLabs: check ELEVENLABS_API_KEY env var on Vercel and confirm quota is not exhausted.');
                     this.speakWebSpeechFallback(spokenText, resolve);
                 }
             }
