@@ -51,54 +51,48 @@ export class SarvamTTS {
     setSpeed(pace) { this.pace = pace || 1.0; }
     getAnalyser() { return this.analyser || null; }
 
-    splitIntoSentences(text) {
-        if (!text) return [];
-        const regex = /[^.!?।\n]+[.!?।\n]+(?:\s+|$)|[^.!?।\n]+$/g;
-        const matches = text.match(regex) || [];
-        return matches.map(s => s.trim()).filter(s => s.length > 0);
-    }
-
-    cleanText(text) {
-        if (!text) return '';
-        return text
-            .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-            .replace(/[*_#`~[\]]/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
     /**
-     * Smart language detection from full response text.
-     * Detects once per speak() call so all sentences use same language.
-     *
-     * Rules (in priority order):
-     * 1. Devanagari script detected → hi-IN (definite Hindi)
-     * 2. High proportion of Hindi/Hinglish keywords → hi-IN
-     * 3. Otherwise → en-IN (English)
+     * Split ONLY at paragraph/major breaks for large chunks.
+     * Short text → single chunk. Long text → split by paragraph or ~400 char boundary.
+     * Never split at sentence periods — that causes inter-sentence API gaps.
      */
-    detectLanguage(text) {
-        if (!text) return 'en-IN';
+    splitIntoChunks(text) {
+        if (!text) return [];
+        const MAX_CHUNK = 400; // Sarvam handles up to 500 chars per request
 
-        // Rule 1: Devanagari script = definitely Hindi
-        if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+        // Short enough → single chunk (zero pause, one API call)
+        if (text.length <= MAX_CHUNK) return [text];
 
-        // Rule 2: Count Hindi/Hinglish keywords vs total words
-        const hindiPattern = /\b(hai|hain|kya|nahi|nahin|aur|mujhe|mera|meri|apka|apki|kal|aaj|theek|bahut|bohot|accha|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|dhanyawad|haan|han|bata|batao|karo|karna|chahiye|samajh|main|hoon|aap|yeh|woh|iska|uska|humara|tumhara|unka|kyun|kaise|kab|kahan|kitna|lekin|isliye|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|kam|thoda|hoga|karein|dijiye|lijiye|suniye|shukriya|swagat|ji|nahi|ho|gaya|gayi|raha|rahi|rahe|toh|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|char|paanch|agar|jab|tab)\b/gi;
-
-        const hindiMatches = (text.match(hindiPattern) || []).length;
-        const totalWords = text.split(/\s+/).filter(w => w.length > 1).length;
-
-        // If 15%+ of words are Hindi → treat as Hindi/Hinglish
-        if (hindiMatches > 0 && totalWords > 0 && (hindiMatches / totalWords) >= 0.15) {
-            return 'hi-IN';
+        // Split by paragraph breaks first
+        const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(p => p.length > 0);
+        if (paragraphs.length > 1) {
+            // Merge short paragraphs together up to MAX_CHUNK
+            const chunks = [];
+            let current = '';
+            for (const p of paragraphs) {
+                if ((current + ' ' + p).trim().length <= MAX_CHUNK) {
+                    current = (current + ' ' + p).trim();
+                } else {
+                    if (current) chunks.push(current);
+                    current = p;
+                }
+            }
+            if (current) chunks.push(current);
+            return chunks.length > 0 ? chunks : [text.slice(0, MAX_CHUNK)];
         }
 
-        return 'en-IN';
+        // No paragraph breaks — split at natural sentence boundary closest to MAX_CHUNK
+        const mid = Math.floor(text.length / 2);
+        const sentenceBreak = text.lastIndexOf('. ', mid + 50);
+        if (sentenceBreak > 50) {
+            return [text.slice(0, sentenceBreak + 1).trim(), text.slice(sentenceBreak + 1).trim()].filter(Boolean);
+        }
+        return [text.slice(0, MAX_CHUNK), text.slice(MAX_CHUNK)].filter(Boolean);
     }
 
     /**
      * Fetch audio from Sarvam API — returns a Blob or null on failure
-     * @param {string} text - sentence text
+     * @param {string} text - chunk text
      * @param {string} lang - 'hi-IN' or 'en-IN'
      */
     async _fetchAudio(text, lang) {
@@ -109,7 +103,7 @@ export class SarvamTTS {
                 body: JSON.stringify({
                     text,
                     speaker: this.speaker,
-                    language_code: lang,   // Detected from full response
+                    language_code: lang,
                     pace: this.pace
                 })
             });
@@ -130,26 +124,25 @@ export class SarvamTTS {
     }
 
     /**
-     * Main speak — detects language ONCE from full response, then pipelines all sentences
-     * Hindi/Hinglish response → hi-IN | English response → en-IN
+     * Main speak — detects language once, splits into LARGE chunks (not tiny sentences),
+     * pipelines fetch+play to eliminate all inter-chunk pauses.
      */
     async speak(text) {
         if (!text || !text.trim()) return;
         this.isInterrupted = false;
 
-        // Detect language ONCE from the complete response text
+        // Detect language from full response text (once)
         const detectedLang = this.detectLanguage(text);
-        console.log(`[SarvamTTS] 🌐 Language detected: ${detectedLang} for: "${text.substring(0, 50)}..."`);
+        console.log(`[SarvamTTS] 🌐 Lang: ${detectedLang} | Chars: ${text.length}`);
 
-        const sentences = this.splitIntoSentences(text);
-        if (sentences.length === 0) return;
+        // Split into LARGE chunks — not tiny sentences
+        const chunks = this.splitIntoChunks(text);
+        if (chunks.length === 0) return;
 
-        // Store lang with each sentence as [text, lang] pair
-        sentences.forEach(s => this.queue.push([this.cleanText(s), detectedLang]));
+        console.log(`[SarvamTTS] 📦 ${chunks.length} chunk(s) — no sentence gaps`);
+        chunks.forEach(c => this.queue.push([this.cleanText(c), detectedLang]));
         if (!this.isPlaying) this._runPipeline();
     }
-
-
     /**
      * PIPELINE: Fetches next sentence in background while current plays.
      * Eliminates the network wait gap between sentences.
