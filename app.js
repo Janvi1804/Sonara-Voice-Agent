@@ -5,8 +5,9 @@
  */
 import { SileroVAD } from './vad-silero.js';
 import { WhisperSTT } from './whisper-stt.js';
-// import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Temporarily disabled — using Fish Audio
-import { FishAudioTTS } from './fish-speech-tts.js';   // 🎵 Fish Audio TTS (active)
+// import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
+// import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
+import { SarvamTTS } from './sarvam-tts-client.js';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -309,29 +310,38 @@ document.addEventListener('DOMContentLoaded', () => {
             txtCustomRagUrl.value = localStorage.getItem('sonara_custom_rag_url');
         }
 
-        // 🎵 Fish Audio TTS Engine (ElevenLabs temporarily disabled)
-        // To switch back: comment this block and uncomment the ElevenLabsTTS block below
+        // 🗣️ Sarvam AI TTS Engine — Ritu voice, bulbul:v3 (ACTIVE)
+        // To switch back to ElevenLabs: comment this block, uncomment ElevenLabs block below
         if (!ttsEngine) {
-            ttsEngine = new FishAudioTTS(audioContext, {
-                referenceId: null,  // Set a Fish Audio voice model reference_id here if needed
-                onStart: () => handleTtsStart('Fish Audio TTS'),
+            ttsEngine = new SarvamTTS(audioContext, {
+                speaker: 'ritu',    // Ritu — natural Hindi/Hinglish female voice
+                pace: 1.0,
+                onStart: () => handleTtsStart('Sarvam AI (Ritu)'),
                 onSentenceStart: (sentence) => kickTtsWatchdog('sentence'),
                 onEnd: handleTtsEnd
             });
         }
 
-        // 🔇 ElevenLabs TTS — temporarily disabled (uncomment to restore)
+        // 🔇 Fish Audio — disabled (insufficient API credits)
+        // if (!ttsEngine) {
+        //     ttsEngine = new FishAudioTTS(audioContext, {
+        //         onStart: () => handleTtsStart('Fish Audio TTS'),
+        //         onSentenceStart: (sentence) => kickTtsWatchdog('sentence'),
+        //         onEnd: handleTtsEnd
+        //     });
+        // }
+
+        // 🔇 ElevenLabs — disabled (uncomment to restore)
         // if (!ttsEngine) {
         //     ttsEngine = new ElevenLabsTTS(audioContext, {
-        //         voiceId: selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9',
+        //         voiceId: 'cgSgspJ2msm6clMCkdW9',
         //         modelId: 'eleven_flash_v2_5',
         //         onStart: () => handleTtsStart('ElevenLabs (Jessica)'),
         //         onSentenceStart: (sentence) => kickTtsWatchdog('sentence'),
         //         onEnd: handleTtsEnd
         //     });
-        // } else {
-        //     ttsEngine.setVoice(selTtsVoice ? selTtsVoice.value : 'cgSgspJ2msm6clMCkdW9');
         // }
+
 
 
         updateProviderFields();
