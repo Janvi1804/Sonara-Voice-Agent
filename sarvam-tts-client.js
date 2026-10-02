@@ -52,6 +52,22 @@ export class SarvamTTS {
     getAnalyser() { return this.analyser || null; }
 
     /**
+     * Detect language from full response text (called once per speak()).
+     * hi-IN for Hindi/Hinglish, en-IN for English.
+     */
+    detectLanguage(text) {
+        if (!text) return 'en-IN';
+        // Devanagari script → definitely Hindi
+        if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+        // Count Hindi/Hinglish keywords
+        const hindiPattern = /\b(hai|hain|kya|nahi|nahin|aur|mujhe|mera|meri|apka|apki|kal|aaj|theek|bahut|bohot|accha|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|haan|bata|batao|karo|karna|chahiye|main|hoon|aap|yeh|woh|kyun|kaise|kab|kahan|lekin|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|thoda|hoga|toh|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|agar|jab|tab|ji)\b/gi;
+        const hindiMatches = (text.match(hindiPattern) || []).length;
+        const totalWords = text.split(/\s+/).filter(w => w.length > 1).length;
+        if (hindiMatches > 0 && totalWords > 0 && (hindiMatches / totalWords) >= 0.15) return 'hi-IN';
+        return 'en-IN';
+    }
+
+    /**
      * Split ONLY at paragraph/major breaks for large chunks.
      * Short text → single chunk. Long text → split by paragraph or ~400 char boundary.
      * Never split at sentence periods — that causes inter-sentence API gaps.
