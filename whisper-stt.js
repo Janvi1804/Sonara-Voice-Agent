@@ -20,8 +20,8 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.005;
-        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 300;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.010;
+        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 350;
     }
 
 
@@ -29,7 +29,7 @@ export class WhisperSTT {
     setApiKey(key) { this.apiKey = key; }
     // Allow 'hi', 'en', or '' (auto-detect)
     setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
-    setRmsFloor(val) { this.rmsFloor = Math.max(0.001, Math.min(0.05, Number(val) || 0.004)); }
+    setRmsFloor(val) { this.rmsFloor = Math.max(0.002, Math.min(0.05, Number(val) || 0.010)); }
 
 
     clearBuffer() {
@@ -122,22 +122,29 @@ export class WhisperSTT {
         }
 
         // Discard any transcript where Whisper itself indicates low confidence / high silence probability
-        if (result.noSpeechProb > 0.60) {
+        if (result.noSpeechProb > 0.45) {
             console.log('[GroqWhisper] Discarding high no_speech_prob noise artifact:', { text, noSpeechProb: result.noSpeechProb.toFixed(3) });
             this.audioChunks = [];
             return '';
         }
 
-        const phantomPhrases = [
-            // English noise hallucinations
-            'you', 'namaste', 'um', 'uh', 'hmm', 'hm',
+        // Whisper's #1 most common phantom hallucinations on background noise/breaths
+        const noiseHallucinations = [
+            'thank you', 'thank you very much', 'thank you so much',
+            'thank you for watching', 'thanks for watching', 'thank you for listening',
+            'thanks', 'you', 'namaste', 'um', 'uh', 'hmm', 'hm',
             'music', 'applause', 'laughter', 'silence', 'background noise',
-            'hindi', 'english', 'hinglish'
+            'hindi', 'english', 'hinglish', 'bye', 'goodbye', 'subtitles by'
         ];
-        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.40) {
-            console.log('[GroqWhisper] Discarding phantom hallucination:', JSON.stringify(text));
-            this.audioChunks = [];
-            return '';
+
+        // If it matches a known phantom hallucination AND audio was faint, short, or had elevated noSpeechProb, discard it!
+        if (noiseHallucinations.includes(lowerText)) {
+            const isFaintOrSuspicious = (rms < 0.018) || (result.noSpeechProb > 0.15) || (durationMs < 650);
+            if (isFaintOrSuspicious) {
+                console.log('[GroqWhisper] Discarding background noise hallucination:', { text, noSpeechProb: result.noSpeechProb, rms: rms.toFixed(4), durationMs: Math.round(durationMs) });
+                this.audioChunks = [];
+                return '';
+            }
         }
 
 
@@ -185,8 +192,11 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Balanced prompt hint helps Whisper accurately detect English, Hindi and Hinglish
-            whisperForm.append('prompt', 'Hello, hi, how are you, Converse AI, Sonara, Namaste, pricing, services, WhatsApp automation, voice bot, demo, appointment, case study. Namaste, kaise hain aap, kya services hain.');
+            // Domain prompt strictly for proper nouns (prevents silence from being biassed into random conversational words)
+            whisperForm.append('prompt', 'Converse AI, Sonara, Revti Digital, WhatsApp automation, voice bot, demo, appointment, case study, StyleMart, LearnSphere, CareFirst Clinics.');
+            if (this.language) {
+                whisperForm.append('language', this.language);
+            }
 
 
 

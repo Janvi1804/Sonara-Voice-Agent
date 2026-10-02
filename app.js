@@ -634,9 +634,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const constraints = {
                 audio: {
-                    echoCancellation: chkAec ? chkAec.checked : true,
-                    noiseSuppression: chkNoiseSuppression ? chkNoiseSuppression.checked : true,
-                    autoGainControl: chkAutoGain ? chkAutoGain.checked : true
+                    echoCancellation: { ideal: chkAec ? chkAec.checked : true },
+                    noiseSuppression: { ideal: chkNoiseSuppression ? chkNoiseSuppression.checked : true },
+                    autoGainControl: { ideal: chkAutoGain ? chkAutoGain.checked : true },
+                    channelCount: 1
                 }
             };
 
@@ -686,21 +687,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 ttsEngine.setAudioContext(audioContext);
             }
 
-            // Initialize Silero VAD Engine
-            // speechStartConfirmFrames=3: require 3 consecutive above-threshold frames (~96ms)
-            // before declaring onset. Eliminates single-frame false triggers (clicks, plosives, chair creaks).
-            // rmsFloor=0.007: configurable, not hardcoded. Validate against quiet speech
-            // (soft-spoken users) before raising -- higher rmsFloor will reject quiet voices.
-            // bargeInConfirmFrames=5: require 5 consecutive high-energy frames to confirm barge-in
-            // during AI speech. Prevents speaker bleed (TTS audio via air gap) from triggering.
+            // Initialize Silero VAD Engine calibrated against ambient noise:
+            // threshold=0.52: requires genuine human voice confidence, ignoring ambient background hum
+            // speechStartConfirmFrames=3 (~96ms): ignores brief clicks, chair creaks, breathing
+            // minSpeechDurationMs=350: discards short non-speech sounds (<350ms)
+            // rmsFloor=0.010: rejects faint ambient room noise
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 600,
-                minSpeechDurationMs: 250,
-                speechStartConfirmFrames: 2,
-                rmsFloor: 0.006,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.52,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
+                minSpeechDurationMs: 350,
+                speechStartConfirmFrames: 3,
+                rmsFloor: 0.010,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,
@@ -935,22 +934,29 @@ document.addEventListener('DOMContentLoaded', () => {
         isAiThinking = false;
         isProcessingUtterance = false;
         currentGenerationId++; // Invalidate all in-flight LLM calls immediately
-        if (abortController) {
-            try { abortController.abort(); } catch (_) {}
+        if (activeChatAbortController) {
+            try { activeChatAbortController.abort(); } catch (_) {}
+            activeChatAbortController = null;
         }
         clearTimeout(sttCommitTimer);
         clearTimeout(pendingIncompleteTimer);
-        if (ttsEngine) ttsEngine.interrupt();
-        if (speechRecognition) {
-            try { speechRecognition.stop(); } catch (e) {}
+        if (ttsEngine) {
+            try { ttsEngine.interrupt(); } catch (_) {}
         }
-        if (scriptProcessor) scriptProcessor.disconnect();
-        if (micSource) micSource.disconnect();
+        if (speechRecognition) {
+            try { speechRecognition.stop(); } catch (_) {}
+        }
+        if (scriptProcessor) {
+            try { scriptProcessor.disconnect(); } catch (_) {}
+        }
+        if (micSource) {
+            try { micSource.disconnect(); } catch (_) {}
+        }
         if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
+            try { mediaStream.getTracks().forEach(track => track.stop()); } catch (_) {}
         }
         if (audioContext && audioContext.state !== 'closed') {
-            audioContext.close();
+            try { audioContext.close(); } catch (_) {}
         }
         if (vadEngine) {
             try { vadEngine.resetState(); } catch (_) {}
