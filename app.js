@@ -1752,7 +1752,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                     messages,
                     model: selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b',
                     max_tokens: 260,
-                    ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
+                    ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
+                    stream: true
                 })
             });
 
@@ -1762,25 +1763,96 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 return;
             }
 
-            if (!apiRes.ok) {
+            if (!apiRes.ok || !apiRes.body) {
                 const errData = await apiRes.json().catch(() => ({}));
                 const detail = errData.error || `HTTP ${apiRes.status}`;
                 throw new Error(`Groq API error: ${detail}`);
             }
 
-            const apiData = await apiRes.json();
-            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
-                console.log('[App] Discarding stale LLM payload due to barge-in.');
-                return;
+            // ─── Consume the SSE token stream, speaking each completed sentence immediately ───
+            const canSpeak = isCallActive && !!ttsEngine;
+            let rawAccumulated = '';
+            let speechBuffer = '';
+            let streamError = null;
+            let reportedModel = selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b';
+
+            const speakSentence = (sentence) => {
+                const spoken = sentence.replace(/[*_#`~[\]]/g, '').trim();
+                if (spoken && canSpeak) ttsEngine.speak(spoken);
+            };
+
+            const popCompleteSentences = (buf) => {
+                const sentences = [];
+                const re = /[.!?]+\s/g;
+                let lastIndex = 0, m;
+                while ((m = re.exec(buf)) !== null) {
+                    const end = m.index + m[0].length;
+                    sentences.push(buf.slice(lastIndex, end).trim());
+                    lastIndex = end;
+                }
+                return { sentences, remainder: buf.slice(lastIndex) };
+            };
+
+            const reader = apiRes.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let sseBuffer = '';
+
+            while (true) {
+                if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                    try { reader.cancel(); } catch (_) {}
+                    console.log('[App] Discarding stale LLM stream due to barge-in.');
+                    return;
+                }
+
+                const { done, value } = await reader.read();
+                if (done) break;
+                sseBuffer += decoder.decode(value, { stream: true });
+
+                const events = sseBuffer.split('\n\n');
+                sseBuffer = events.pop(); // keep incomplete trailing event for next read
+
+                for (const evt of events) {
+                    const line = evt.trim();
+                    if (!line.startsWith('data:')) continue;
+                    let json;
+                    try { json = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+
+                    if (json.error) {
+                        streamError = json.error;
+                        continue;
+                    }
+
+                    if (json.delta) {
+                        rawAccumulated += json.delta;
+                        markFirstToken();
+                        aiMessageBubble.textContent = rawAccumulated;
+
+                        speechBuffer += json.delta;
+                        const { sentences, remainder } = popCompleteSentences(speechBuffer);
+                        speechBuffer = remainder;
+                        sentences.forEach(speakSentence);
+                    }
+
+                    if (json.done) {
+                        rawAccumulated = json.text || rawAccumulated;
+                        reportedModel = json.model || reportedModel;
+                    }
+                }
             }
 
-            if (!apiData.text) {
+            if (streamError && !rawAccumulated) {
+                throw new Error(`Groq API error: ${streamError}`);
+            }
+
+            if (!rawAccumulated.trim()) {
                 throw new Error('Groq API error: Empty response from LLM.');
             }
 
-            fullResponse = sanitizeAiResponse(apiData.text.trim());
-            console.log(`[App] 🧠 Groq LLM (${apiData.model || 'qwen/qwen3.8-27b'}): "${fullResponse}"`);
-            markFirstToken();
+            // Flush whatever's left in the speech buffer (final sentence with no trailing punctuation)
+            if (speechBuffer.trim()) speakSentence(speechBuffer);
+
+            fullResponse = sanitizeAiResponse(rawAccumulated.trim());
+            console.log(`[App] 🧠 Groq LLM (${reportedModel}): "${fullResponse}"`);
             aiMessageBubble.textContent = fullResponse;
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
@@ -1800,9 +1872,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 return;
             }
 
-            if (ttsEngine) {
-                ttsEngine.speak(fullResponse);
-            } else {
+            if (!ttsEngine) {
                 setAgentState('listening', 'Connected & Listening (Silero VAD)');
             }
 
@@ -2010,7 +2080,9 @@ The conversation should feel like a natural conversation with a knowledgeable hu
     (function initCallAgentWidget() {
         const _overlay       = document.getElementById('callPhoneOverlay');
         const _btnCall       = document.getElementById('btnCallAgent');
-        const _btnEnd        = document.getElementById('btnEndCall');
+        const _btnEnd        = document.getElementById('btnOverlayEnd');
+        const _btnMute       = document.getElementById('btnOverlayMute');
+        const _btnInterrupt  = document.getElementById('btnOverlayInterrupt');
         const _inputName     = document.getElementById('callInputName');
         const _inputPhone    = document.getElementById('callInputPhone');
         const _overlayName   = document.getElementById('callOverlayCallerName');
@@ -2077,6 +2149,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             _stopDurTimer();
             _hideOverlay();
             _resetBtn();
+            // Reset mute UI/state so a new session doesn't inherit a muted mic
+            _isMicMuted = false;
+            if (_btnMute) {
+                _btnMute.classList.remove('active');
+                const icon = _btnMute.querySelector('i');
+                const label = _btnMute.querySelector('span');
+                if (icon)  icon.className = 'fa-solid fa-microphone';
+                if (label) label.textContent = 'Mute';
+            }
             // Remove call context from history
             conversationHistory = conversationHistory.filter(
                 m => !m.content?.startsWith('[CALL_CTX]')
@@ -2175,6 +2256,34 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             if (callBtnIcon)    callBtnIcon.className  = 'fa-solid fa-phone';
             if (callBtnText)    callBtnText.textContent = 'Start Real-Time Voice';
             setAgentState('idle', 'Agent Inactive • Click to Start');
+        });
+
+        // ── Mute / Unmute Microphone ────────────────────────────────────
+        let _isMicMuted = false;
+        _btnMute?.addEventListener('click', () => {
+            if (!isCallActive || !mediaStream) return;
+            _isMicMuted = !_isMicMuted;
+            mediaStream.getAudioTracks().forEach(track => { track.enabled = !_isMicMuted; });
+            _btnMute.classList.toggle('active', _isMicMuted);
+            const icon = _btnMute.querySelector('i');
+            const label = _btnMute.querySelector('span');
+            if (icon)  icon.className = _isMicMuted ? 'fa-solid fa-microphone-slash' : 'fa-solid fa-microphone';
+            if (label) label.textContent = _isMicMuted ? 'Unmute' : 'Mute';
+            console.log(`[CallAgent] mic_${_isMicMuted ? 'muted' : 'unmuted'}`);
+        });
+
+        // ── Interrupt Sonara While Speaking ──────────────────────────────
+        _btnInterrupt?.addEventListener('click', () => {
+            if (!isCallActive) return;
+            if (ttsEngine) ttsEngine.interrupt();
+            if (activeChatAbortController) {
+                try { activeChatAbortController.abort(); } catch (_) {}
+            }
+            currentGenerationId++;
+            isAiSpeaking = false;
+            isAiThinking = false;
+            setAgentState('listening', 'Connected & Listening (Silero VAD)');
+            console.log('[CallAgent] manual_interrupt — user clicked Interrupt');
         });
 
         // ── Exotel Phone Call Trigger ────────────────────────────────────
