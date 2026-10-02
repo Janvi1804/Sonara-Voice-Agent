@@ -68,9 +68,40 @@ export class SarvamTTS {
     }
 
     /**
-     * Fetch audio from Sarvam API — returns a Blob or null on failure
+     * Smart language detection from full response text.
+     * Detects once per speak() call so all sentences use same language.
+     *
+     * Rules (in priority order):
+     * 1. Devanagari script detected → hi-IN (definite Hindi)
+     * 2. High proportion of Hindi/Hinglish keywords → hi-IN
+     * 3. Otherwise → en-IN (English)
      */
-    async _fetchAudio(text) {
+    detectLanguage(text) {
+        if (!text) return 'en-IN';
+
+        // Rule 1: Devanagari script = definitely Hindi
+        if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+
+        // Rule 2: Count Hindi/Hinglish keywords vs total words
+        const hindiPattern = /\b(hai|hain|kya|nahi|nahin|aur|mujhe|mera|meri|apka|apki|kal|aaj|theek|bahut|bohot|accha|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|dhanyawad|haan|han|bata|batao|karo|karna|chahiye|samajh|main|hoon|aap|yeh|woh|iska|uska|humara|tumhara|unka|kyun|kaise|kab|kahan|kitna|lekin|isliye|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|kam|thoda|hoga|karein|dijiye|lijiye|suniye|shukriya|swagat|ji|nahi|ho|gaya|gayi|raha|rahi|rahe|toh|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|char|paanch|agar|jab|tab)\b/gi;
+
+        const hindiMatches = (text.match(hindiPattern) || []).length;
+        const totalWords = text.split(/\s+/).filter(w => w.length > 1).length;
+
+        // If 15%+ of words are Hindi → treat as Hindi/Hinglish
+        if (hindiMatches > 0 && totalWords > 0 && (hindiMatches / totalWords) >= 0.15) {
+            return 'hi-IN';
+        }
+
+        return 'en-IN';
+    }
+
+    /**
+     * Fetch audio from Sarvam API — returns a Blob or null on failure
+     * @param {string} text - sentence text
+     * @param {string} lang - 'hi-IN' or 'en-IN'
+     */
+    async _fetchAudio(text, lang) {
         try {
             const res = await fetch('/api/sarvam-tts', {
                 method: 'POST',
@@ -78,7 +109,7 @@ export class SarvamTTS {
                 body: JSON.stringify({
                     text,
                     speaker: this.speaker,
-                    language_code: this.language || undefined,
+                    language_code: lang,   // Detected from full response
                     pace: this.pace
                 })
             });
@@ -99,16 +130,25 @@ export class SarvamTTS {
     }
 
     /**
-     * Main speak — splits into sentences, starts pipeline
+     * Main speak — detects language ONCE from full response, then pipelines all sentences
+     * Hindi/Hinglish response → hi-IN | English response → en-IN
      */
     async speak(text) {
         if (!text || !text.trim()) return;
         this.isInterrupted = false;
+
+        // Detect language ONCE from the complete response text
+        const detectedLang = this.detectLanguage(text);
+        console.log(`[SarvamTTS] 🌐 Language detected: ${detectedLang} for: "${text.substring(0, 50)}..."`);
+
         const sentences = this.splitIntoSentences(text);
         if (sentences.length === 0) return;
-        sentences.forEach(s => this.queue.push(this.cleanText(s)));
+
+        // Store lang with each sentence as [text, lang] pair
+        sentences.forEach(s => this.queue.push([this.cleanText(s), detectedLang]));
         if (!this.isPlaying) this._runPipeline();
     }
+
 
     /**
      * PIPELINE: Fetches next sentence in background while current plays.
@@ -126,26 +166,28 @@ export class SarvamTTS {
         this.onStart();
 
         // Pre-fetch first sentence immediately
-        const firstText = this.queue[0];
-        if (!this._prefetchMap.has(firstText)) {
-            this._prefetchMap.set(firstText, this._fetchAudio(firstText));
+        const [firstText, firstLang] = this.queue[0];
+        const firstKey = firstText;
+        if (!this._prefetchMap.has(firstKey)) {
+            this._prefetchMap.set(firstKey, this._fetchAudio(firstText, firstLang));
         }
 
         while (this.queue.length > 0 && !this.isInterrupted) {
-            const currentText = this.queue.shift();
+            const [currentText, currentLang] = this.queue.shift();
+            const currentKey = currentText;
 
-            // Kick off pre-fetch for NEXT sentence in background (no await)
+            // Pre-fetch NEXT sentence in background while current plays
             if (this.queue.length > 0 && !this.isInterrupted) {
-                const nextText = this.queue[0];
-                if (!this._prefetchMap.has(nextText)) {
-                    this._prefetchMap.set(nextText, this._fetchAudio(nextText));
+                const [nextText, nextLang] = this.queue[0];
+                const nextKey = nextText;
+                if (!this._prefetchMap.has(nextKey)) {
+                    this._prefetchMap.set(nextKey, this._fetchAudio(nextText, nextLang));
                 }
             }
 
-            // Wait for current sentence audio (already being fetched)
-            const blobPromise = this._prefetchMap.get(currentText);
-            this._prefetchMap.delete(currentText);
-
+            // Wait for current audio (already fetching)
+            const blobPromise = this._prefetchMap.get(currentKey);
+            this._prefetchMap.delete(currentKey);
             const blob = blobPromise ? await blobPromise : null;
 
             if (this.isInterrupted) break;
@@ -163,6 +205,7 @@ export class SarvamTTS {
         this._prefetchMap.clear();
         if (!this.isInterrupted) this.onEnd();
     }
+
 
     /**
      * Play a Blob as audio — returns Promise that resolves when playback ends
