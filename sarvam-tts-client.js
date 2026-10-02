@@ -91,6 +91,24 @@ export class SarvamTTS {
     }
 
     /**
+     * Clean text before sending to Sarvam TTS.
+     * KEY FIX: Replace ". " (period+space) with ", " (comma+space)
+     * — Sarvam inserts a LONG prosodic pause at periods (sentence boundary).
+     * — Commas produce a short natural breath instead → fluent, continuous speech.
+     */
+    cleanText(text) {
+        if (!text) return '';
+        return text
+            .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '') // remove think tags
+            .replace(/[*_#`~[\]]/g, '')                       // remove markdown
+            .replace(/\.\s+/g, ', ')                          // ← KEY: period → comma (removes long pause)
+            .replace(/\.$/, '')                               // remove trailing period
+            .replace(/,\s*,+/g, ',')                          // clean up double commas
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
      * Fetch audio from Sarvam API — returns a Blob or null on failure
      * @param {string} text - chunk text
      * @param {string} lang - 'hi-IN' or 'en-IN'
