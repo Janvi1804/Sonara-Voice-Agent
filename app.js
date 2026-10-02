@@ -641,16 +641,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 await audioContext.resume();
             }
 
+            const wantAec = chkAec ? chkAec.checked : true;
+            const wantNoiseSuppression = chkNoiseSuppression ? chkNoiseSuppression.checked : true;
+            const wantAutoGain = chkAutoGain ? chkAutoGain.checked : true;
             const constraints = {
                 audio: {
-                    echoCancellation: { ideal: chkAec ? chkAec.checked : true },
-                    noiseSuppression: { ideal: chkNoiseSuppression ? chkNoiseSuppression.checked : true },
-                    autoGainControl: { ideal: chkAutoGain ? chkAutoGain.checked : true },
+                    echoCancellation: { exact: wantAec },
+                    noiseSuppression: { exact: wantNoiseSuppression },
+                    autoGainControl: { exact: wantAutoGain },
                     channelCount: 1
                 }
             };
 
-            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (exactErr) {
+                // Some devices/browsers don't support `exact` audio-processing constraints —
+                // fall back to `ideal` rather than failing to start the call entirely.
+                console.warn('[App] Exact AEC constraints unsupported, falling back to ideal:', exactErr.message);
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: { ideal: wantAec },
+                        noiseSuppression: { ideal: wantNoiseSuppression },
+                        autoGainControl: { ideal: wantAutoGain },
+                        channelCount: 1
+                    }
+                });
+            }
             micSource = audioContext.createMediaStreamSource(mediaStream);
 
             // BUG-004 FIX: Detect microphone disconnect mid-conversation
@@ -708,7 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
                 minSpeechDurationMs: 350,
                 speechStartConfirmFrames: 3,
-                rmsFloor: 0.010,
+                rmsFloor: 0.018,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,
@@ -1744,7 +1761,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                     messages,
                     model: selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b',
                     max_tokens: 260,
-                    ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
+                    ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true,
+                    stream: true
                 })
             });
 
@@ -1754,25 +1772,96 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 return;
             }
 
-            if (!apiRes.ok) {
+            if (!apiRes.ok || !apiRes.body) {
                 const errData = await apiRes.json().catch(() => ({}));
                 const detail = errData.error || `HTTP ${apiRes.status}`;
                 throw new Error(`Groq API error: ${detail}`);
             }
 
-            const apiData = await apiRes.json();
-            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
-                console.log('[App] Discarding stale LLM payload due to barge-in.');
-                return;
+            // ─── Consume the SSE token stream, speaking each completed sentence immediately ───
+            const canSpeak = isCallActive && !!ttsEngine;
+            let rawAccumulated = '';
+            let speechBuffer = '';
+            let streamError = null;
+            let reportedModel = selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b';
+
+            const speakSentence = (sentence) => {
+                const spoken = sentence.replace(/[*_#`~[\]]/g, '').trim();
+                if (spoken && canSpeak) ttsEngine.speak(spoken);
+            };
+
+            const popCompleteSentences = (buf) => {
+                const sentences = [];
+                const re = /[.!?]+\s/g;
+                let lastIndex = 0, m;
+                while ((m = re.exec(buf)) !== null) {
+                    const end = m.index + m[0].length;
+                    sentences.push(buf.slice(lastIndex, end).trim());
+                    lastIndex = end;
+                }
+                return { sentences, remainder: buf.slice(lastIndex) };
+            };
+
+            const reader = apiRes.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let sseBuffer = '';
+
+            while (true) {
+                if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                    try { reader.cancel(); } catch (_) {}
+                    console.log('[App] Discarding stale LLM stream due to barge-in.');
+                    return;
+                }
+
+                const { done, value } = await reader.read();
+                if (done) break;
+                sseBuffer += decoder.decode(value, { stream: true });
+
+                const events = sseBuffer.split('\n\n');
+                sseBuffer = events.pop(); // keep incomplete trailing event for next read
+
+                for (const evt of events) {
+                    const line = evt.trim();
+                    if (!line.startsWith('data:')) continue;
+                    let json;
+                    try { json = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+
+                    if (json.error) {
+                        streamError = json.error;
+                        continue;
+                    }
+
+                    if (json.delta) {
+                        rawAccumulated += json.delta;
+                        markFirstToken();
+                        aiMessageBubble.textContent = rawAccumulated;
+
+                        speechBuffer += json.delta;
+                        const { sentences, remainder } = popCompleteSentences(speechBuffer);
+                        speechBuffer = remainder;
+                        sentences.forEach(speakSentence);
+                    }
+
+                    if (json.done) {
+                        rawAccumulated = json.text || rawAccumulated;
+                        reportedModel = json.model || reportedModel;
+                    }
+                }
             }
 
-            if (!apiData.text) {
+            if (streamError && !rawAccumulated) {
+                throw new Error(`Groq API error: ${streamError}`);
+            }
+
+            if (!rawAccumulated.trim()) {
                 throw new Error('Groq API error: Empty response from LLM.');
             }
 
-            fullResponse = sanitizeAiResponse(apiData.text.trim());
-            console.log(`[App] 🧠 Groq LLM (${apiData.model || 'qwen/qwen3.8-27b'}): "${fullResponse}"`);
-            markFirstToken();
+            // Flush whatever's left in the speech buffer (final sentence with no trailing punctuation)
+            if (speechBuffer.trim()) speakSentence(speechBuffer);
+
+            fullResponse = sanitizeAiResponse(rawAccumulated.trim());
+            console.log(`[App] 🧠 Groq LLM (${reportedModel}): "${fullResponse}"`);
             aiMessageBubble.textContent = fullResponse;
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
@@ -1792,9 +1881,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 return;
             }
 
-            if (ttsEngine) {
-                ttsEngine.speak(fullResponse);
-            } else {
+            if (!ttsEngine) {
                 setAgentState('listening', 'Connected & Listening (Silero VAD)');
             }
 
@@ -2072,13 +2159,17 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             _stopDurTimer();
             _hideOverlay();
             _resetBtn();
-            if (_isMuted && mediaStream) {
+            // Reset mute UI/state so a new session doesn't inherit a muted mic
+            _isMicMuted = false;
+            if (mediaStream) {
                 try { mediaStream.getAudioTracks().forEach(t => { t.enabled = true; }); } catch (_) {}
-                _isMuted = false;
             }
             if (_btnMute) {
                 _btnMute.classList.remove('active');
-                _btnMute.innerHTML = '<i class="fa-solid fa-microphone" aria-hidden="true"></i><span>Mute</span>';
+                const icon = _btnMute.querySelector('i');
+                const label = _btnMute.querySelector('span');
+                if (icon)  icon.className = 'fa-solid fa-microphone';
+                if (label) label.textContent = 'Mute';
             }
             // Remove call context from history
             conversationHistory = conversationHistory.filter(
@@ -2180,36 +2271,40 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             setAgentState('idle', 'Agent Inactive • Click to Start');
         });
 
-        // ── Mute Microphone ──────────────────────────────────────────────
+        // ── Mute / Unmute Microphone ────────────────────────────────────
+        let _isMicMuted = false;
         _btnMute?.addEventListener('click', () => {
             if (!isCallActive || !mediaStream) return;
-            _isMuted = !_isMuted;
+            _isMicMuted = !_isMicMuted;
             try {
-                mediaStream.getAudioTracks().forEach(track => {
-                    track.enabled = !_isMuted;
-                });
+                mediaStream.getAudioTracks().forEach(track => { track.enabled = !_isMicMuted; });
             } catch (_) {}
-
-            if (_btnMute) {
-                _btnMute.classList.toggle('active', _isMuted);
-                _btnMute.innerHTML = _isMuted
-                    ? '<i class="fa-solid fa-microphone-slash" aria-hidden="true"></i><span>Unmute</span>'
-                    : '<i class="fa-solid fa-microphone" aria-hidden="true"></i><span>Mute</span>';
-            }
+            _btnMute.classList.toggle('active', _isMicMuted);
+            const icon = _btnMute.querySelector('i');
+            const label = _btnMute.querySelector('span');
+            if (icon)  icon.className = _isMicMuted ? 'fa-solid fa-microphone-slash' : 'fa-solid fa-microphone';
+            if (label) label.textContent = _isMicMuted ? 'Unmute' : 'Mute';
             if (_stateText) {
-                _stateText.textContent = _isMuted ? '🔇 Microphone Muted' : '🎙️ Listening…';
+                _stateText.textContent = _isMicMuted ? '🔇 Microphone Muted' : '🎙️ Listening…';
             }
+            console.log(`[CallAgent] mic_${_isMicMuted ? 'muted' : 'unmuted'}`);
         });
 
-        // ── Interrupt Sonara Speaking ────────────────────────────────────
+        // ── Interrupt Sonara While Speaking ──────────────────────────────
         _btnInterrupt?.addEventListener('click', () => {
             if (!isCallActive) return;
             if (ttsEngine && typeof ttsEngine.interrupt === 'function') {
                 ttsEngine.interrupt();
             }
+            if (activeChatAbortController) {
+                try { activeChatAbortController.abort(); } catch (_) {}
+            }
+            currentGenerationId++;
             isAiSpeaking = false;
-            setAgentState('listening', 'Interrupted • Listening');
+            isAiThinking = false;
+            setAgentState('listening', 'Connected & Listening (Silero VAD)');
             if (_stateText) _stateText.textContent = '🎙️ Listening…';
+            console.log('[CallAgent] manual_interrupt — user clicked Interrupt');
         });
 
         // ── Exotel Phone Call Trigger ────────────────────────────────────

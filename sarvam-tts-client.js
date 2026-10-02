@@ -20,6 +20,9 @@ export class SarvamTTS {
 
         this.isPlaying = false;
         this.isInterrupted = false;
+        // Once a Sarvam fetch fails mid-response, stick to the browser-TTS fallback
+        // for the rest of THIS response instead of toggling voices chunk-to-chunk.
+        this._degraded = false;
         this.queue = [];
         this.activeAudioElement = null;
         this.activeAbortController = null;
@@ -169,7 +172,7 @@ export class SarvamTTS {
      * @param {string} text - chunk text
      * @param {string} lang - 'hi-IN' or 'en-IN'
      */
-    async _fetchAudio(text, lang) {
+    async _fetchAudio(text, lang, retriesLeft = 2) {
         try {
             const res = await fetch('/api/sarvam-tts', {
                 method: 'POST',
@@ -189,12 +192,39 @@ export class SarvamTTS {
             const contentType = res.headers.get('content-type') || 'audio/mpeg';
             return new Blob([buf], { type: contentType });
         } catch (err) {
-            if (err.name !== 'AbortError') {
-                console.error('[SarvamTTS] ❌ Fetch error:', err.message);
-                window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
+            if (err.name === 'AbortError') return null;
+
+            if (retriesLeft > 0) {
+                const delayMs = (3 - retriesLeft) * 400 + 300; // 300ms, 700ms
+                console.warn(`[SarvamTTS] ⚠️ Fetch failed, retrying in ${delayMs}ms (${retriesLeft} left):`, err.message);
+                await new Promise(r => setTimeout(r, delayMs));
+                return this._fetchAudio(text, lang, retriesLeft - 1);
             }
+
+            console.error('[SarvamTTS] ❌ Fetch error (out of retries):', err.message);
+            window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
             return null;
         }
+    }
+
+    /**
+     * Last-resort fallback when Sarvam audio could not be fetched after retries —
+     * use the browser's built-in speechSynthesis so the sentence is never silently dropped.
+     */
+    _speakWithBrowserFallback(text, lang) {
+        return new Promise((resolve) => {
+            if (!('speechSynthesis' in window) || !text) { resolve(); return; }
+            try {
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.lang = lang === 'hi-IN' ? 'hi-IN' : 'en-IN';
+                utter.onend = () => resolve();
+                utter.onerror = () => resolve();
+                this._activeUtterance = utter;
+                window.speechSynthesis.speak(utter);
+            } catch (_) {
+                resolve();
+            }
+        });
     }
 
     /**
@@ -229,14 +259,20 @@ export class SarvamTTS {
             return;
         }
 
+        // Fresh response starting (not continuing an in-flight one) — give Sarvam
+        // a clean shot again instead of staying degraded forever.
+        if (!this.isPlaying) this._degraded = false;
+
         this.isPlaying = true;
         this.onStart();
+
+        const fetchOrSkip = (text, lang) => this._degraded ? Promise.resolve(null) : this._fetchAudio(text, lang);
 
         // Pre-fetch first sentence immediately
         const [firstText, firstLang] = this.queue[0];
         const firstKey = firstText;
         if (!this._prefetchMap.has(firstKey)) {
-            this._prefetchMap.set(firstKey, this._fetchAudio(firstText, firstLang));
+            this._prefetchMap.set(firstKey, fetchOrSkip(firstText, firstLang));
         }
 
         while (this.queue.length > 0 && !this.isInterrupted) {
@@ -248,7 +284,7 @@ export class SarvamTTS {
                 const [nextText, nextLang] = this.queue[0];
                 const nextKey = nextText;
                 if (!this._prefetchMap.has(nextKey)) {
-                    this._prefetchMap.set(nextKey, this._fetchAudio(nextText, nextLang));
+                    this._prefetchMap.set(nextKey, fetchOrSkip(nextText, nextLang));
                 }
             }
 
@@ -263,8 +299,12 @@ export class SarvamTTS {
 
             if (blob) {
                 await this._playBlob(blob);
-            } else {
-                console.warn('[SarvamTTS] Skipping sentence (fetch failed):', currentText.substring(0, 40));
+            } else if (!this.isInterrupted) {
+                if (!this._degraded) {
+                    console.warn('[SarvamTTS] Sarvam fetch failed after retries — switching to browser TTS for the rest of this response:', currentText.substring(0, 40));
+                    this._degraded = true;
+                }
+                await this._speakWithBrowserFallback(currentText, currentLang);
             }
         }
 
