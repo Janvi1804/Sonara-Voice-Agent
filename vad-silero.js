@@ -24,7 +24,7 @@ export class SileroVAD {
         this.threshold            = options.threshold !== undefined ? options.threshold : 0.50;
         this.silenceDurationMs    = options.silenceDurationMs || 800;
         this.minSpeechDurationMs  = options.minSpeechDurationMs || 250;
-        this.maxSpeechDurationMs  = options.maxSpeechDurationMs || 30000;
+        this.maxSpeechDurationMs  = options.maxSpeechDurationMs || 15000;
 
         // Neural inference session
         this.session              = null;
@@ -73,8 +73,9 @@ export class SileroVAD {
         try {
             const ort = getOrt();
             if (!ort) {
-                console.warn('[SileroVAD] ONNX Runtime Web (ort) not loaded yet, will retry when available.');
+                console.warn('[SileroVAD] ONNX Runtime Web (ort) not loaded yet, scheduling retry in 500ms...');
                 this.isLoading = false;
+                setTimeout(() => this.init(), 500);
                 return;
             }
 
@@ -194,8 +195,8 @@ export class SileroVAD {
             }
         } else {
             // High-reliability Acoustic/Energy Fallback VAD:
-            // Ensures voice is NEVER blocked even if ONNX WebAssembly environment is loading or restricted.
-            prob = rms >= 0.012 ? Math.min(0.95, (rms - 0.012) * 25 + 0.55) : (rms > 0.005 ? 0.20 : 0.02);
+            // Tuned so faint background room noise / TV (RMS 0.010 - 0.022) does NOT trigger false speech onset
+            prob = rms >= 0.028 ? Math.min(0.95, (rms - 0.028) * 20 + 0.55) : (rms > 0.015 ? 0.15 : 0.01);
         }
 
         // Emit frame stats for UI visualizer

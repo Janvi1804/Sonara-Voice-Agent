@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js';
-import { WhisperSTT } from './whisper-stt.js';
+import { SileroVAD } from './vad-silero.js?v=2.3';
+import { WhisperSTT } from './whisper-stt.js?v=2.3';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=2.3';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -721,11 +721,11 @@ document.addEventListener('DOMContentLoaded', () => {
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.52,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.55,
                 silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
                 minSpeechDurationMs: 350,
                 speechStartConfirmFrames: 3,
-                rmsFloor: 0.018,
+                rmsFloor: 0.022,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,
