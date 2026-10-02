@@ -227,6 +227,10 @@ export class SarvamTTS {
             if (cleaned && /[a-zA-Z\u0900-\u097F0-9]/.test(cleaned)) {
                 this.queue.push([cleaned, detectedLang]);
                 addedCount++;
+                // Immediately start prefetching in background while previous sentence plays
+                if (!this._prefetchMap.has(cleaned)) {
+                    this._prefetchMap.set(cleaned, this._fetchAudio(cleaned, detectedLang));
+                }
             }
         });
 
@@ -238,7 +242,7 @@ export class SarvamTTS {
     /**
      * PIPELINE: Fetches next sentence in background while current plays.
      * Eliminates the network wait gap between sentences.
-     * ALWAYS uses 100% Sarvam voice — NEVER switches to robotic browser TTS.
+     * ALWAYS uses 100% Sarvam voice — NEVER skips sentences and NEVER switches to robotic browser TTS.
      */
     async _runPipeline() {
         if (this.queue.length === 0 || this.isInterrupted) {
@@ -250,13 +254,6 @@ export class SarvamTTS {
 
         this.isPlaying = true;
         this.onStart();
-
-        // Pre-fetch first sentence immediately with Sarvam
-        const [firstText, firstLang] = this.queue[0];
-        const firstKey = firstText;
-        if (!this._prefetchMap.has(firstKey)) {
-            this._prefetchMap.set(firstKey, this._fetchAudio(firstText, firstLang));
-        }
 
         while (this.queue.length > 0 && !this.isInterrupted) {
             const [currentText, currentLang] = this.queue.shift();
@@ -271,9 +268,14 @@ export class SarvamTTS {
                 }
             }
 
-            // Wait for current audio (already fetching from Sarvam)
-            const blobPromise = this._prefetchMap.get(currentKey);
+            // Retrieve audio promise (from prefetch map or fetch on-demand)
+            let blobPromise = this._prefetchMap.get(currentKey);
             this._prefetchMap.delete(currentKey);
+            if (!blobPromise) {
+                // Sentence arrived dynamically while playing — fetch immediately
+                blobPromise = this._fetchAudio(currentText, currentLang);
+            }
+
             const blob = blobPromise ? await blobPromise : null;
 
             if (this.isInterrupted) break;
@@ -283,7 +285,7 @@ export class SarvamTTS {
             if (blob) {
                 await this._playBlob(blob);
             } else if (!this.isInterrupted) {
-                console.warn('[SarvamTTS] Skipped un-synthesized chunk, staying on Sarvam voice:', currentText.substring(0, 40));
+                console.warn('[SarvamTTS] Failed to synthesize chunk after retries:', currentText.substring(0, 40));
             }
         }
 
