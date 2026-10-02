@@ -201,13 +201,10 @@ ${ragContext}`;
             });
         }
 
-        // Candidate Groq models to try (prioritizing fast instruction models over reasoning models)
-        const candidateModels = [...new Set([
-            'qwen/qwen3.8-27b',
-            model,
-            'qwen/qwen3.6-27b',
-            'openai/gpt-oss-120b'
-        ].filter(Boolean))];
+        // Fast Groq models — ordered by speed
+        // llama-3.1-8b-instant: ~200-400ms, great for conversational short answers
+        // llama-3.3-70b-versatile: ~400-700ms, better quality fallback
+        const candidateModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
 
         let activeModel = candidateModels[0];
         let groqData = null;
@@ -224,8 +221,8 @@ ${ragContext}`;
                     body: JSON.stringify({
                         model: candidate,
                         messages: formattedMessages,
-                        temperature: typeof temperature !== 'undefined' && !isNaN(Number(temperature)) ? Number(temperature) : 0.15,
-                        max_tokens: Math.min(250, Math.max(120, Number(max_tokens) || 200))
+                        temperature: 0.15,
+                        max_tokens: Math.min(200, Math.max(100, Number(max_tokens) || 160))
                     })
                 });
 

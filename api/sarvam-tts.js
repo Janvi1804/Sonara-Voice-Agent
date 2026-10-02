@@ -39,7 +39,7 @@ export default async function handler(req, res) {
         }
 
         // Sarvam stream works best with shorter chunks
-        const sanitizedText = String(text).trim().slice(0, 500);
+        const sanitizedText = String(text).trim().slice(0, 300);
 
         // Auto-detect: Hindi Devanagari script OR Hindi keywords → hi-IN, else en-IN
         const detectedLang = language_code || (containsHindi(sanitizedText) ? 'hi-IN' : 'en-IN');
