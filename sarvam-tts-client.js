@@ -328,6 +328,8 @@ export class SarvamTTS {
             try {
                 this.activeAudioElement.pause();
                 this.activeAudioElement.currentTime = 0;
+                this.activeAudioElement.src = '';
+                this.activeAudioElement.load();
             } catch (_) {}
             this.activeAudioElement = null;
         }
@@ -340,4 +342,5 @@ export class SarvamTTS {
         this.onEnd();
         console.log('[SarvamTTS] ⛔ Interrupted & pipeline cleared.');
     }
+
 }

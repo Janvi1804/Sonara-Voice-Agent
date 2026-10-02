@@ -930,7 +930,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const stopAudioPipeline = () => {
+        isCallActive = false;
+        isAiSpeaking = false;
+        isAiThinking = false;
+        isProcessingUtterance = false;
+        currentGenerationId++; // Invalidate all in-flight LLM calls immediately
+        if (abortController) {
+            try { abortController.abort(); } catch (_) {}
+        }
         clearTimeout(sttCommitTimer);
+        clearTimeout(pendingIncompleteTimer);
         if (ttsEngine) ttsEngine.interrupt();
         if (speechRecognition) {
             try { speechRecognition.stop(); } catch (e) {}
@@ -943,6 +952,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioContext && audioContext.state !== 'closed') {
             audioContext.close();
         }
+        if (vadEngine) {
+            try { vadEngine.resetState(); } catch (_) {}
+        }
+        if (whisperEngine) {
+            try { whisperEngine.clearBuffer(); } catch (_) {}
+        }
         if (vadConfidenceBar) vadConfidenceBar.style.width = '0%';
         if (vadConfidenceLabel) vadConfidenceLabel.textContent = '0%';
         if (audioLevelBar) audioLevelBar.style.width = '0%';
@@ -952,6 +967,7 @@ document.addEventListener('DOMContentLoaded', () => {
             vadStatus.style.color = 'var(--text-secondary)';
         }
     };
+
 
     let lastInterimText = '';
     let isRecognizing = false;
@@ -1277,10 +1293,11 @@ document.addEventListener('DOMContentLoaded', () => {
      * Proactive Sarvam AI Style Welcome Greeting
      */
     const triggerProactiveWelcome = () => {
+        if (!isCallActive) return;
         const welcomeText = "Namaste! Welcome to Converse AI. I'm Sonara, how can I help you today?";
         appendChatMessage('assistant', welcomeText);
         conversationHistory.push({ role: 'assistant', content: welcomeText });
-        if (ttsEngine) {
+        if (ttsEngine && isCallActive) {
             isWelcomeGreetingPlaying = true;
             ttsEngine.speak(welcomeText);
             // Safety: greeting takes ~4.5s; release flag after 6s max
@@ -1289,6 +1306,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 6000);
         }
     };
+
 
     if (btnInterrupt) {
         btnInterrupt.addEventListener('click', () => {
@@ -1729,8 +1747,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }
 
             const apiData = await apiRes.json();
-            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
-                console.log('[App] Discarding stale LLM payload due to barge-in.');
+            if (!isCallActive || generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                console.log('[App] Discarding stale LLM payload due to session end or barge-in.');
                 return;
             }
 
@@ -1741,7 +1759,13 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             fullResponse = sanitizeAiResponse(apiData.text.trim());
             markFirstToken();
             aiMessageBubble.textContent = fullResponse;
+
+            if (!isCallActive) {
+                console.log('[App] Session ended by user, suppressing TTS output.');
+                return;
+            }
             if (ttsEngine) ttsEngine.speak(fullResponse);
+
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
