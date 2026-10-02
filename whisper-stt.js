@@ -20,9 +20,10 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.004;
-        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 150;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.010;
+        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 350;
     }
+
 
     setApiKey(key) { this.apiKey = key; }
     // Allow 'hi', 'en', or '' (auto-detect)
@@ -119,21 +120,29 @@ export class WhisperSTT {
             return '';
         }
 
+        // Discard any transcript where Whisper itself indicates low confidence / high silence probability
+        if (result.noSpeechProb > 0.60) {
+            console.log('[GroqWhisper] Discarding high no_speech_prob noise artifact:', { text, noSpeechProb: result.noSpeechProb.toFixed(3) });
+            this.audioChunks = [];
+            return '';
+        }
+
         const phantomPhrases = [
             // English noise hallucinations
             'you', 'thank you', 'thanks', 'namaste', 'um', 'uh', 'hmm', 'hm',
             'music', 'applause', 'laughter', 'silence', 'background noise',
             'hindi', 'english', 'hinglish', 'bye', 'okay', 'ok', 'yes', 'no',
             // Hindi noise hallucinations (Whisper commonly generates these from background)
-            'नहीं', 'हाँ', 'ठीक है', 'अच्छा', 'बताइए', 'समझ',
+            'नहीं', 'हाँ', 'ठीक है', 'अच्छा', 'बताइए', 'समझ', 'विस्तों',
             'ap samjhe', 'ap samjhey', 'aap samjhe', 'shukriya', 'dhanyawad',
             'theek hai', 'achha', 'bilkul', 'haan ji', 'haan', 'nahi'
         ];
-        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.3) {
+        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.25) {
             console.log('[GroqWhisper] Discarding phantom hallucination:', JSON.stringify(text));
             this.audioChunks = [];
             return '';
         }
+
 
 
         this.onTranscript(text);
