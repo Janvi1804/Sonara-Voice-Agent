@@ -1764,8 +1764,10 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }
 
             fullResponse = sanitizeAiResponse(apiData.text.trim());
+            console.log(`[App] 🧠 Groq LLM (${apiData.model || 'qwen/qwen3.8-27b'}): "${fullResponse}"`);
             markFirstToken();
             aiMessageBubble.textContent = fullResponse;
+
 
             if (!isCallActive) {
                 console.log('[App] Session ended by user, suppressing TTS output.');
