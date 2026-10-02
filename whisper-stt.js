@@ -178,9 +178,9 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // No language forced → Whisper auto-detects Hindi, English, Hinglish
-            // Prompt hint helps Whisper recognise brand names and domain terms accurately
-            whisperForm.append('prompt', 'Converse AI, Sonara, Sarvam, Namaste, pricing, services, WhatsApp automation, voice bot, demo, booking, appointment, case study, Revti Digital, API, CRM, Salesforce, HubSpot. हाँ, नहीं, क्या, कैसे, बताइए, सर्वम, अपॉइंटमेंट, सर्विस.');
+            // Balanced prompt hint helps Whisper accurately detect English, Hindi and Hinglish
+            whisperForm.append('prompt', 'Hello, hi, how are you, Converse AI, Sonara, Namaste, pricing, services, WhatsApp automation, voice bot, demo, appointment, case study. Namaste, kaise hain aap, kya services hain.');
+
 
 
             const keyToUse = this.apiKey ? this.apiKey.trim() : '';
