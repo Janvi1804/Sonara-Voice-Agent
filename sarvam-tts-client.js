@@ -74,10 +74,11 @@ export class SarvamTTS {
      */
     splitIntoChunks(text) {
         if (!text) return [];
-        const MAX_CHUNK = 250; // Smaller = faster Sarvam processing (~200ms saved)
+        const MAX_CHUNK = 450; // Standard responses fit in 1 single chunk -> 1 API call, zero gaps!
 
         // Short enough → single chunk (zero pause, one API call)
         if (text.length <= MAX_CHUNK) return [text];
+
 
         // Split by paragraph breaks first
         const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(p => p.length > 0);

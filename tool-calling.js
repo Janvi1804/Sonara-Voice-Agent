@@ -226,8 +226,8 @@ export class ToolCallingEngine {
         }
 
         // 4. Booking intent when phone and time/intent are present
-        const hasBookingWord = lower.includes('book') || lower.includes('confirm') || lower.includes('schedule') || lower.includes('kardo') || lower.includes('kar do') || lower.includes('set kar');
-        const isTimeSelection = lower.includes('bje') || lower.includes('am') || lower.includes('pm') || lower.includes('o\'clock');
+        const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|set kar)\b/i.test(lower);
+        const isTimeSelection = /\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(lower) || /\b(baje|bje|o'clock)\b/i.test(lower);
 
         if ((hasBookingWord || isTimeSelection) && memory?.entities?.phone) {
             return await this.executeTool('book_appointment', {
@@ -241,12 +241,13 @@ export class ToolCallingEngine {
         }
 
         // 5. Availability checking intent (or time inquiry without phone number yet)
-        if (lower.includes('available') || lower.includes('slot') || lower.includes('free time') || lower.includes('timing') || isTimeSelection || hasBookingWord) {
+        if (/\b(available|availability|free slot|free time|open slot|timing)\b/i.test(lower) || (hasBookingWord && !memory?.entities?.phone)) {
             return await this.executeTool('check_availability', {
                 date: memory?.entities?.targetDate || 'today',
                 time: memory?.entities?.targetTime || ''
             });
         }
+
 
         return null;
     }

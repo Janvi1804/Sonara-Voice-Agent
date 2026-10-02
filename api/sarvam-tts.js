@@ -38,8 +38,9 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: 'SARVAM_API_KEY is not configured on server.' });
         }
 
-        // Sarvam stream works best with shorter chunks
-        const sanitizedText = String(text).trim().slice(0, 300);
+        // Sarvam stream handles up to 500 chars per request cleanly
+        const sanitizedText = String(text).trim().slice(0, 450);
+
 
         // Auto-detect: Hindi Devanagari script OR Hindi keywords → hi-IN, else en-IN
         const detectedLang = language_code || (containsHindi(sanitizedText) ? 'hi-IN' : 'en-IN');

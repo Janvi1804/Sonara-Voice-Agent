@@ -20,9 +20,10 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.010;
-        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 350;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.005;
+        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 300;
     }
+
 
 
     setApiKey(key) { this.apiKey = key; }
@@ -129,19 +130,16 @@ export class WhisperSTT {
 
         const phantomPhrases = [
             // English noise hallucinations
-            'you', 'thank you', 'thanks', 'namaste', 'um', 'uh', 'hmm', 'hm',
+            'you', 'namaste', 'um', 'uh', 'hmm', 'hm',
             'music', 'applause', 'laughter', 'silence', 'background noise',
-            'hindi', 'english', 'hinglish', 'bye', 'okay', 'ok', 'yes', 'no',
-            // Hindi noise hallucinations (Whisper commonly generates these from background)
-            'नहीं', 'हाँ', 'ठीक है', 'अच्छा', 'बताइए', 'समझ', 'विस्तों',
-            'ap samjhe', 'ap samjhey', 'aap samjhe', 'shukriya', 'dhanyawad',
-            'theek hai', 'achha', 'bilkul', 'haan ji', 'haan', 'nahi'
+            'hindi', 'english', 'hinglish'
         ];
-        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.25) {
+        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.40) {
             console.log('[GroqWhisper] Discarding phantom hallucination:', JSON.stringify(text));
             this.audioChunks = [];
             return '';
         }
+
 
 
 

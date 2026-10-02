@@ -696,11 +696,12 @@ document.addEventListener('DOMContentLoaded', () => {
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.50,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 650,
-                minSpeechDurationMs: 350,
-                speechStartConfirmFrames: 3,
-                rmsFloor: 0.010,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 600,
+                minSpeechDurationMs: 250,
+                speechStartConfirmFrames: 2,
+                rmsFloor: 0.006,
+
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,
                 bargeInMinRms: 0.080,
@@ -1009,8 +1010,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Never submit single hanging filler words or Whisper language/special tokens (e.g. "<|hi|>", "Hindi", "and", "so", "um", "uh")
         const cleanPrompt = prompt.replace(/<\|.*?\|>/g, '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f\s]/g, '').trim();
-        const junkPhrases = ['and', 'so', 'the', 'a', 'an', 'um', 'uh', 'you', 'or', 'is', 'to', 'for', 'with', 'thank you', 'thanks', 'hindi', 'english', 'hinglish'];
+        const junkPhrases = ['and', 'so', 'the', 'a', 'an', 'um', 'uh', 'you', 'or', 'is', 'to', 'for', 'with', 'hindi', 'english', 'hinglish'];
         if (!cleanPrompt || cleanPrompt.length < 2 || junkPhrases.includes(cleanPrompt)) {
+
             console.log('Discarding standalone junk/token fragment:', prompt);
             currentSpeechText = '';
             lastInterimText = '';
@@ -1507,14 +1509,15 @@ Be helpful first and promotional second.
 Do not overwhelm the user with unnecessary information.
 
 
-CRITICAL ANSWER LENGTH RULE — MAXIMUM 5 LINES
-Keep all responses strictly within MAXIMUM 5 LINES (maximum 3 to 5 natural spoken sentences).
-Explain EVERYTHING asked in the user's question directly, clearly, and completely within these 5 lines.
-Never produce long essays, rambling paragraphs, or excessive conversational filler.
-For simple questions, answer directly in 2-3 sentences.
-For complex questions, explain all core aspects crisply within 4-5 sentences.
+CRITICAL VOICE CONVERSATION RULE — ULTRA SHORT & SNAPPY (MAX 1-2 SENTENCES)
+Keep all responses strictly within MAXIMUM 1 TO 2 SHORT SENTENCES (under 30 words total).
+Answer the user's question directly, clearly, and completely in the very first sentence.
+Never produce long essays, rambling paragraphs, or monologues.
+If the user says "Thank you", "thanks", or "dhanyawad", reply warmly in 1 short sentence (e.g. "You're most welcome! Let me know if you need anything else!").
+If asked for an example or case study, give just 1 client and their key metric in 1-2 short sentences.
 Never use markdown, bullets, numbered lists, asterisks, headings, emojis, or formatting in spoken responses.
 Always respond in complete, natural sentences.
+
 
 LANGUAGE MATCHING
 Automatically match the user's language.

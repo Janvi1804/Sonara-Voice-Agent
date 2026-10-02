@@ -105,13 +105,14 @@ function sanitizeAiResponse(text) {
         .replace(/\s{2,}/g, ' ')
         .trim();
 
-    // Enforce maximum 5 lines / sentences
+    // Enforce maximum 2 sentences for snappy, low-latency voice responses
     const sentences = clean.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g);
-    if (sentences && sentences.length > 5) {
-        clean = sentences.slice(0, 5).map(s => s.trim()).join(' ');
+    if (sentences && sentences.length > 2) {
+        clean = sentences.slice(0, 2).map(s => s.trim()).join(' ');
     }
     return clean;
 }
+
 
 export default async function handler(req, res) {
     const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
@@ -175,12 +176,14 @@ GENDER IDENTITY & PERSONA — STRICTLY FEMALE:
   * ALWAYS use: "main sun rahi hoon", "main soch rahi hoon"
   * Speak naturally like a polite, warm, and confident Indian woman.
 
-CRITICAL ANSWER LENGTH RULE — MAXIMUM 5 LINES:
-- You MUST give your entire answer in MAXIMUM 5 LINES (maximum 5 clear sentences).
-- Explain EVERYTHING asked in the user's question completely and directly within these 3 to 5 lines.
-- NO rambling, NO repetitive preamble, NO essay-style paragraphs, and NO filler text.
-- Pack high clarity and direct explanation into every line so the user gets the complete answer fast.
-- Never exceed 5 lines/sentences under any circumstances.
+CRITICAL VOICE CONVERSATION RULE — ULTRA SHORT & SNAPPY (MAX 1-2 SENTENCES):
+- You are speaking on a LIVE REAL-TIME VOICE CALL. Never lecture or speak long paragraphs!
+- Keep EVERY response strictly within 1 TO 2 SHORT SENTENCES (maximum 35 words total).
+- Answer the user's specific question directly in the very first sentence.
+- If user says "Thank you", "thanks", "dhanyawad", or says goodbye, respond warmly in 1 short sentence (e.g. "You're most welcome! Let me know if you need anything else!" or "Bahut shukriya! Aapka din shubh ho!").
+- If asked for an example or case study, give just ONE client name and their key result in 1-2 short sentences.
+- Never exceed 2 sentences under any circumstances.
+
 
 CORE ROLE & BEHAVIOR:
 - You are a knowledgeable, articulate, and confident conversational AI specialist having a real dialogue.
