@@ -221,6 +221,8 @@ export class AppointmentDB {
 
         // Remote PostgreSQL sync — always attempt via Vercel env var (POSTGRES_URL)
         // Client postgresUrl is optional fallback for self-hosted installs
+        let dbPersisted = false;
+        let dbWarning = '';
         try {
             const dbRes = await fetch('/api/db', {
                 method: 'POST',
@@ -238,6 +240,7 @@ export class AppointmentDB {
                     }
                 })
             });
+
             if (dbRes.status === 409) {
                 this.inMemoryAppointments.delete(apptId);
                 return {
@@ -245,8 +248,19 @@ export class AppointmentDB {
                     message: `Slot ${normTime} on ${normDate} was just reserved by another client. Please choose another slot.`
                 };
             }
+
+            const dbData = await dbRes.json().catch(() => ({}));
+            if (dbRes.ok && dbData.success === true) {
+                dbPersisted = true;
+            } else {
+                // Server responded (possibly HTTP 200) but did NOT actually persist —
+                // e.g. {success:false, fallback:true} when Postgres is unreachable.
+                dbWarning = dbData.message || dbData.error || 'Database unreachable — saved locally only.';
+                console.warn('[AppointmentDB] Remote DB did not persist booking:', dbWarning);
+            }
         } catch (err) {
-            console.warn('[AppointmentDB] Supabase save note:', err.message);
+            dbWarning = 'Database request failed — saved locally only.';
+            console.warn('[AppointmentDB] /api/db request error:', err.message);
         }
 
         // Fire email + WhatsApp notifications (non-blocking)
@@ -256,7 +270,10 @@ export class AppointmentDB {
             success: true,
             appointmentId: apptId,
             appointment: record,
-            message: `Appointment ${apptId} successfully booked for ${record.customer_name} on ${normDate} at ${normTime} for ${service}.`
+            dbPersisted,
+            message: dbPersisted
+                ? `Appointment ${apptId} successfully booked for ${record.customer_name} on ${normDate} at ${normTime} for ${service}.`
+                : `Appointment ${apptId} saved locally for ${record.customer_name} on ${normDate} at ${normTime} for ${service}, but could not be confirmed in the central database (${dbWarning}). Please follow up to verify.`
         };
     }
 

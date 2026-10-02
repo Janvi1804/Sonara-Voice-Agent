@@ -140,7 +140,8 @@ export default async function handler(req, res) {
             messages = [],
             model = 'qwen/qwen3.8-27b',
             temperature = 0.65,
-            max_tokens = 180
+            max_tokens = 180,
+            stream = false
         } = body;
 
 
@@ -235,10 +236,122 @@ ${ragContext}`;
             'openai/gpt-oss-120b'
         ])];
 
+        const maxTokensClamped = Math.min(350, Math.max(120, Number(max_tokens) || 260));
+
+        // ─── STREAMING PATH (SSE) — lets the client start TTS on the first sentence ───
+        if (stream) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.setHeader('Connection', 'keep-alive');
+            if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+            const sendEvent = (obj) => {
+                res.write(`data: ${JSON.stringify(obj)}\n\n`);
+            };
+
+            let activeModel = null;
+            let groqStreamRes = null;
+            const modelErrors = [];
+
+            // Find the first candidate that accepts the request (headers only — body not yet consumed)
+            for (const candidate of candidateModels) {
+                try {
+                    const attemptRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${groqApiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: candidate,
+                            messages: formattedMessages,
+                            temperature: 0.15,
+                            max_tokens: maxTokensClamped,
+                            stream: true
+                        })
+                    });
+
+                    if (attemptRes.ok) {
+                        groqStreamRes = attemptRes;
+                        activeModel = candidate;
+                        break;
+                    } else {
+                        const errData = await attemptRes.json().catch(() => ({}));
+                        const errMsg = errData.error?.message || `HTTP ${attemptRes.status}`;
+                        modelErrors.push(`${candidate} (${attemptRes.status}): ${errMsg}`);
+
+                        if (attemptRes.status === 401) {
+                            sendEvent({ error: `Groq API Key Invalid: ${errMsg}` });
+                            return res.end();
+                        }
+                        if (attemptRes.status === 429) {
+                            sendEvent({ error: `Groq Rate Limit / Quota Exceeded: ${errMsg}` });
+                            return res.end();
+                        }
+                        continue;
+                    }
+                } catch (err) {
+                    modelErrors.push(`${candidate}: ${err.message}`);
+                }
+            }
+
+            if (!groqStreamRes) {
+                console.error('[Groq LLM] All models failed (stream):', modelErrors.join(' | '));
+                sendEvent({ error: `Groq LLM failed: ${modelErrors.join('; ')}` });
+                return res.end();
+            }
+
+            // Relay Groq's SSE token stream, sanitizing + enforcing the 4-sentence cap live
+            let rawAccumulated = '';
+            let emittedSentenceCount = 0;
+            let stopped = false;
+            let buffer = '';
+            const decoder = new TextDecoder('utf-8');
+
+            try {
+                for await (const chunk of groqStreamRes.body) {
+                    if (stopped) break;
+                    // fetch() body chunks are raw Uint8Array — must decode, not string-concat directly
+                    buffer += decoder.decode(chunk, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep any incomplete trailing line for next iteration
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed.startsWith('data:')) continue;
+                        const payload = trimmed.slice(5).trim();
+                        if (payload === '[DONE]') { stopped = true; break; }
+
+                        let json;
+                        try { json = JSON.parse(payload); } catch (_) { continue; }
+                        const delta = json.choices?.[0]?.delta?.content || '';
+                        if (!delta) continue;
+
+                        rawAccumulated += delta;
+
+                        // Stop forwarding once we've already completed 4 sentences (keeps voice responses short)
+                        if (emittedSentenceCount >= 4) { stopped = true; break; }
+
+                        sendEvent({ delta });
+
+                        // Count sentence terminators to enforce the cap going forward
+                        const terminators = delta.match(/[.!?]+(?:\s|$)/g);
+                        if (terminators) emittedSentenceCount += terminators.length;
+                    }
+                }
+            } catch (err) {
+                console.warn('[Groq LLM] Stream relay error:', err.message);
+            }
+
+            const cleanContent = sanitizeAiResponse(rawAccumulated);
+            sendEvent({ done: true, text: cleanContent, model: activeModel, provider: 'groq' });
+            return res.end();
+        }
+
+        // ─── NON-STREAMING PATH (legacy / default fallback) ───
         let activeModel = candidateModels[0];
         let groqData = null;
         const modelErrors = [];
-
 
         for (const candidate of candidateModels) {
             try {
@@ -252,7 +365,7 @@ ${ragContext}`;
                         model: candidate,
                         messages: formattedMessages,
                         temperature: 0.15,
-                        max_tokens: Math.min(350, Math.max(120, Number(max_tokens) || 260))
+                        max_tokens: maxTokensClamped
                     })
                 });
 
@@ -291,9 +404,9 @@ ${ragContext}`;
 
         if (!groqData) {
             console.error('[Groq LLM] All models failed:', modelErrors.join(' | '));
-            return res.status(502).json({ 
-                error: `Groq LLM failed: ${modelErrors.join('; ')}`, 
-                provider: 'groq' 
+            return res.status(502).json({
+                error: `Groq LLM failed: ${modelErrors.join('; ')}`,
+                provider: 'groq'
             });
         }
 
@@ -310,6 +423,10 @@ ${ragContext}`;
 
     } catch (err) {
         console.error('[API /api/chat] Server error:', err);
+        if (res.headersSent) {
+            try { res.write(`data: ${JSON.stringify({ error: 'Groq LLM request failed: ' + err.message })}\n\n`); } catch (_) {}
+            return res.end();
+        }
         return res.status(500).json({
             error: 'Groq LLM request failed: ' + err.message,
             provider: 'groq'
