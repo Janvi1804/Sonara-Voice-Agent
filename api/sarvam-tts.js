@@ -29,8 +29,8 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const { text, language_code, speaker, pace } = body;
 
-        if (!text || !String(text).trim()) {
-            return res.status(400).json({ error: 'text is required' });
+        if (!text || !/[a-zA-Z\u0900-\u097F0-9]/.test(String(text))) {
+            return res.status(400).json({ error: 'text must contain speakable characters' });
         }
 
         const apiKey = process.env.SARVAM_API_KEY;
@@ -41,12 +41,11 @@ export default async function handler(req, res) {
         // Sarvam stream handles up to 500 chars per request cleanly
         const sanitizedText = String(text).trim().slice(0, 450);
 
-
         // Auto-detect: Hindi Devanagari script OR Hindi keywords → hi-IN, else en-IN
         const detectedLang = language_code || (containsHindi(sanitizedText) ? 'hi-IN' : 'en-IN');
 
-        // REST Stream endpoint (as shown in Sarvam dashboard) — lower latency
-        const sarvamRes = await fetch('https://api.sarvam.ai/text-to-speech/stream', {
+        // REST Stream endpoint (lowest latency)
+        let activeRes = await fetch('https://api.sarvam.ai/text-to-speech/stream', {
             method: 'POST',
             headers: {
                 'api-subscription-key': apiKey,
@@ -62,18 +61,38 @@ export default async function handler(req, res) {
             })
         });
 
-        if (!sarvamRes.ok) {
-            const errText = await sarvamRes.text();
-            console.error('[SarvamTTS] Error:', sarvamRes.status, errText);
-            return res.status(sarvamRes.status).json({ error: `Sarvam TTS error (${sarvamRes.status}): ${errText}` });
+        // If stream endpoint fails for transient reason, automatically try standard endpoint
+        if (!activeRes.ok) {
+            console.warn(`[SarvamTTS] Stream endpoint returned ${activeRes.status}, falling back to standard REST endpoint...`);
+            activeRes = await fetch('https://api.sarvam.ai/text-to-speech', {
+                method: 'POST',
+                headers: {
+                    'api-subscription-key': apiKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    inputs: [sanitizedText],
+                    target_language_code: detectedLang,
+                    speaker: speaker || 'ritu',
+                    model: 'bulbul:v3',
+                    pace: pace !== undefined ? pace : 1.0,
+                    speech_sample_rate: 22050
+                })
+            });
         }
 
-        // Stream endpoint returns audio bytes directly (audio/mpeg or audio/wav)
-        const contentType = sarvamRes.headers.get('content-type') || 'audio/mpeg';
+        if (!activeRes.ok) {
+            const errText = await activeRes.text();
+            console.error('[SarvamTTS] Error:', activeRes.status, errText);
+            return res.status(activeRes.status).json({ error: `Sarvam TTS error (${activeRes.status}): ${errText}` });
+        }
+
+        // Check response type (stream audio bytes or JSON base64)
+        const contentType = activeRes.headers.get('content-type') || 'audio/mpeg';
 
         if (contentType.includes('audio/')) {
             // Direct audio stream — pipe bytes to client
-            const audioBuffer = await sarvamRes.arrayBuffer();
+            const audioBuffer = await activeRes.arrayBuffer();
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Length', audioBuffer.byteLength);
             res.statusCode = 200;
@@ -82,8 +101,8 @@ export default async function handler(req, res) {
             }
             return res.end(Buffer.from(audioBuffer));
         } else {
-            // Fallback: JSON base64 response (older non-stream endpoint behavior)
-            const data = await sarvamRes.json();
+            // Standard JSON base64 response
+            const data = await activeRes.json();
             const audioBase64 = data.audios?.[0];
             if (!audioBase64) return res.status(500).json({ error: 'No audio returned from Sarvam' });
             const audioBuffer = Buffer.from(audioBase64, 'base64');

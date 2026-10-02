@@ -20,9 +20,6 @@ export class SarvamTTS {
 
         this.isPlaying = false;
         this.isInterrupted = false;
-        // Once a Sarvam fetch fails mid-response, stick to the browser-TTS fallback
-        // for the rest of THIS response instead of toggling voices chunk-to-chunk.
-        this._degraded = false;
         this.queue = [];
         this.activeAudioElement = null;
         this.activeAbortController = null;
@@ -208,28 +205,8 @@ export class SarvamTTS {
     }
 
     /**
-     * Last-resort fallback when Sarvam audio could not be fetched after retries —
-     * use the browser's built-in speechSynthesis so the sentence is never silently dropped.
-     */
-    _speakWithBrowserFallback(text, lang) {
-        return new Promise((resolve) => {
-            if (!('speechSynthesis' in window) || !text) { resolve(); return; }
-            try {
-                const utter = new SpeechSynthesisUtterance(text);
-                utter.lang = lang === 'hi-IN' ? 'hi-IN' : 'en-IN';
-                utter.onend = () => resolve();
-                utter.onerror = () => resolve();
-                this._activeUtterance = utter;
-                window.speechSynthesis.speak(utter);
-            } catch (_) {
-                resolve();
-            }
-        });
-    }
-
-    /**
-     * Main speak — detects language once, splits into LARGE chunks (not tiny sentences),
-     * pipelines fetch+play to eliminate all inter-chunk pauses.
+     * Main speak — detects language once, splits into clean chunks,
+     * pipelines fetch+play to eliminate all inter-chunk pauses with 100% Sarvam voice.
      */
     async speak(text) {
         if (!text || !text.trim()) return;
@@ -239,17 +216,29 @@ export class SarvamTTS {
         const detectedLang = this.detectLanguage(text);
         console.log(`[SarvamTTS] 🌐 Lang: ${detectedLang} | Chars: ${text.length}`);
 
-        // Split into LARGE chunks — not tiny sentences
+        // Split into chunks
         const chunks = this.splitIntoChunks(text);
         if (chunks.length === 0) return;
 
-        console.log(`[SarvamTTS] 📦 ${chunks.length} chunk(s) — no sentence gaps`);
-        chunks.forEach(c => this.queue.push([this.cleanText(c), detectedLang]));
+        let addedCount = 0;
+        chunks.forEach(c => {
+            const cleaned = this.cleanText(c);
+            // Ensure chunk contains actual speakable characters (prevents sending isolated punctuation to API)
+            if (cleaned && /[a-zA-Z\u0900-\u097F0-9]/.test(cleaned)) {
+                this.queue.push([cleaned, detectedLang]);
+                addedCount++;
+            }
+        });
+
+        if (addedCount === 0) return;
+        console.log(`[SarvamTTS] 📦 ${addedCount} speakable chunk(s) queued for Sarvam (Ritu)`);
         if (!this.isPlaying) this._runPipeline();
     }
+
     /**
      * PIPELINE: Fetches next sentence in background while current plays.
      * Eliminates the network wait gap between sentences.
+     * ALWAYS uses 100% Sarvam voice — NEVER switches to robotic browser TTS.
      */
     async _runPipeline() {
         if (this.queue.length === 0 || this.isInterrupted) {
@@ -259,36 +248,30 @@ export class SarvamTTS {
             return;
         }
 
-        // Fresh response starting (not continuing an in-flight one) — give Sarvam
-        // a clean shot again instead of staying degraded forever.
-        if (!this.isPlaying) this._degraded = false;
-
         this.isPlaying = true;
         this.onStart();
 
-        const fetchOrSkip = (text, lang) => this._degraded ? Promise.resolve(null) : this._fetchAudio(text, lang);
-
-        // Pre-fetch first sentence immediately
+        // Pre-fetch first sentence immediately with Sarvam
         const [firstText, firstLang] = this.queue[0];
         const firstKey = firstText;
         if (!this._prefetchMap.has(firstKey)) {
-            this._prefetchMap.set(firstKey, fetchOrSkip(firstText, firstLang));
+            this._prefetchMap.set(firstKey, this._fetchAudio(firstText, firstLang));
         }
 
         while (this.queue.length > 0 && !this.isInterrupted) {
             const [currentText, currentLang] = this.queue.shift();
             const currentKey = currentText;
 
-            // Pre-fetch NEXT sentence in background while current plays
+            // Pre-fetch NEXT sentence in background with Sarvam while current plays
             if (this.queue.length > 0 && !this.isInterrupted) {
                 const [nextText, nextLang] = this.queue[0];
                 const nextKey = nextText;
                 if (!this._prefetchMap.has(nextKey)) {
-                    this._prefetchMap.set(nextKey, fetchOrSkip(nextText, nextLang));
+                    this._prefetchMap.set(nextKey, this._fetchAudio(nextText, nextLang));
                 }
             }
 
-            // Wait for current audio (already fetching)
+            // Wait for current audio (already fetching from Sarvam)
             const blobPromise = this._prefetchMap.get(currentKey);
             this._prefetchMap.delete(currentKey);
             const blob = blobPromise ? await blobPromise : null;
@@ -300,11 +283,7 @@ export class SarvamTTS {
             if (blob) {
                 await this._playBlob(blob);
             } else if (!this.isInterrupted) {
-                if (!this._degraded) {
-                    console.warn('[SarvamTTS] Sarvam fetch failed after retries — switching to browser TTS for the rest of this response:', currentText.substring(0, 40));
-                    this._degraded = true;
-                }
-                await this._speakWithBrowserFallback(currentText, currentLang);
+                console.warn('[SarvamTTS] Skipped un-synthesized chunk, staying on Sarvam voice:', currentText.substring(0, 40));
             }
         }
 
