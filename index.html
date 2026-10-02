@@ -315,11 +315,12 @@
 
                     <!-- STT Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text (STT: Groq Whisper)</label>
+                        <label class="group-title"><i class="fa-solid fa-microphone-lines"></i> Speech-to-Text (STT Engine)</label>
                         <div class="form-row">
-                            <label>STT Model</label>
-                            <select id="selSttModel" class="form-input" disabled>
-                                <option value="whisper-large-v3-turbo" selected>Groq Whisper Large-v3-Turbo (Sub-150ms • Multilingual)</option>
+                            <label>STT Provider & Model</label>
+                            <select id="selSttModel" class="form-input">
+                                <option value="sarvam-saaras-v3" selected>🗣️ Sarvam AI (saaras:v3 — Best for Hindi, Hinglish & Indian Accents)</option>
+                                <option value="whisper-large-v3-turbo">⚡ Groq Whisper Large-v3-Turbo (Sub-150ms • Multilingual)</option>
                             </select>
                         </div>
                         <div class="form-row">
@@ -333,7 +334,7 @@
 
                     <!-- TTS Configuration -->
                     <div class="settings-group">
-                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS: ElevenLabs)</label>
+                        <label class="group-title"><i class="fa-solid fa-music"></i> Text-to-Speech (TTS: Sarvam AI)</label>
                         <div class="form-row">
                             <label>TTS Provider & Model</label>
                             <select id="selTtsEngine" class="form-input" disabled>

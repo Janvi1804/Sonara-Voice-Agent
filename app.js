@@ -162,20 +162,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize Whisper Large V3 Turbo Engine
+    // Initialize STT Engine (Sarvam AI saaras:v3 default + Groq Whisper option)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: 'hi',
-        model: 'whisper-large-v3-turbo',
+        model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
-                console.log('🎙️ Whisper Large V3 Turbo Transcribed:', text);
+                console.log('🎙️ STT Transcribed:', text);
             }
         },
         onError: (err) => {
-            console.warn('Whisper STT fallback note:', err.message);
+            console.warn('STT fallback note:', err.message);
         }
     });
+
+    if (selSttModel) {
+        selSttModel.addEventListener('change', () => {
+            if (whisperEngine) whisperEngine.setModel(selSttModel.value);
+            localStorage.setItem('sonara_stt_model', selSttModel.value);
+        });
+    }
+    if (selLanguage) {
+        selLanguage.addEventListener('change', () => {
+            if (whisperEngine) whisperEngine.setLanguage(selLanguage.value);
+            localStorage.setItem('sonara_language', selLanguage.value);
+        });
+    }
 
     let ttsCooldownUntil = 0;
     let ttsEndGraceTimer = null;
@@ -250,13 +263,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
+        } else if (selSttModel) {
+            selSttModel.value = 'sarvam-saaras-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
         }
-        // Whisper routes audio to /api/transcribe serverless proxy
+        // Sync STT Engine settings
         whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -386,6 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (whisperEngine) {
             whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : '');
             whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+            if (selSttModel) whisperEngine.setModel(selSttModel.value);
         }
 
         if (vadEngine) {
@@ -398,10 +415,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         settingsModal.classList.remove('active');
-        const activeModelName = 'Groq Llama 3.3 70B Versatile ⚡';
-        const activeTtsName = 'ElevenLabs Flash v2.5 (Jessica) 🎵';
-        const activeSttName = 'Groq Whisper Large-v3-Turbo 🎙️';
-        appendSystemMessage(`✅ Configuration saved! STT: ${activeSttName} • LLM: ${activeModelName} • TTS: ${activeTtsName}`);
+        const sttName = (selSttModel?.value === 'sarvam-saaras-v3') ? 'Sarvam AI (saaras:v3) 🗣️' : 'Groq Whisper Large-v3-Turbo 🎙️';
+        const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex]?.text : 'Qwen 2.5 32B 🧠';
+        const activeTtsName = 'Sarvam AI (Ritu) 🎵';
+        appendSystemMessage(`✅ Configuration saved! STT: ${sttName} • LLM: ${activeModelName} • TTS: ${activeTtsName}`);
     };
 
     // Re-index handlers
@@ -737,17 +754,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
                     if (isCallActive) {
-                        const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
-                        if (sttChoice === 'whisper-large-v3-turbo') {
-                            setAgentState('thinking', 'Transcribing (Whisper Large V3 Turbo)...');
-                            const transcribed = await whisperEngine.stopAndTranscribe();
-                            if (transcribed && transcribed.trim().length > 1) {
-                                commitUserVoiceInput(false, transcribed.trim());
-                            } else {
-                                setAgentState('listening', 'Listening with Silero VAD...');
-                            }
+                        const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
+                        const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
+                        const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
+                        setAgentState('thinking', `Transcribing (${sttLabel})...`);
+                        const transcribed = await whisperEngine.stopAndTranscribe();
+                        if (transcribed && transcribed.trim().length > 1) {
+                            commitUserVoiceInput(false, transcribed.trim());
                         } else {
-                            commitUserVoiceInput(false);
+                            setAgentState('listening', 'Connected & Listening (Silero VAD)');
                         }
                     }
                 },

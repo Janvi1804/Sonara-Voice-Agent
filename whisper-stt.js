@@ -10,7 +10,7 @@ export class WhisperSTT {
         // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
         // Set to 'hi' or 'en' only if you want to FORCE a specific language
         this.language = options.language || '';
-        this.model = 'whisper-large-v3-turbo';
+        this.model = options.model || 'sarvam-saaras-v3';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
         this.sampleRate = 16000;
@@ -27,6 +27,7 @@ export class WhisperSTT {
 
 
     setApiKey(key) { this.apiKey = key; }
+    setModel(m) { this.model = m || 'sarvam-saaras-v3'; }
     // Allow 'hi', 'en', or '' (auto-detect)
     setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.002, Math.min(0.05, Number(val) || 0.010)); }
@@ -95,7 +96,10 @@ export class WhisperSTT {
         this.audioChunks = [];
 
         const wavBlob = this.encodeWAV(merged);
-        const result = await this.sendToGroqWhisper(wavBlob, { durationMs, rms });
+        const isSarvam = this.model === 'sarvam-saaras-v3' || this.model.startsWith('sarvam');
+        const result = isSarvam
+            ? await this.sendToSarvam(wavBlob, { durationMs, rms })
+            : await this.sendToGroqWhisper(wavBlob, { durationMs, rms });
 
         if (!result || !result.text) return '';
 
@@ -238,6 +242,49 @@ export class WhisperSTT {
             console.error('[GroqWhisper] Transcription failed:', err.message);
             this.onError(err);
             return null;
+        }
+    }
+
+    /**
+     * Send recorded audio to Sarvam AI STT endpoint (saaras:v3)
+     */
+    async sendToSarvam(wavBlob, meta = {}) {
+        this.isTranscribing = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', wavBlob, 'user_speech.wav');
+            formData.append('model', 'saaras:v3');
+            if (this.language === 'en') {
+                formData.append('language_code', 'en-IN');
+            } else if (this.language === 'hi') {
+                formData.append('language_code', 'hi-IN');
+            }
+
+            const res = await fetch('/api/sarvam-stt', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json().catch(() => ({}));
+                throw new Error(errJson.error || `Sarvam STT HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            let text = (data.text || '').trim();
+            text = text.replace(/<\|.*?\|>/g, '');
+            text = text.replace(/\bConverse\s+eye\b/gi, 'Converse AI');
+            text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
+            text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
+
+            console.log('[SarvamSTT] 🎙️ Transcribed:', text);
+            this.isTranscribing = false;
+            return { text, noSpeechProb: 0, avgLogProb: 0 };
+        } catch (err) {
+            this.isTranscribing = false;
+            console.error('[SarvamSTT] Transcription error:', err.message);
+            console.warn('[STT] Auto-falling back to Groq Whisper Large V3 Turbo...');
+            return await this.sendToGroqWhisper(wavBlob, meta);
         }
     }
 }
