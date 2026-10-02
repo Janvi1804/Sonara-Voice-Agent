@@ -76,7 +76,11 @@ export default async function handler(req, res) {
             const audioBuffer = await sarvamRes.arrayBuffer();
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Length', audioBuffer.byteLength);
-            return res.status(200).send(Buffer.from(audioBuffer));
+            res.statusCode = 200;
+            if (typeof res.send === 'function') {
+                return res.send(Buffer.from(audioBuffer));
+            }
+            return res.end(Buffer.from(audioBuffer));
         } else {
             // Fallback: JSON base64 response (older non-stream endpoint behavior)
             const data = await sarvamRes.json();
@@ -85,7 +89,11 @@ export default async function handler(req, res) {
             const audioBuffer = Buffer.from(audioBase64, 'base64');
             res.setHeader('Content-Type', 'audio/wav');
             res.setHeader('Content-Length', audioBuffer.length);
-            return res.status(200).send(audioBuffer);
+            res.statusCode = 200;
+            if (typeof res.send === 'function') {
+                return res.send(audioBuffer);
+            }
+            return res.end(audioBuffer);
         }
 
     } catch (err) {
