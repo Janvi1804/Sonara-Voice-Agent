@@ -210,17 +210,18 @@ ${ragContext}`;
             ? model 
             : 'llama-3.1-8b-instant';
 
+        // Active Groq models — includes both Llama and Qwen models
         const candidateModels = [...new Set([
             requestedModel,
             'llama-3.1-8b-instant',
-            'llama-3.2-3b-preview',
-            'gemma2-9b-it'
-        ])];
+            'qwen/qwen3.8-27b',
+            'qwen/qwen3.6-27b',
+            'openai/gpt-oss-20b'
+        ].filter(m => m && !m.includes('8192') && !m.includes('gemma') && !m.includes('3.3-70b')))];
 
         let activeModel = candidateModels[0];
         let groqData = null;
-        let lastError = '';
-
+        const modelErrors = [];
 
         for (const candidate of candidateModels) {
             try {
@@ -243,6 +244,7 @@ ${ragContext}`;
                     const content = (data.choices?.[0]?.message?.content || '').trim();
                     if (!content) {
                         console.warn(`[Groq LLM] Model ${candidate} returned empty content, trying next candidate...`);
+                        modelErrors.push(`${candidate}: empty content`);
                         continue;
                     }
                     groqData = data;
@@ -250,27 +252,34 @@ ${ragContext}`;
                     break;
                 } else {
                     const errData = await groqRes.json().catch(() => ({}));
-                    const errMsg = errData.error?.message || `Groq error status ${groqRes.status}`;
-                    lastError = errMsg;
-                    console.warn(`[Groq LLM] Model ${candidate} error (${groqRes.status}): ${errMsg}. Trying next candidate...`);
-                    // If auth failed completely, no candidate will work
+                    const errMsg = errData.error?.message || `HTTP ${groqRes.status}`;
+                    console.warn(`[Groq LLM] Model ${candidate} error (${groqRes.status}): ${errMsg}`);
+                    modelErrors.push(`${candidate} (${groqRes.status}): ${errMsg}`);
+
+                    // Auth failure — no other model will work with invalid key
                     if (groqRes.status === 401) {
-                        return res.status(401).json({ error: `Groq Authentication Failed: ${errMsg}`, provider: 'groq' });
+                        return res.status(401).json({ error: `Groq API Key Invalid: ${errMsg}`, provider: 'groq' });
                     }
-                    // Otherwise try the next candidate model
+                    // Quota or rate limit exceeded — inform user directly
+                    if (groqRes.status === 429) {
+                        return res.status(429).json({ error: `Groq Rate Limit / Quota Exceeded: ${errMsg}`, provider: 'groq' });
+                    }
                     continue;
                 }
             } catch (err) {
-                lastError = err.message;
-                console.warn(`[Groq LLM] Model ${candidate} fetch exception: ${err.message}. Trying next candidate...`);
+                modelErrors.push(`${candidate}: ${err.message}`);
+                console.warn(`[Groq LLM] Model ${candidate} exception:`, err.message);
             }
         }
 
-
         if (!groqData) {
-            console.error('[Groq LLM] All models failed. Last error:', lastError);
-            return res.status(502).json({ error: `Groq LLM failed: ${lastError}`, provider: 'groq' });
+            console.error('[Groq LLM] All models failed:', modelErrors.join(' | '));
+            return res.status(502).json({ 
+                error: `Groq LLM failed: ${modelErrors.join('; ')}`, 
+                provider: 'groq' 
+            });
         }
+
 
         const rawContent = groqData.choices?.[0]?.message?.content || '';
         const cleanContent = sanitizeAiResponse(rawContent);
