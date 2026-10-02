@@ -48,9 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const selLlmModel = document.getElementById('selLlmModel');
     const selLlmProvider = document.getElementById('selLlmProvider');
     const txtLlmApiKey = document.getElementById('txtLlmApiKey');
-    const txtHfToken = document.getElementById('txtHfToken');
+    const txtHfToken = null;
     const txtSystemPrompt = document.getElementById('txtSystemPrompt');
-    const rowHfToken = document.getElementById('rowHfToken');
+    const rowHfToken = null;
     const rowApiKey = document.getElementById('rowApiKey');
     const selSttModel = document.getElementById('selSttModel');
     const selLanguage = document.getElementById('selLanguage');
@@ -284,11 +284,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Supabase DB URL/credentials are NEVER stored on the client.
         // /api/db serverless function reads POSTGRES_URL / DATABASE_URL from server env vars.
-        const txtPostgresUrl = document.getElementById('txtPostgresUrl');
-        if (txtPostgresUrl) {
-            txtPostgresUrl.value = '';
-            txtPostgresUrl.placeholder = 'Managed securely on server';
-        }
         const activeDbUrl = ''; // Empty string = use server-side credentials via /api/db proxy
         ragEngine.vectorStore.setPostgresUrl(activeDbUrl);
         customerDB.setPostgresUrl(activeDbUrl);
@@ -379,14 +374,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selLlmProvider) localStorage.setItem('sonara_llm_provider', selLlmProvider.value);
         if (txtSystemPrompt) localStorage.setItem('sonara_system_prompt', txtSystemPrompt.value.trim());
 
-        // Session-only override for custom Postgres URL (does not persist across sessions)
-        const txtPostgresUrl = document.getElementById('txtPostgresUrl');
-        if (txtPostgresUrl && txtPostgresUrl.value.trim()) {
-            ragEngine.vectorStore.setPostgresUrl(txtPostgresUrl.value.trim());
-            customerDB.setPostgresUrl(txtPostgresUrl.value.trim());
-            appointmentDB.setPostgresUrl(txtPostgresUrl.value.trim());
-            logger.setPostgresUrl(txtPostgresUrl.value.trim());
-        }
 
         // TTS
         if (selTtsEngine) localStorage.setItem('sonara_tts_engine', 'elevenlabs');
@@ -2010,18 +1997,21 @@ The conversation should feel like a natural conversation with a knowledgeable hu
     (function initCallAgentWidget() {
         const _overlay       = document.getElementById('callPhoneOverlay');
         const _btnCall       = document.getElementById('btnCallAgent');
-        const _btnEnd        = document.getElementById('btnEndCall');
+        const _btnEnd        = document.getElementById('btnOverlayEnd');
+        const _btnMute       = document.getElementById('btnOverlayMute');
+        const _btnInterrupt  = document.getElementById('btnOverlayInterrupt');
         const _inputName     = document.getElementById('callInputName');
         const _inputPhone    = document.getElementById('callInputPhone');
         const _overlayName   = document.getElementById('callOverlayCallerName');
-        const _stateText     = document.getElementById('callStateText');
-        const _durationEl    = document.getElementById('callDurationDisplay');
+        const _stateText     = document.getElementById('callOverlayStatusText');
+        const _durationEl    = document.getElementById('callOverlayTimer');
 
         // Guard: exit if elements not found (shouldn't happen)
         if (!_btnCall || !_overlay) return;
 
         let _callStart   = null;   // Date.now() when call connected
         let _durTimer    = null;   // interval: updates duration + state text
+        let _isMuted     = false;  // mic mute state
 
         // ── Helpers ──────────────────────────────────────────────────────
         const _fmtDur = (ms) => {
@@ -2053,7 +2043,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 if (_stateText) {
                     if (isAiSpeaking)       _stateText.textContent = '🔊 Sonara is speaking…';
                     else if (isAiThinking)  _stateText.textContent = '⏳ Processing…';
-                    else if (isCallActive)  _stateText.textContent = '🎙️ Listening…';
+                    else if (isCallActive)  _stateText.textContent = _isMuted ? '🔇 Microphone Muted' : '🎙️ Listening…';
                 }
 
                 // Safety: if main pipeline ended call externally, sync overlay
@@ -2077,6 +2067,14 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             _stopDurTimer();
             _hideOverlay();
             _resetBtn();
+            if (_isMuted && mediaStream) {
+                try { mediaStream.getAudioTracks().forEach(t => { t.enabled = true; }); } catch (_) {}
+                _isMuted = false;
+            }
+            if (_btnMute) {
+                _btnMute.classList.remove('active');
+                _btnMute.innerHTML = '<i class="fa-solid fa-microphone" aria-hidden="true"></i><span>Mute</span>';
+            }
             // Remove call context from history
             conversationHistory = conversationHistory.filter(
                 m => !m.content?.startsWith('[CALL_CTX]')
@@ -2175,6 +2173,38 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             if (callBtnIcon)    callBtnIcon.className  = 'fa-solid fa-phone';
             if (callBtnText)    callBtnText.textContent = 'Start Real-Time Voice';
             setAgentState('idle', 'Agent Inactive • Click to Start');
+        });
+
+        // ── Mute Microphone ──────────────────────────────────────────────
+        _btnMute?.addEventListener('click', () => {
+            if (!isCallActive || !mediaStream) return;
+            _isMuted = !_isMuted;
+            try {
+                mediaStream.getAudioTracks().forEach(track => {
+                    track.enabled = !_isMuted;
+                });
+            } catch (_) {}
+
+            if (_btnMute) {
+                _btnMute.classList.toggle('active', _isMuted);
+                _btnMute.innerHTML = _isMuted
+                    ? '<i class="fa-solid fa-microphone-slash" aria-hidden="true"></i><span>Unmute</span>'
+                    : '<i class="fa-solid fa-microphone" aria-hidden="true"></i><span>Mute</span>';
+            }
+            if (_stateText) {
+                _stateText.textContent = _isMuted ? '🔇 Microphone Muted' : '🎙️ Listening…';
+            }
+        });
+
+        // ── Interrupt Sonara Speaking ────────────────────────────────────
+        _btnInterrupt?.addEventListener('click', () => {
+            if (!isCallActive) return;
+            if (ttsEngine && typeof ttsEngine.interrupt === 'function') {
+                ttsEngine.interrupt();
+            }
+            isAiSpeaking = false;
+            setAgentState('listening', 'Interrupted • Listening');
+            if (_stateText) _stateText.textContent = '🎙️ Listening…';
         });
 
         // ── Exotel Phone Call Trigger ────────────────────────────────────
