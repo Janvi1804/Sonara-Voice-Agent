@@ -7,7 +7,9 @@
 export class WhisperSTT {
     constructor(options = {}) {
         this.apiKey = options.apiKey || '';
-        this.language = options.language || 'hi';
+        // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
+        // Set to 'hi' or 'en' only if you want to FORCE a specific language
+        this.language = options.language || '';
         this.model = 'whisper-large-v3-turbo';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
@@ -23,8 +25,10 @@ export class WhisperSTT {
     }
 
     setApiKey(key) { this.apiKey = key; }
-    setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : 'hi'; }
+    // Allow 'hi', 'en', or '' (auto-detect)
+    setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.001, Math.min(0.05, Number(val) || 0.004)); }
+
 
     clearBuffer() {
         this.audioChunks = [];
@@ -160,8 +164,10 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            if (this.language) whisperForm.append('language', this.language);
-            whisperForm.append('prompt', 'Converse AI, Sonara, Namaste, hello, pricing, services, demo, booking, WhatsApp, Hindi, Hinglish, case studies.');
+            // No language forced → Whisper auto-detects Hindi, English, Hinglish
+            // Prompt hint helps Whisper recognise brand names and domain terms accurately
+            whisperForm.append('prompt', 'Converse AI, Sonara, Sarvam, Namaste, pricing, services, WhatsApp automation, voice bot, demo, booking, appointment, case study, Revti Digital, API, CRM, Salesforce, HubSpot. हाँ, नहीं, क्या, कैसे, बताइए, सर्वम, अपॉइंटमेंट, सर्विस.');
+
 
             const keyToUse = this.apiKey ? this.apiKey.trim() : '';
             const headers = keyToUse ? { 'Authorization': 'Bearer ' + keyToUse } : {};

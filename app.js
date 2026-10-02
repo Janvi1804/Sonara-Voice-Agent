@@ -209,9 +209,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isAiSpeaking = false;
         isProcessingUtterance = false;
         if (vadEngine) vadEngine.setAiSpeakingState(false);
-        // 150ms hardware drain buffer — just enough to clear speaker room reverb tail
-        // without locking out the user's next utterance.
-        ttsCooldownUntil = Date.now() + 150;
+        // 300ms speaker drain buffer — clears room reverb tail from TTS audio
+        // so microphone doesn't pick up TTS residue as user speech
+        ttsCooldownUntil = Date.now() + 300;
 
         ttsEndGraceTimer = setTimeout(() => {
             currentSpeechText = '';
@@ -220,8 +220,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 setAgentState('listening', 'Connected & Listening (Silero VAD)');
                 startRecognitionSafely();
             }
-        }, 150);
+        }, 300);
     };
+
 
     // Load saved settings from LocalStorage & Initialize default TTS Engine
     const loadSettings = () => {
@@ -315,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ttsEngine) {
             ttsEngine = new SarvamTTS(audioContext, {
                 speaker: 'ritu',    // Ritu — natural Hindi/Hinglish female voice
-                pace: 1.0,
+                pace: 1.05,         // Slightly faster = more natural conversational tone
                 onStart: () => handleTtsStart('Sarvam AI (Ritu)'),
                 onSentenceStart: (sentence) => kickTtsWatchdog('sentence'),
                 onEnd: handleTtsEnd
