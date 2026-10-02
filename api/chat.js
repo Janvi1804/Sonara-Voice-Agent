@@ -137,10 +137,11 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
             messages = [],
-            model = 'llama-3.1-8b-instant',
+            model = 'qwen/qwen3.8-27b',
             temperature = 0.65,
             max_tokens = 180
         } = body;
+
 
 
         const groqApiKey = process.env.GROQ_API_KEY || '';
@@ -202,26 +203,25 @@ ${ragContext}`;
             });
         }
 
-        // Active, confirmed Groq models — ordered by speed
-        // llama-3.1-8b-instant: ~150-250ms (ultra-fast, active production)
-        // llama-3.2-3b-preview: ~180ms (low-latency preview)
-        // gemma2-9b-it: ~250ms (active Google instruction model)
-        const requestedModel = (model && !model.includes('8192') && !model.includes('3.3-70b')) 
+        // Verified live models available on this Groq account:
+        // 1. qwen/qwen3.8-27b: High quality multilingual, natural Hindi & English
+        // 2. openai/gpt-oss-20b: Ultra-fast 20B conversational model (<200ms)
+        // 3. openai/gpt-oss-120b: High-capacity reasoning fallback
+        const requestedModel = (model && (model.includes('qwen') || model.includes('gpt-oss'))) 
             ? model 
-            : 'llama-3.1-8b-instant';
+            : 'qwen/qwen3.8-27b';
 
-        // Active Groq models — includes both Llama and Qwen models
         const candidateModels = [...new Set([
             requestedModel,
-            'llama-3.1-8b-instant',
             'qwen/qwen3.8-27b',
-            'qwen/qwen3.6-27b',
-            'openai/gpt-oss-20b'
-        ].filter(m => m && !m.includes('8192') && !m.includes('gemma') && !m.includes('3.3-70b')))];
+            'openai/gpt-oss-20b',
+            'openai/gpt-oss-120b'
+        ])];
 
         let activeModel = candidateModels[0];
         let groqData = null;
         const modelErrors = [];
+
 
         for (const candidate of candidateModels) {
             try {

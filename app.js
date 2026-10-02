@@ -237,15 +237,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_llm_model')) {
             const savedModel = localStorage.getItem('sonara_llm_model');
-            if (savedModel.includes('gpt-oss') || savedModel.includes('qwen') || savedModel.includes('compound') || savedModel.includes('8192') || savedModel.includes('3.3-70b')) {
-                selLlmModel.value = 'llama-3.1-8b-instant';
-                localStorage.setItem('sonara_llm_model', 'llama-3.1-8b-instant');
+            if (savedModel.includes('qwen') || savedModel.includes('gpt-oss')) {
+                selLlmModel.value = savedModel;
             } else {
-                selLlmModel.value = savedModel || 'llama-3.1-8b-instant';
+                selLlmModel.value = 'qwen/qwen3.8-27b';
+                localStorage.setItem('sonara_llm_model', 'qwen/qwen3.8-27b');
             }
         } else if (selLlmModel) {
-            selLlmModel.value = 'llama-3.1-8b-instant';
+            selLlmModel.value = 'qwen/qwen3.8-27b';
         }
+
 
         if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
@@ -1696,11 +1697,12 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 signal: abortController.signal,
                 body: JSON.stringify({
                     messages,
-                    model: 'llama-3.1-8b-instant',
+                    model: selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b',
                     max_tokens: 160,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });
+
 
             // If user barged in while we were waiting for LLM, discard completely
             if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
