@@ -692,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 800,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 600,
                 minSpeechDurationMs: 200,
                 speechStartConfirmFrames: 2,
                 rmsFloor: 0.004,

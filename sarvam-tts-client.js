@@ -1,14 +1,17 @@
 /**
- * Sarvam AI TTS Client Engine
- * Calls /api/sarvam-tts serverless proxy → Sarvam bulbul:v3 model
- * Voice: Ritu — natural Hindi/Hinglish female voice
- * Same interface as ElevenLabsTTS for drop-in replacement.
+ * Sarvam AI TTS Client Engine — PIPELINED VERSION
+ * Eliminates inter-sentence pause by pre-fetching next audio
+ * while current sentence is still playing.
+ *
+ * Pipeline flow:
+ *   Fetch[0] → Play[0] + Fetch[1] simultaneously → Play[1] + Fetch[2] → ...
+ *   Result: zero gap between sentences (no waiting for network after first sentence)
  */
 export class SarvamTTS {
     constructor(audioContext, options = {}) {
         this.audioContext = audioContext;
-        this.speaker = options.speaker || 'ritu';       // Ritu — natural Hindi/Hinglish
-        this.language = options.language || null;        // null = auto-detect
+        this.speaker = options.speaker || 'ritu';
+        this.language = options.language || null;
         this.pace = options.pace || 1.0;
         this.onStart = options.onStart || (() => {});
         this.onEnd = options.onEnd || (() => {});
@@ -20,6 +23,8 @@ export class SarvamTTS {
         this.queue = [];
         this.activeAudioElement = null;
         this.activeAbortController = null;
+        // Pipeline: pre-fetched audio blobs waiting to play
+        this._prefetchMap = new Map();
 
         this.initAudioNodes();
     }
@@ -42,21 +47,10 @@ export class SarvamTTS {
         if (ctx) { this.audioContext = ctx; this.initAudioNodes(); }
     }
 
-    setVoice(speaker) {
-        if (speaker) this.speaker = speaker;
-    }
+    setVoice(speaker) { if (speaker) this.speaker = speaker; }
+    setSpeed(pace) { this.pace = pace || 1.0; }
+    getAnalyser() { return this.analyser || null; }
 
-    setSpeed(pace) {
-        this.pace = pace || 1.0;
-    }
-
-    getAnalyser() {
-        return this.analyser || null;
-    }
-
-    /**
-     * Split response into sentences for sentence-by-sentence queue
-     */
     splitIntoSentences(text) {
         if (!text) return [];
         const regex = /[^.!?।\n]+[.!?।\n]+(?:\s+|$)|[^.!?।\n]+$/g;
@@ -64,9 +58,6 @@ export class SarvamTTS {
         return matches.map(s => s.trim()).filter(s => s.length > 0);
     }
 
-    /**
-     * Clean text before sending to Sarvam
-     */
     cleanText(text) {
         if (!text) return '';
         return text
@@ -77,23 +68,56 @@ export class SarvamTTS {
     }
 
     /**
-     * Main speak — splits into sentences and queues
+     * Fetch audio from Sarvam API — returns a Blob or null on failure
+     */
+    async _fetchAudio(text) {
+        try {
+            const res = await fetch('/api/sarvam-tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text,
+                    speaker: this.speaker,
+                    language_code: this.language || undefined,
+                    pace: this.pace
+                })
+            });
+            if (!res.ok) {
+                const err = await res.text();
+                throw new Error(`Sarvam TTS failed (${res.status}): ${err}`);
+            }
+            const buf = await res.arrayBuffer();
+            const contentType = res.headers.get('content-type') || 'audio/mpeg';
+            return new Blob([buf], { type: contentType });
+        } catch (err) {
+            if (err.name !== 'AbortError') {
+                console.error('[SarvamTTS] ❌ Fetch error:', err.message);
+                window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Main speak — splits into sentences, starts pipeline
      */
     async speak(text) {
         if (!text || !text.trim()) return;
         this.isInterrupted = false;
         const sentences = this.splitIntoSentences(text);
         if (sentences.length === 0) return;
-        sentences.forEach(s => this.queue.push(s));
-        if (!this.isPlaying) this.processQueue();
+        sentences.forEach(s => this.queue.push(this.cleanText(s)));
+        if (!this.isPlaying) this._runPipeline();
     }
 
     /**
-     * Process sentence queue sequentially
+     * PIPELINE: Fetches next sentence in background while current plays.
+     * Eliminates the network wait gap between sentences.
      */
-    async processQueue() {
+    async _runPipeline() {
         if (this.queue.length === 0 || this.isInterrupted) {
             this.isPlaying = false;
+            this._prefetchMap.clear();
             this.onEnd();
             return;
         }
@@ -101,65 +125,66 @@ export class SarvamTTS {
         this.isPlaying = true;
         this.onStart();
 
+        // Pre-fetch first sentence immediately
+        const firstText = this.queue[0];
+        if (!this._prefetchMap.has(firstText)) {
+            this._prefetchMap.set(firstText, this._fetchAudio(firstText));
+        }
+
         while (this.queue.length > 0 && !this.isInterrupted) {
-            const sentence = this.queue.shift();
-            this.onSentenceStart(sentence);
-            await this.speakSentence(sentence);
+            const currentText = this.queue.shift();
+
+            // Kick off pre-fetch for NEXT sentence in background (no await)
+            if (this.queue.length > 0 && !this.isInterrupted) {
+                const nextText = this.queue[0];
+                if (!this._prefetchMap.has(nextText)) {
+                    this._prefetchMap.set(nextText, this._fetchAudio(nextText));
+                }
+            }
+
+            // Wait for current sentence audio (already being fetched)
+            const blobPromise = this._prefetchMap.get(currentText);
+            this._prefetchMap.delete(currentText);
+
+            const blob = blobPromise ? await blobPromise : null;
+
+            if (this.isInterrupted) break;
+
+            this.onSentenceStart(currentText);
+
+            if (blob) {
+                await this._playBlob(blob);
+            } else {
+                console.warn('[SarvamTTS] Skipping sentence (fetch failed):', currentText.substring(0, 40));
+            }
         }
 
         this.isPlaying = false;
+        this._prefetchMap.clear();
         if (!this.isInterrupted) this.onEnd();
     }
 
     /**
-     * Synthesize and play one sentence via Sarvam TTS API
+     * Play a Blob as audio — returns Promise that resolves when playback ends
      */
-    speakSentence(text) {
+    _playBlob(blob) {
         return new Promise(async (resolve) => {
             if (this.isInterrupted) { resolve(); return; }
-
-            const cleanedText = this.cleanText(text);
-            if (!cleanedText) { resolve(); return; }
-
-            this.activeAbortController = new AbortController();
 
             try {
                 if (this.audioContext && this.audioContext.state === 'suspended') {
                     await this.audioContext.resume();
                 }
 
-                const ttsRes = await fetch('/api/sarvam-tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: cleanedText,
-                        speaker: this.speaker,
-                        language_code: this.language || undefined,
-                        pace: this.pace
-                    }),
-                    signal: this.activeAbortController.signal
-                });
-
-                if (!ttsRes.ok) {
-                    const err = await ttsRes.text();
-                    throw new Error(`Sarvam TTS failed (${ttsRes.status}): ${err}`);
-                }
-
-                const arrayBuffer = await ttsRes.arrayBuffer();
-                if (this.isInterrupted) { resolve(); return; }
-
-                // Sarvam returns audio/wav or audio/mpeg
-                const contentType = ttsRes.headers.get('content-type') || 'audio/mpeg';
-                const blob = new Blob([arrayBuffer], { type: contentType });
                 const audioUrl = URL.createObjectURL(blob);
                 const audio = new Audio(audioUrl);
                 audio.volume = 1.0;
                 this.activeAudioElement = audio;
 
-                let cleaned = false;
+                let done = false;
                 const cleanup = () => {
-                    if (cleaned) return;
-                    cleaned = true;
+                    if (done) return;
+                    done = true;
                     this.activeAudioElement = null;
                     try { URL.revokeObjectURL(audioUrl); } catch (_) {}
                     resolve();
@@ -171,18 +196,12 @@ export class SarvamTTS {
                     cleanup();
                 };
 
-                console.log('[SarvamTTS] 🗣️ Playing (Ritu):', cleanedText.substring(0, 60));
+                console.log('[SarvamTTS] 🗣️ Playing (Ritu):', blob.size + 'B');
                 await audio.play();
 
             } catch (err) {
-                if (err.name === 'AbortError') {
-                    console.log('[SarvamTTS] Aborted.');
-                    resolve();
-                } else {
-                    console.error('[SarvamTTS] ❌ Error:', err.message);
-                    window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
-                    resolve();
-                }
+                console.warn('[SarvamTTS] Play error:', err.message);
+                resolve();
             }
         });
     }
@@ -193,11 +212,7 @@ export class SarvamTTS {
     interrupt() {
         this.isInterrupted = true;
         this.queue = [];
-
-        if (this.activeAbortController) {
-            try { this.activeAbortController.abort(); } catch (_) {}
-            this.activeAbortController = null;
-        }
+        this._prefetchMap.clear();
 
         if (this.activeAudioElement) {
             try {
@@ -207,8 +222,12 @@ export class SarvamTTS {
             this.activeAudioElement = null;
         }
 
+        if ('speechSynthesis' in window) {
+            try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+
         this.isPlaying = false;
         this.onEnd();
-        console.log('[SarvamTTS] ⛔ Interrupted & queue cleared.');
+        console.log('[SarvamTTS] ⛔ Interrupted & pipeline cleared.');
     }
 }
