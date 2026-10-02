@@ -119,7 +119,10 @@ body.dark-theme {
     flex: 1;
     width: 100%;
     min-height: 0;
+    height: calc(100vh - 140px);
+    max-height: 760px;
 }
+
 
 /* Top Header */
 .app-header {
@@ -510,7 +513,8 @@ body.dark-theme {
     display: flex;
     flex-direction: column;
     height: 100%;
-    min-height: 480px;
+    min-height: 0;
+    max-height: 100%;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     overflow: hidden;
 }
@@ -522,6 +526,7 @@ body.dark-theme {
     padding: 12px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     background: rgba(13, 17, 26, 0.5);
+    flex-shrink: 0;
 }
 
 .transcript-title {
@@ -551,20 +556,37 @@ body.dark-theme {
 .transcript-body {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    max-height: 100%;
     padding: 16px 20px;
     display: flex;
     flex-direction: column;
     gap: 12px;
     scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99, 102, 241, 0.45) rgba(255, 255, 255, 0.02);
 }
 
 .transcript-body::-webkit-scrollbar {
     width: 6px;
 }
-.transcript-body::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+.transcript-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
 }
+.transcript-body::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.45);
+    border-radius: 4px;
+}
+.transcript-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.75);
+}
+
+.chat-input-bar {
+    flex-shrink: 0;
+}
+
 
 .chat-message {
     display: flex;
@@ -921,10 +943,12 @@ body.dark-theme {
     }
 
     .transcript-section {
-        min-height: 400px;
-        height: auto;
+        min-height: 360px;
+        height: 480px;
+        max-height: 520px;
     }
 }
+
 
 @media (max-width: 768px) {
     body.dark-theme {
@@ -1012,8 +1036,11 @@ body.dark-theme {
     }
 
     .transcript-section {
-        min-height: 280px;
+        min-height: 300px;
+        height: 420px;
+        max-height: 460px;
     }
+
 
     .transcript-header {
         padding: 10px 14px;

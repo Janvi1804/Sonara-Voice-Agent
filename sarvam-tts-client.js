@@ -112,20 +112,35 @@ export class SarvamTTS {
      */
     fixPronunciation(text) {
         return text
+            // Common enterprise acronyms
             .replace(/\bAPI\b/g, 'A.P.I.')
             .replace(/\bCRM\b/g, 'C.R.M.')
             .replace(/\bROI\b/g, 'R.O.I.')
             .replace(/\bAI\b/g, 'A.I.')
+            .replace(/\bLLM\b/g, 'L.L.M.')
+            .replace(/\bSTT\b/g, 'S.T.T.')
+            .replace(/\bTTS\b/g, 'T.T.S.')
+            .replace(/\bVAD\b/g, 'V.A.D.')
             .replace(/\bSMS\b/g, 'S.M.S.')
             .replace(/\bIVR\b/g, 'I.V.R.')
             .replace(/\bNPS\b/g, 'N.P.S.')
             .replace(/\bCPL\b/g, 'C.P.L.')
+            .replace(/\bCSAT\b/g, 'C.S.A.T.')
             .replace(/\bB2B\b/g, 'B to B')
             .replace(/\bB2C\b/g, 'B to C')
-            .replace(/\bSaaS\b/gi, 'Saas')
+            .replace(/\bSaaS\b/gi, 'Sass')
+            // Brand & product names
+            .replace(/\bConverseAI\b/gi, 'Converse A.I.')
+            .replace(/\bConverse AI\b/gi, 'Converse A.I.')
+            .replace(/\btheconverseai\.com\b/gi, 'the converse A.I. dot com')
+            .replace(/\bRevti\b/gi, 'Rev-ti')
+            // Ratios, multipliers and percentages
             .replace(/(\d+)x\b/g, '$1 times')
-            .replace(/%(\s|$)/g, ' percent$1');
+            .replace(/(\d+)\s*%/g, '$1 percent')
+            .replace(/%(\s|$)/g, ' percent$1')
+            .replace(/\b24\/7\b/g, '24 by 7');
     }
+
 
     /**
      * Clean text before sending to Sarvam TTS.

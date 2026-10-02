@@ -223,59 +223,38 @@ ${ragContext}`;
                         model: candidate,
                         messages: formattedMessages,
                         temperature: 0.15,
-                        max_tokens: Math.min(200, Math.max(100, Number(max_tokens) || 160)),
-                        stream: true
+                        max_tokens: Math.min(200, Math.max(100, Number(max_tokens) || 160))
                     })
                 });
 
                 if (groqRes.ok) {
-                    // Consume SSE stream from Groq, accumulate full content
-                    let fullContent = '';
-                    const reader = groqRes.body.getReader();
-                    const decoder = new TextDecoder();
-                    let sseBuffer = '';
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        sseBuffer += decoder.decode(value, { stream: true });
-                        const lines = sseBuffer.split('\n');
-                        sseBuffer = lines.pop(); // keep incomplete line
-
-                        for (const line of lines) {
-                            if (!line.startsWith('data: ')) continue;
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') break;
-                            try {
-                                const parsed = JSON.parse(data);
-                                const token = parsed.choices?.[0]?.delta?.content || '';
-                                fullContent += token;
-                            } catch (_) {}
-                        }
-                    }
-
-                    const content = fullContent.trim();
+                    const data = await groqRes.json();
+                    const content = (data.choices?.[0]?.message?.content || '').trim();
                     if (!content) {
-                        console.warn(`[Groq LLM] Model ${candidate} returned empty content, trying next...`);
+                        console.warn(`[Groq LLM] Model ${candidate} returned empty content, trying next candidate...`);
                         continue;
                     }
-                    groqData = { choices: [{ message: { content } }] };
+                    groqData = data;
                     activeModel = candidate;
                     break;
                 } else {
                     const errData = await groqRes.json().catch(() => ({}));
                     const errMsg = errData.error?.message || `Groq error status ${groqRes.status}`;
                     lastError = errMsg;
-                    if (groqRes.status === 404 || errMsg.toLowerCase().includes('does not exist')) {
-                        console.warn(`[Groq LLM] Model ${candidate} not available, trying next...`);
-                        continue;
+                    console.warn(`[Groq LLM] Model ${candidate} error (${groqRes.status}): ${errMsg}. Trying next candidate...`);
+                    // If auth failed completely, no candidate will work
+                    if (groqRes.status === 401) {
+                        return res.status(401).json({ error: `Groq Authentication Failed: ${errMsg}`, provider: 'groq' });
                     }
-                    return res.status(groqRes.status).json({ error: `Groq LLM failed: ${errMsg}`, provider: 'groq' });
+                    // Otherwise try the next candidate model
+                    continue;
                 }
             } catch (err) {
                 lastError = err.message;
+                console.warn(`[Groq LLM] Model ${candidate} fetch exception: ${err.message}. Trying next candidate...`);
             }
         }
+
 
         if (!groqData) {
             console.error('[Groq LLM] All models failed. Last error:', lastError);
