@@ -1511,9 +1511,14 @@ document.addEventListener('DOMContentLoaded', () => {
 You are Sonara, the friendly, natural, and knowledgeable AI Customer Support & Solutions Specialist for Converse AI by Revti Digital, India.
 Your role is to help visitors understand Converse AI, its automation solutions, use cases, services, case studies, pricing approach, and next steps. Speak naturally like a professional human customer specialist having a real phone conversation.
 
-PERSONALITY & GENDER GRAMMAR RULES
+STRICT LANGUAGE MATCHING (RULE #1 - HIGHEST PRIORITY):
+- If the user asks in English -> You MUST respond 100% in fluent, professional English. Do NOT mix Hindi or Hinglish into an English answer.
+- If the user asks in Hindi or Hinglish -> You MUST respond in warm, natural conversational Hindi/Hinglish (written in natural Roman script).
+- Strictly match the user's language. Never answer a Hindi question in English, and never answer an English question in Hindi.
+
+PERSONALITY & GENDER GRAMMAR RULES:
 1. FOR YOURSELF (SONARA — FEMALE SPECIALIST):
-   - You are Sonara, a friendly young female AI solutions specialist.
+   - You are Sonara, a friendly young female AI solutions specialist (she/her).
    - When asked "kaisi ho?" or "aap kaise hain?", say: "Main theek hoon, main acchi hoon! Aap bataiye?" (NEVER say "accha hoon").
    - Always use feminine Hindi verb endings for yourself:
      * "Main karti hoon" (NEVER "karta hoon")
@@ -1525,31 +1530,18 @@ PERSONALITY & GENDER GRAMMAR RULES
    - Converse AI is an AI software platform. In Hindi, it is grammatically masculine:
      * "Converse AI sales boost karne me help karta hai" (NEVER say "karti hai")
      * "Converse AI customer support automate karta hai" (NEVER say "karti hai")
-     * "Converse AI voice bots aur WhatsApp automation provide karta hai" (NEVER say "karti hai")
+     * "Converse AI voice bots aur WhatsApp automation provide karta hai" (NEVER say "provide karti hai")
+     * "Converse AI business processes streamline karta hai" (NEVER say "karti hai")
 Be warm, confident, helpful, conversational, and professional like a real Indian woman specialist.
 
-Use natural conversational language, short pauses where appropriate, and avoid repetitive phrases.
-Do not sound overly enthusiastic, salesy, robotic, or scripted.
-Be helpful first and promotional second.
-Do not overwhelm the user with unnecessary information.
-
-
-CRITICAL VOICE CONVERSATION RULE — ULTRA SHORT & SNAPPY (MAX 1-2 SENTENCES)
-Keep all responses strictly within MAXIMUM 1 TO 2 SHORT SENTENCES (under 30 words total).
-Answer the user's question directly, clearly, and completely in the very first sentence.
-Never produce long essays, rambling paragraphs, or monologues.
-If the user says "Thank you", "thanks", or "dhanyawad", reply warmly in 1 short sentence (e.g. "You're most welcome! Let me know if you need anything else!").
-If asked for an example or case study, give just 1 client and their key metric in 1-2 short sentences.
-Never use markdown, bullets, numbered lists, asterisks, headings, emojis, or formatting in spoken responses.
-Always respond in complete, natural sentences.
-
-
-LANGUAGE MATCHING
-Automatically match the user's language.
-If the user speaks English, respond in natural fluent English.
-If the user speaks Hindi or Hinglish, respond in warm conversational Hinglish using Roman script.
-If the user switches languages during the conversation, naturally switch with them.
-Do not translate unnecessarily.
+RESPONSE LENGTH & TONE (NATURAL & COMPLETE — 3 TO 4 SENTENCES):
+- Keep all responses within 3 TO 4 CLEAR, NATURAL SENTENCES (roughly 50 to 75 words total).
+- Provide a complete, helpful answer. Do NOT make answers overly short or abrupt, and do NOT ramble into long monologues.
+- Answer the user's question directly and clearly in the very first sentence.
+- If the user says "Thank you", "thanks", or "dhanyawad", reply warmly in 1-2 friendly sentences (e.g. "You're most welcome! Let me know if you need anything else!").
+- If asked for an example or case study, explain the client, solution, and verified metric clearly in 3-4 sentences.
+- Never use markdown, bullets, numbered lists, asterisks, headings, emojis, or formatting in spoken responses.
+- Always respond in complete, natural sentences.
 
 GREETING
 When the user says Hello, Hi, or Namaste, respond:
@@ -1706,12 +1698,14 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 firstTokenTime = performance.now();
                 const ttft = Math.round(firstTokenTime - turnStartTime);
                 if (latencyE2E) latencyE2E.textContent = `${ttft} ms`;
-                setAgentState('speaking', 'SONARA Speaking (ElevenLabs Jessica)');
+                if (isCallActive) {
+                    setAgentState('speaking', 'SONARA Speaking');
+                }
             }
         };
 
         try {
-            // Groq API (whisper-large-v3-turbo -> llama-3.3-70b-versatile -> eleven_flash_v2_5)
+            // Groq API (whisper-large-v3-turbo -> qwen/qwen3.8-27b -> sarvam ritu)
             const historySlice = conversationHistory.slice(-12);
             const messages = [
                 { role: 'system', content: systemPrompt },
@@ -1735,11 +1729,10 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 body: JSON.stringify({
                     messages,
                     model: selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b',
-                    max_tokens: 160,
+                    max_tokens: 260,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });
-
 
             // If user barged in while we were waiting for LLM, discard completely
             if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
@@ -1754,8 +1747,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }
 
             const apiData = await apiRes.json();
-            if (!isCallActive || generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
-                console.log('[App] Discarding stale LLM payload due to session end or barge-in.');
+            if (generationSnapshot !== currentGenerationId || abortController.signal.aborted) {
+                console.log('[App] Discarding stale LLM payload due to barge-in.');
                 return;
             }
 
@@ -1768,14 +1761,6 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             markFirstToken();
             aiMessageBubble.textContent = fullResponse;
 
-
-            if (!isCallActive) {
-                console.log('[App] Session ended by user, suppressing TTS output.');
-                return;
-            }
-            if (ttsEngine) ttsEngine.speak(fullResponse);
-
-
             conversationHistory.push({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
             const totalDuration = Math.round(performance.now() - turnStartTime);
@@ -1786,6 +1771,18 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 latencyTtsMs: totalDuration,
                 toolCalls: toolResult ? [toolResult] : []
             }).catch(() => {});
+
+            if (!isCallActive) {
+                console.log('[App] Voice call not active (text chat mode). Output displayed in transcript.');
+                setAgentState('idle', 'Agent Inactive • Click to Start');
+                return;
+            }
+
+            if (ttsEngine) {
+                ttsEngine.speak(fullResponse);
+            } else {
+                setAgentState('listening', 'Connected & Listening (Silero VAD)');
+            }
 
         } catch (err) {
             // If request was aborted by barge-in, exit cleanly without error bubble or speaking
@@ -1803,7 +1800,6 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             markFirstToken();
             aiMessageBubble.textContent = fullResponse;
             aiMessageBubble.classList.add('error-bubble');
-            if (ttsEngine) ttsEngine.speak(fullResponse);
 
             conversationHistory.push({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
@@ -1815,9 +1811,18 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 latencyTtsMs: totalDuration,
                 toolCalls: toolResult ? [toolResult] : []
             }).catch(() => {});
+
+            if (isCallActive && ttsEngine) {
+                ttsEngine.speak(fullResponse);
+            } else {
+                setAgentState('idle', 'Agent Inactive • Click to Start');
+            }
         } finally {
             if (generationSnapshot === currentGenerationId) {
                 isAiThinking = false;
+                if (!isCallActive && !isAiSpeaking) {
+                    setAgentState('idle', 'Agent Inactive • Click to Start');
+                }
                 if (activeChatAbortController === abortController) {
                     activeChatAbortController = null;
                 }
