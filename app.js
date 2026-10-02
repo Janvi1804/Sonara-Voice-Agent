@@ -261,7 +261,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        if (localStorage.getItem('sonara_stt_model') && selSttModel) {
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v2');
+        if (!sttMigrated) {
+            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
+            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
+            localStorage.setItem('sonara_stt_migrated_v2', 'true');
+        } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
             selSttModel.value = 'sarvam-saaras-v3';
