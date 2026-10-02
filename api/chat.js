@@ -137,10 +137,11 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
             messages = [],
-            model = 'llama-3.3-70b-versatile',
+            model = 'llama-3.1-8b-instant',
             temperature = 0.65,
             max_tokens = 180
         } = body;
+
 
         const groqApiKey = process.env.GROQ_API_KEY || '';
         if (!groqApiKey) {
@@ -201,15 +202,25 @@ ${ragContext}`;
             });
         }
 
-        // Fast confirmed-available Groq models — ordered by speed
-        // llama-3.1-8b-instant: ~200-400ms (fastest, great for voice conversations)
-        // llama3-70b-8192: ~600ms (higher quality fallback, confirmed available)
-        // gemma2-9b-it: ~300ms (fast fallback)
-        const candidateModels = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama3-70b-8192'];
+        // Active, confirmed Groq models — ordered by speed
+        // llama-3.1-8b-instant: ~150-250ms (ultra-fast, active production)
+        // llama-3.2-3b-preview: ~180ms (low-latency preview)
+        // gemma2-9b-it: ~250ms (active Google instruction model)
+        const requestedModel = (model && !model.includes('8192') && !model.includes('3.3-70b')) 
+            ? model 
+            : 'llama-3.1-8b-instant';
+
+        const candidateModels = [...new Set([
+            requestedModel,
+            'llama-3.1-8b-instant',
+            'llama-3.2-3b-preview',
+            'gemma2-9b-it'
+        ])];
 
         let activeModel = candidateModels[0];
         let groqData = null;
         let lastError = '';
+
 
         for (const candidate of candidateModels) {
             try {
