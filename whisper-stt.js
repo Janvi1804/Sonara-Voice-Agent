@@ -111,16 +111,30 @@ export class WhisperSTT {
 
         // Discard Whisper phantom single-word hallucinations from background noise
         const lowerText = text.toLowerCase().trim().replace(/[^a-z0-9\u0900-\u097f\s]/g, '').trim();
-        const phantomPhrases = [
-            'you', 'thank you', 'thanks', 'namaste', 'um', 'uh', 'hmm', 'hm',
-            'music', 'applause', 'laughter', 'silence', 'background noise',
-            'hindi', 'english', 'hinglish'
-        ];
-        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.3) {
-            console.log('[GroqWhisper] Discarding phantom hallucination (high no_speech_prob):', JSON.stringify(text));
+
+        // Minimum length check — less than 3 real chars = definitely noise
+        if (lowerText.replace(/\s/g, '').length < 3) {
+            console.log('[GroqWhisper] Discarding too-short transcript:', JSON.stringify(text));
             this.audioChunks = [];
             return '';
         }
+
+        const phantomPhrases = [
+            // English noise hallucinations
+            'you', 'thank you', 'thanks', 'namaste', 'um', 'uh', 'hmm', 'hm',
+            'music', 'applause', 'laughter', 'silence', 'background noise',
+            'hindi', 'english', 'hinglish', 'bye', 'okay', 'ok', 'yes', 'no',
+            // Hindi noise hallucinations (Whisper commonly generates these from background)
+            'नहीं', 'हाँ', 'ठीक है', 'अच्छा', 'बताइए', 'समझ',
+            'ap samjhe', 'ap samjhey', 'aap samjhe', 'shukriya', 'dhanyawad',
+            'theek hai', 'achha', 'bilkul', 'haan ji', 'haan', 'nahi'
+        ];
+        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.3) {
+            console.log('[GroqWhisper] Discarding phantom hallucination:', JSON.stringify(text));
+            this.audioChunks = [];
+            return '';
+        }
+
 
         this.onTranscript(text);
         return text;

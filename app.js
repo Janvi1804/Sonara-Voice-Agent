@@ -1693,8 +1693,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 signal: abortController.signal,
                 body: JSON.stringify({
                     messages,
-                    model: model || 'qwen/qwen3.8-27b',
-                    max_tokens: 220,
+                    model: 'llama-3.1-8b-instant',
+                    max_tokens: 160,
                     ragEnabled: chkRagEnabled ? chkRagEnabled.checked : true
                 })
             });

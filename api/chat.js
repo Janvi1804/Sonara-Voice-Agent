@@ -201,10 +201,11 @@ ${ragContext}`;
             });
         }
 
-        // Fast Groq models — ordered by speed
-        // llama-3.1-8b-instant: ~200-400ms, great for conversational short answers
-        // llama-3.3-70b-versatile: ~400-700ms, better quality fallback
-        const candidateModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
+        // Fast confirmed-available Groq models — ordered by speed
+        // llama-3.1-8b-instant: ~200-400ms (fastest, great for voice conversations)
+        // llama3-70b-8192: ~600ms (higher quality fallback, confirmed available)
+        // gemma2-9b-it: ~300ms (fast fallback)
+        const candidateModels = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama3-70b-8192'];
 
         let activeModel = candidateModels[0];
         let groqData = null;
@@ -222,34 +223,54 @@ ${ragContext}`;
                         model: candidate,
                         messages: formattedMessages,
                         temperature: 0.15,
-                        max_tokens: Math.min(200, Math.max(100, Number(max_tokens) || 160))
+                        max_tokens: Math.min(200, Math.max(100, Number(max_tokens) || 160)),
+                        stream: true
                     })
                 });
 
                 if (groqRes.ok) {
-                    const data = await groqRes.json();
-                    const content = (data.choices?.[0]?.message?.content || '').trim();
+                    // Consume SSE stream from Groq, accumulate full content
+                    let fullContent = '';
+                    const reader = groqRes.body.getReader();
+                    const decoder = new TextDecoder();
+                    let sseBuffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        sseBuffer += decoder.decode(value, { stream: true });
+                        const lines = sseBuffer.split('\n');
+                        sseBuffer = lines.pop(); // keep incomplete line
+
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            const data = line.slice(6).trim();
+                            if (data === '[DONE]') break;
+                            try {
+                                const parsed = JSON.parse(data);
+                                const token = parsed.choices?.[0]?.delta?.content || '';
+                                fullContent += token;
+                            } catch (_) {}
+                        }
+                    }
+
+                    const content = fullContent.trim();
                     if (!content) {
-                        console.warn(`[Groq LLM] Model ${candidate} returned empty content (reasoning exhausted), trying next candidate...`);
+                        console.warn(`[Groq LLM] Model ${candidate} returned empty content, trying next...`);
                         continue;
                     }
-                    groqData = data;
+                    groqData = { choices: [{ message: { content } }] };
                     activeModel = candidate;
                     break;
                 } else {
                     const errData = await groqRes.json().catch(() => ({}));
                     const errMsg = errData.error?.message || `Groq error status ${groqRes.status}`;
                     lastError = errMsg;
-                    // If model doesn't exist (404), try the next candidate on Groq
                     if (groqRes.status === 404 || errMsg.toLowerCase().includes('does not exist')) {
-                        console.warn(`[Groq LLM] Model ${candidate} not available, trying next Groq model...`);
+                        console.warn(`[Groq LLM] Model ${candidate} not available, trying next...`);
                         continue;
                     }
-                    // For rate limits (429) or auth errors (401), exit immediately
-                    return res.status(groqRes.status).json({
-                        error: `Groq LLM failed: ${errMsg}`,
-                        provider: 'groq'
-                    });
+                    return res.status(groqRes.status).json({ error: `Groq LLM failed: ${errMsg}`, provider: 'groq' });
                 }
             } catch (err) {
                 lastError = err.message;
@@ -257,11 +278,8 @@ ${ragContext}`;
         }
 
         if (!groqData) {
-            console.error('[Groq LLM] All Groq candidate models failed. Last error:', lastError);
-            return res.status(502).json({
-                error: `Groq LLM failed: ${lastError}`,
-                provider: 'groq'
-            });
+            console.error('[Groq LLM] All models failed. Last error:', lastError);
+            return res.status(502).json({ error: `Groq LLM failed: ${lastError}`, provider: 'groq' });
         }
 
         const rawContent = groqData.choices?.[0]?.message?.content || '';
@@ -272,6 +290,7 @@ ${ragContext}`;
             model: activeModel,
             provider: 'groq'
         });
+
 
     } catch (err) {
         console.error('[API /api/chat] Server error:', err);

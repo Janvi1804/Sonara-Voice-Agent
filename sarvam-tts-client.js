@@ -107,6 +107,27 @@ export class SarvamTTS {
     }
 
     /**
+     * Expand acronyms/technical terms so Sarvam pronounces them correctly.
+     * e.g. "API" → "A.P.I." so Sarvam reads each letter instead of "apee"
+     */
+    fixPronunciation(text) {
+        return text
+            .replace(/\bAPI\b/g, 'A.P.I.')
+            .replace(/\bCRM\b/g, 'C.R.M.')
+            .replace(/\bROI\b/g, 'R.O.I.')
+            .replace(/\bAI\b/g, 'A.I.')
+            .replace(/\bSMS\b/g, 'S.M.S.')
+            .replace(/\bIVR\b/g, 'I.V.R.')
+            .replace(/\bNPS\b/g, 'N.P.S.')
+            .replace(/\bCPL\b/g, 'C.P.L.')
+            .replace(/\bB2B\b/g, 'B to B')
+            .replace(/\bB2C\b/g, 'B to C')
+            .replace(/\bSaaS\b/gi, 'Saas')
+            .replace(/(\d+)x\b/g, '$1 times')
+            .replace(/%(\s|$)/g, ' percent$1');
+    }
+
+    /**
      * Clean text before sending to Sarvam TTS.
      * KEY FIX: Replace ". " (period+space) with ", " (comma+space)
      * — Sarvam inserts a LONG prosodic pause at periods (sentence boundary).
@@ -114,15 +135,18 @@ export class SarvamTTS {
      */
     cleanText(text) {
         if (!text) return '';
-        return text
-            .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '') // remove think tags
-            .replace(/[*_#`~[\]]/g, '')                       // remove markdown
-            .replace(/\.\s+/g, ', ')                          // ← KEY: period → comma (removes long pause)
-            .replace(/\.$/, '')                               // remove trailing period
-            .replace(/,\s*,+/g, ',')                          // clean up double commas
-            .replace(/\s+/g, ' ')
-            .trim();
+        return this.fixPronunciation(
+            text
+                .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+                .replace(/[*_#`~[\]]/g, '')
+                .replace(/\.\s+/g, ', ')
+                .replace(/\.$/, '')
+                .replace(/,\s*,+/g, ',')
+                .replace(/\s+/g, ' ')
+                .trim()
+        );
     }
+
 
     /**
      * Fetch audio from Sarvam API — returns a Blob or null on failure
