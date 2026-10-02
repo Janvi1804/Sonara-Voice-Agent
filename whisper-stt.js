@@ -112,7 +112,7 @@ export class WhisperSTT {
             'music', 'applause', 'laughter', 'silence', 'background noise',
             'hindi', 'english', 'hinglish'
         ];
-        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.5) {
+        if (phantomPhrases.includes(lowerText) && result.noSpeechProb > 0.3) {
             console.log('[GroqWhisper] Discarding phantom hallucination (high no_speech_prob):', JSON.stringify(text));
             this.audioChunks = [];
             return '';

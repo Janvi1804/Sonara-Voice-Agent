@@ -110,17 +110,31 @@ export class AppointmentDB {
     }
 
     /**
-     * Standardize time slot string
+     * Standardize time slot string to one of the 5 standard daily slots.
+     * Extracts the actual hour number first to avoid fragile substring matching.
+     * Standard slots: 10:00 AM | 11:30 AM | 02:00 PM | 03:30 PM | 05:00 PM
      */
     normalizeTime(timeInput) {
         if (!timeInput) return '11:30 AM';
         const clean = timeInput.toLowerCase().trim();
-        if (clean.includes('10')) return '10:00 AM';
-        if (clean.includes('11') || clean.includes('12')) return '11:30 AM';
-        if (clean.includes('2') || clean.includes('14')) return '02:00 PM';
-        if (clean.includes('3') || clean.includes('4') || clean.includes('15') || clean.includes('16')) return '03:30 PM';
-        if (clean.includes('5') || clean.includes('6') || clean.includes('17')) return '05:00 PM';
-        return '11:30 AM';
+
+        // Extract the first number from the time string (e.g. "3 baje", "11:30 AM", "14:00")
+        const numMatch = clean.match(/\b(\d{1,2})\b/);
+        if (!numMatch) return '11:30 AM';
+        const hour = parseInt(numMatch[1], 10);
+
+        // Handle 24-hour format
+        const is24h = hour >= 13 && hour <= 23;
+        const h = is24h ? hour - 12 : hour;
+
+        // Map to nearest standard slot
+        if (h === 10) return '10:00 AM';
+        if (h === 11 || h === 12) return '11:30 AM'; // 12 baje = 12 PM → nearest slot 11:30 AM
+        if (h === 1 || h === 2) return '02:00 PM';   // 1 PM, 2 PM
+        if (h === 3 || h === 4) return '03:30 PM';   // 3 PM, 4 PM
+        if (h === 5 || h === 6 || h === 7 || h === 8 || h === 9) return '05:00 PM'; // evening slots
+
+        return '11:30 AM'; // safe default
     }
 
     /**

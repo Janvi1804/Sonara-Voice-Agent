@@ -28,9 +28,9 @@ const CONVERSE_AI_KB = [
   },
   {
     id: "theconverseai-casestudies",
-    title: "Verified Case Studies & Client Results",
-    keywords: ["case study", "case studies", "results", "example", "examples", "proof", "metrics", "stylemart", "learnsphere", "carefirst"],
-    content: "ConverseAI has 3 verified enterprise case studies: 1) StyleMart India (Retail): Deployed WhatsApp AI Chatbot, driving 3x repeat purchase revenue, 65% reduction in customer support costs, under 30s response time, and 94% CSAT. 2) LearnSphere (EdTech): Automated lead qualification bot doubled course enrolments in 90 days, cut response times by 80%, qualified 500+ leads daily, and lowered cost per qualified lead by 45%. 3) CareFirst Clinics (Healthcare): Unified patient communication over WhatsApp and web chat, slashing appointment no-shows by 55%, saving 120 admin hours monthly, with a 91% booking fill rate and +28 point NPS increase."
+    title: "Verified Case Studies with Metrics",
+    keywords: ["case study", "case studies", "results", "example", "examples", "proof", "metrics", "roi", "stylemart", "learnsphere", "carefirst", "retail", "edtech", "healthcare", "outcome", "success"],
+    content: "ConverseAI has 3 verified enterprise case studies (these are CASE STUDY clients with documented results — different from general brand clients): 1) StyleMart India (Retail sector): Deployed a WhatsApp AI chatbot for customer support. Results: 3x repeat purchase revenue, 65% reduction in customer support costs, under 30-second response time, and 94% CSAT score. 2) LearnSphere (EdTech sector): Deployed an automated lead qualification and follow-up bot. Results: doubled course enrolments within 90 days, 80% faster lead response time, 500+ daily qualified leads, and 45% lower cost per qualified lead. 3) CareFirst Clinics (Healthcare sector): Deployed unified WhatsApp and web chat for patient communication and appointment management. Results: 55% reduction in appointment no-shows, 120 admin hours saved monthly, 91% booking fill rate, and +28 point NPS increase."
   },
   {
     id: "theconverseai-pricing",
@@ -39,15 +39,15 @@ const CONVERSE_AI_KB = [
     content: "ConverseAI uses custom, bespoke pricing based on specific business workflows, scale, integrations, and usage requirements. We do not have rigid one-size-fits-all tiers. Every partnership starts with a 100% Free AI Opportunity & Readiness Audit (bookable at theconverseai.com/book-demo) where our engineers assess your systems and deliver a clear build plan and ROI estimate with zero overhead."
   },
   {
-    id: "theconverseai-clients",
-    title: "ConverseAI Enterprise Clients",
-    keywords: ["clients", "customers", "who uses", "companies", "tata motors", "mapsor", "zapp loans", "meghaa modi", "readiprint", "heritage food diary"],
-    content: "ConverseAI is trusted by leading enterprise clients including Tata Motors, Mapsor Experiential Weddings, Zapp Loans, Meghaa Modi Design Studio, Readiprint Fashions, and Heritage Food Diary, alongside 500+ businesses worldwide."
+    id: "theconverseai-brand-clients",
+    title: "ConverseAI Brand Clients & Partners",
+    keywords: ["clients", "customers", "who uses", "companies", "brands", "tata motors", "mapsor", "zapp loans", "meghaa modi", "readiprint", "heritage food diary", "partners", "portfolio"],
+    content: "ConverseAI is trusted by 500+ businesses worldwide. Notable brand clients and partners include: Tata Motors (automotive), Mapsor Experiential Weddings (events), Zapp Loans (fintech), Meghaa Modi Design Studio (fashion/design), Readiprint Fashions (retail), and Heritage Food Diary (F&B). IMPORTANT: These are brand/partner clients — they are DIFFERENT from the 3 documented case study clients (StyleMart India, LearnSphere, CareFirst Clinics). Do NOT mix these two lists. When asked about case studies or specific results/metrics, refer only to StyleMart, LearnSphere, and CareFirst — never invent metrics for Tata Motors or other brand clients."
   },
   {
     id: "theconverseai-stats",
     title: "Performance Metrics & Scale",
-    keywords: ["stats", "metrics", "numbers", "messages automated", "open rate", "languages"],
+    keywords: ["stats", "metrics", "numbers", "messages automated", "open rate", "languages", "scale", "how many"],
     content: "ConverseAI has automated over 50 Million messages across 500+ businesses globally, delivering a 98% WhatsApp open rate, 60% faster customer response times, and an average 94% CSAT score across 100+ supported languages."
   }
 ];
