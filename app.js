@@ -649,16 +649,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 await audioContext.resume();
             }
 
+            const wantAec = chkAec ? chkAec.checked : true;
+            const wantNoiseSuppression = chkNoiseSuppression ? chkNoiseSuppression.checked : true;
+            const wantAutoGain = chkAutoGain ? chkAutoGain.checked : true;
             const constraints = {
                 audio: {
-                    echoCancellation: { ideal: chkAec ? chkAec.checked : true },
-                    noiseSuppression: { ideal: chkNoiseSuppression ? chkNoiseSuppression.checked : true },
-                    autoGainControl: { ideal: chkAutoGain ? chkAutoGain.checked : true },
+                    echoCancellation: { exact: wantAec },
+                    noiseSuppression: { exact: wantNoiseSuppression },
+                    autoGainControl: { exact: wantAutoGain },
                     channelCount: 1
                 }
             };
 
-            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (exactErr) {
+                // Some devices/browsers don't support `exact` audio-processing constraints —
+                // fall back to `ideal` rather than failing to start the call entirely.
+                console.warn('[App] Exact AEC constraints unsupported, falling back to ideal:', exactErr.message);
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: { ideal: wantAec },
+                        noiseSuppression: { ideal: wantNoiseSuppression },
+                        autoGainControl: { ideal: wantAutoGain },
+                        channelCount: 1
+                    }
+                });
+            }
             micSource = audioContext.createMediaStreamSource(mediaStream);
 
             // BUG-004 FIX: Detect microphone disconnect mid-conversation
@@ -716,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
                 minSpeechDurationMs: 350,
                 speechStartConfirmFrames: 3,
-                rmsFloor: 0.010,
+                rmsFloor: 0.018,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,

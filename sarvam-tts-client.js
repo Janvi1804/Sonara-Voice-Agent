@@ -169,7 +169,7 @@ export class SarvamTTS {
      * @param {string} text - chunk text
      * @param {string} lang - 'hi-IN' or 'en-IN'
      */
-    async _fetchAudio(text, lang) {
+    async _fetchAudio(text, lang, retriesLeft = 2) {
         try {
             const res = await fetch('/api/sarvam-tts', {
                 method: 'POST',
@@ -189,12 +189,39 @@ export class SarvamTTS {
             const contentType = res.headers.get('content-type') || 'audio/mpeg';
             return new Blob([buf], { type: contentType });
         } catch (err) {
-            if (err.name !== 'AbortError') {
-                console.error('[SarvamTTS] ❌ Fetch error:', err.message);
-                window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
+            if (err.name === 'AbortError') return null;
+
+            if (retriesLeft > 0) {
+                const delayMs = (3 - retriesLeft) * 400 + 300; // 300ms, 700ms
+                console.warn(`[SarvamTTS] ⚠️ Fetch failed, retrying in ${delayMs}ms (${retriesLeft} left):`, err.message);
+                await new Promise(r => setTimeout(r, delayMs));
+                return this._fetchAudio(text, lang, retriesLeft - 1);
             }
+
+            console.error('[SarvamTTS] ❌ Fetch error (out of retries):', err.message);
+            window.dispatchEvent(new CustomEvent('sarvam-error', { detail: { message: err.message } }));
             return null;
         }
+    }
+
+    /**
+     * Last-resort fallback when Sarvam audio could not be fetched after retries —
+     * use the browser's built-in speechSynthesis so the sentence is never silently dropped.
+     */
+    _speakWithBrowserFallback(text, lang) {
+        return new Promise((resolve) => {
+            if (!('speechSynthesis' in window) || !text) { resolve(); return; }
+            try {
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.lang = lang === 'hi-IN' ? 'hi-IN' : 'en-IN';
+                utter.onend = () => resolve();
+                utter.onerror = () => resolve();
+                this._activeUtterance = utter;
+                window.speechSynthesis.speak(utter);
+            } catch (_) {
+                resolve();
+            }
+        });
     }
 
     /**
@@ -263,8 +290,9 @@ export class SarvamTTS {
 
             if (blob) {
                 await this._playBlob(blob);
-            } else {
-                console.warn('[SarvamTTS] Skipping sentence (fetch failed):', currentText.substring(0, 40));
+            } else if (!this.isInterrupted) {
+                console.warn('[SarvamTTS] Sarvam fetch failed after retries, falling back to browser TTS for:', currentText.substring(0, 40));
+                await this._speakWithBrowserFallback(currentText, currentLang);
             }
         }
 
