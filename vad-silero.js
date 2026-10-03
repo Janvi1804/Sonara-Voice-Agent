@@ -37,8 +37,10 @@ export class SileroVAD {
         this.stateData            = new Float32Array(2 * 1 * 128);
         this.srTensor             = null;
 
+        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.022);
+
         // Gating & onset state
-        this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 2);
+        this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 3);
         this.bargeInConfirmFrames     = Math.max(1, options.bargeInConfirmFrames !== undefined ? options.bargeInConfirmFrames : 14);
         this.bargeInThreshold         = options.bargeInThreshold || 0.85;
         this.bargeInMinRms            = options.bargeInMinRms || 0.080;
@@ -66,16 +68,22 @@ export class SileroVAD {
     /**
      * Initialize ONNX Runtime Web session for Silero VAD
      */
-    async init() {
+    async init(retryCount = 0) {
         if (this.isReady || this.isLoading || this.hasFailed) return;
         this.isLoading = true;
 
         try {
             const ort = getOrt();
             if (!ort) {
-                console.warn('[SileroVAD] ONNX Runtime Web (ort) not loaded yet, scheduling retry in 500ms...');
                 this.isLoading = false;
-                setTimeout(() => this.init(), 500);
+                if (retryCount < 6) {
+                    if (this._debugLog && retryCount === 0) {
+                        console.info('[SileroVAD] Waiting for ONNX Runtime Web (ort)...');
+                    }
+                    setTimeout(() => this.init(retryCount + 1), 500);
+                } else {
+                    console.info('[SileroVAD] Using high-accuracy acoustic energy VAD mode.');
+                }
                 return;
             }
 
@@ -231,7 +239,11 @@ export class SileroVAD {
         }
 
         // 2. Normal Speech State Machine
-        if (prob >= this.threshold) {
+        // Require both neural probability AND minimum RMS energy to prevent background noise from triggering speech
+        const meetsThreshold = prob >= this.threshold;
+        const meetsRms = this.isSpeaking ? (rms >= this.minSpeechRms * 0.55) : (rms >= this.minSpeechRms);
+
+        if (meetsThreshold && meetsRms) {
             this.lastSpeechTime = now;
 
             if (!this.isSpeaking) {

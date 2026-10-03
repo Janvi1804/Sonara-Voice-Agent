@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=2.3';
-import { WhisperSTT } from './whisper-stt.js?v=2.3';
+import { SileroVAD } from './vad-silero.js?v=2.4';
+import { WhisperSTT } from './whisper-stt.js?v=2.4';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=2.3';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=2.4';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize STT Engine (Sarvam AI saaras:v3 default + Groq Whisper option)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
-        language: 'hi',
+        language: '', // Auto-detect (English, Hindi, Hinglish)
         model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
@@ -222,9 +222,10 @@ document.addEventListener('DOMContentLoaded', () => {
         isAiSpeaking = false;
         isProcessingUtterance = false;
         if (vadEngine) vadEngine.setAiSpeakingState(false);
-        // 300ms speaker drain buffer — clears room reverb tail from TTS audio
-        // so microphone doesn't pick up TTS residue as user speech
-        ttsCooldownUntil = Date.now() + 300;
+        // 750ms speaker drain buffer — clears room reverb tail from TTS audio
+        // so microphone doesn't pick up TTS residue or echo as user speech
+        ttsCooldownUntil = Date.now() + 750;
+        if (whisperEngine) whisperEngine.clearBuffer();
 
         ttsEndGraceTimer = setTimeout(() => {
             currentSpeechText = '';
@@ -233,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setAgentState('listening', 'Connected & Listening (Silero VAD)');
                 startRecognitionSafely();
             }
-        }, 300);
+        }, 750);
     };
 
 
@@ -276,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
-        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+        whisperEngine.setLanguage(selLanguage ? selLanguage.value : '');
         whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
@@ -714,17 +715,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Initialize Silero VAD Engine calibrated against ambient noise:
-            // threshold=0.52: requires genuine human voice confidence, ignoring ambient background hum
-            // speechStartConfirmFrames=3 (~96ms): ignores brief clicks, chair creaks, breathing
-            // minSpeechDurationMs=350: discards short non-speech sounds (<350ms)
-            // rmsFloor=0.010: rejects faint ambient room noise
+            // Silero VAD tuned for robust speech detection without false triggers from room noise:
+            // threshold=0.55, minSpeechRms=0.022, speechStartConfirmFrames=4 (~128ms)
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.55,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 700,
-                minSpeechDurationMs: 350,
-                speechStartConfirmFrames: 3,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 750,
+                minSpeechDurationMs: 400,
+                speechStartConfirmFrames: 4,
+                minSpeechRms: 0.022,
                 rmsFloor: 0.022,
 
                 bargeInConfirmFrames: 14,
