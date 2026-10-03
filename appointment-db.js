@@ -227,6 +227,7 @@ export class AppointmentDB {
             const dbRes = await fetch('/api/db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(1800),
                 body: JSON.stringify({
                     action: 'save_appointment',
                     data: {

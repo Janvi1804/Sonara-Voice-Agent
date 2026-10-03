@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSpeechText = '';
     let isAiThinking = false;
     let isAiSpeaking = false;
+    let isTranscribingSpeech = false;
     let isWelcomeGreetingPlaying = false;
     let isSessionPaused = false;
     let turnStartTime = 0;
@@ -762,17 +763,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         vadStatus.textContent = 'SILENCE';
                         vadStatus.style.color = 'var(--text-secondary)';
                     }
-                    if (isAiThinking || isAiSpeaking || isProcessingUtterance) return;
+                    if (isAiThinking || isAiSpeaking || isProcessingUtterance || isTranscribingSpeech) return;
                     if (isCallActive) {
-                        const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
-                        const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
-                        const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
-                        setAgentState('thinking', `Transcribing (${sttLabel})...`);
-                        const transcribed = await whisperEngine.stopAndTranscribe();
-                        if (transcribed && transcribed.trim().length > 1) {
-                            commitUserVoiceInput(false, transcribed.trim());
-                        } else {
-                            setAgentState('listening', 'Connected & Listening (Silero VAD)');
+                        isTranscribingSpeech = true;
+                        try {
+                            const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
+                            const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
+                            const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
+                            setAgentState('thinking', `Transcribing (${sttLabel})...`);
+                            const transcribed = await whisperEngine.stopAndTranscribe();
+                            if (transcribed && transcribed.trim().length > 1) {
+                                commitUserVoiceInput(false, transcribed.trim());
+                            } else {
+                                setAgentState('listening', 'Connected & Listening (Silero VAD)');
+                            }
+                        } finally {
+                            isTranscribingSpeech = false;
                         }
                     }
                 },

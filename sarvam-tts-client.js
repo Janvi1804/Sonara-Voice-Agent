@@ -194,7 +194,11 @@ export class SarvamTTS {
             });
             if (!res.ok) {
                 const err = await res.text();
-                throw new Error(`Sarvam TTS failed (${res.status}): ${err}`);
+                // 401 (Unauthorized) and 402 (Insufficient Quota) won't resolve on retry
+                const isNonRetryable = res.status === 401 || res.status === 402;
+                const errObj = new Error(`Sarvam TTS failed (${res.status}): ${err}`);
+                if (isNonRetryable) errObj.nonRetryable = true;
+                throw errObj;
             }
             const buf = await res.arrayBuffer();
             const contentType = res.headers.get('content-type') || 'audio/mpeg';
@@ -202,7 +206,7 @@ export class SarvamTTS {
         } catch (err) {
             if (err.name === 'AbortError') return null;
 
-            if (retriesLeft > 0) {
+            if (retriesLeft > 0 && !err.nonRetryable) {
                 const delayMs = (3 - retriesLeft) * 400 + 300; // 300ms, 700ms
                 console.warn(`[SarvamTTS] ⚠️ Fetch failed, retrying in ${delayMs}ms (${retriesLeft} left):`, err.message);
                 await new Promise(r => setTimeout(r, delayMs));
