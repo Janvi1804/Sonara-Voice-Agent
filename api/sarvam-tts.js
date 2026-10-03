@@ -126,6 +126,6 @@ export default async function handler(req, res) {
  */
 function containsHindi(text) {
     return /[\u0900-\u097F]/.test(text) ||
-        /\b(hai|hain|kya|nahi|aur|mujhe|mera|apka|kal|aaj|theek|bahut|bohot|accha|zaroor|bilkul|namaskar|namaste|dhanyavad|haan|bata|karo|karna|chahiye|samajh)\b/i.test(text);
+        /\b(hai|hain|hoon|ho|kya|nahi|nahin|aur|mujhe|mera|meri|mere|aap|aapka|aapki|aapke|apna|apni|apne|kripya|kal|aaj|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|main|yeh|ye|woh|wo|kyun|kaise|kaisi|kaisa|kab|kahan|lekin|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|to|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|chaar|paanch|chheh|saat|aath|nau|das|agar|jab|tab|ji|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|de|do|dijiye|dena|deti|deta|le|lo|lijiye|lena|leti|leta)\b/i.test(text);
 }
 

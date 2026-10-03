@@ -53,17 +53,18 @@ export class SarvamTTS {
 
     /**
      * Detect language from full response text (called once per speak()).
-     * hi-IN for Hindi/Hinglish, en-IN for English.
+     * hi-IN for Hindi/Hinglish, en-IN for pure English.
      */
     detectLanguage(text) {
         if (!text) return 'en-IN';
         // Devanagari script → definitely Hindi
         if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
-        // Count Hindi/Hinglish keywords
-        const hindiPattern = /\b(hai|hain|kya|nahi|nahin|aur|mujhe|mera|meri|apka|apki|kal|aaj|theek|bahut|bohot|accha|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|haan|bata|batao|karo|karna|chahiye|main|hoon|aap|yeh|woh|kyun|kaise|kab|kahan|lekin|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|thoda|hoga|toh|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|agar|jab|tab|ji)\b/gi;
-        const hindiMatches = (text.match(hindiPattern) || []).length;
-        const totalWords = text.split(/\s+/).filter(w => w.length > 1).length;
-        if (hindiMatches > 0 && totalWords > 0 && (hindiMatches / totalWords) >= 0.15) return 'hi-IN';
+
+        // Hinglish detection: If ANY common Hindi / Hinglish functional words or verb stems appear,
+        // it MUST use 'hi-IN' so Sarvam Ritu uses natural Indian pronunciation for both English & Hindi words.
+        const hindiPattern = /\b(hai|hain|hoon|ho|kya|nahi|nahin|aur|mujhe|mera|meri|mere|aap|aapka|aapki|aapke|apna|apni|apne|kripya|kal|aaj|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|main|yeh|ye|woh|wo|kyun|kaise|kaisi|kaisa|kab|kahan|lekin|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|to|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|chaar|paanch|chheh|saat|aath|nau|das|agar|jab|tab|ji|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|de|do|dijiye|dena|deti|deta|le|lo|lijiye|lena|leti|leta)\b/i;
+        if (hindiPattern.test(text)) return 'hi-IN';
+
         return 'en-IN';
     }
 
@@ -127,6 +128,7 @@ export class SarvamTTS {
             .replace(/\bNPS\b/g, 'N.P.S.')
             .replace(/\bCPL\b/g, 'C.P.L.')
             .replace(/\bCSAT\b/g, 'C.S.A.T.')
+            .replace(/\bRAG\b/g, 'R.A.G.')
             .replace(/\bB2B\b/g, 'B to B')
             .replace(/\bB2C\b/g, 'B to C')
             .replace(/\bSaaS\b/gi, 'Sass')
@@ -135,6 +137,15 @@ export class SarvamTTS {
             .replace(/\bConverse AI\b/gi, 'Converse A.I.')
             .replace(/\btheconverseai\.com\b/gi, 'the converse A.I. dot com')
             .replace(/\bRevti\b/gi, 'Rev-ti')
+            // Time formats (e.g. "3:30 PM", "11:30 AM", "3.30 PM" -> "3 30 P.M.")
+            .replace(/(\d{1,2}):00\s*(AM|A\.M\.)\b/gi, '$1 A.M.')
+            .replace(/(\d{1,2}):00\s*(PM|P\.M\.)\b/gi, '$1 P.M.')
+            .replace(/(\d{1,2})[:.](\d{2})\s*(AM|A\.M\.)\b/gi, '$1 $2 A.M.')
+            .replace(/(\d{1,2})[:.](\d{2})\s*(PM|P\.M\.)\b/gi, '$1 $2 P.M.')
+            .replace(/\b(\d{1,2})[:.](\d{2})\b/g, '$1 $2')
+            .replace(/\bAM\b/g, 'A.M.')
+            .replace(/\bPM\b/g, 'P.M.')
+            .replace(/\b10-digit\b/gi, '10 digit')
             // Ratios, multipliers and percentages
             .replace(/(\d+)x\b/g, '$1 times')
             .replace(/(\d+)\s*%/g, '$1 percent')

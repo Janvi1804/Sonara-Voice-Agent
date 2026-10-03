@@ -40,12 +40,12 @@ export class ConversationMemory {
             this.entities.email = emailMatch[0].toLowerCase();
         }
 
-        // 3. Name extraction ("mera naam X hai", "I am X", "My name is X", "This is X")
-        const nameMatch = text.match(/(?:mera naam|my name is|i am|this is)\s+([A-Za-z]{2,20})/i);
+        // 3. Name extraction ("mera naam X hai", "naam X", "I am X", "My name is X", "This is X")
+        const nameMatch = text.match(/(?:mera\s+naam(?:\s+hai)?|naam(?:\s+hai)?|my\s+name\s+is|i\s+am|this\s+is)\s+([A-Za-z]{2,20}(?:\s+[A-Za-z]{2,20})?)/i);
         if (nameMatch && nameMatch[1]) {
-            const forbiddenNames = ['converse', 'sonara', 'interested', 'here', 'calling', 'looking'];
-            const newName = nameMatch[1];
-            if (!forbiddenNames.includes(newName.toLowerCase())) {
+            const forbiddenNames = ['converse', 'sonara', 'interested', 'here', 'calling', 'looking', 'hai', 'aur'];
+            const newName = nameMatch[1].replace(/\b(hai|aur)\b/gi, '').trim();
+            if (newName && !forbiddenNames.includes(newName.toLowerCase())) {
                 if (this.entities.customerName && this.entities.customerName.toLowerCase() !== newName.toLowerCase()) {
                     // Different customer identified in same session — clear previous customer's phone & appointment
                     this.entities.phone = null;
@@ -83,10 +83,17 @@ export class ConversationMemory {
             if (dm) this.entities.targetDate = dm[0];
         }
 
-        // 6. Time extraction ("3 baje", "11 am", "4:30 pm", "shaam 5 baje", "dopahar 2 baje")
-        const timeMatch = text.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|o'clock))\b/i);
-        if (timeMatch) {
-            this.entities.targetTime = timeMatch[0];
+        // 6. Time extraction ("3:30 PM", "3.30 ka time slot", "3 baje", "11 am", "4:30 pm", "shaam 5 baje", "dopahar 2 baje")
+        const timeWithModifier = text.match(/\b(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|baje|o'clock))\b/i);
+        const timeWithSlot = text.match(/\b(\d{1,2}[:.]\d{2})\s*(?:ka\s*(?:time|slot)|baje)?\b/i);
+        if (timeWithModifier) {
+            this.entities.targetTime = timeWithModifier[0].replace('.', ':');
+        } else if (timeWithSlot) {
+            let t = timeWithSlot[1].replace('.', ':');
+            const hour = parseInt(t.split(':')[0], 10);
+            if (hour >= 1 && hour <= 6) t += ' PM';
+            else if (hour >= 9 && hour <= 12) t += (hour === 12 ? ' PM' : ' AM');
+            this.entities.targetTime = t;
         }
     }
 

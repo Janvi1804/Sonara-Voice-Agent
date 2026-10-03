@@ -227,9 +227,10 @@ export class ToolCallingEngine {
 
         // 4. Booking intent when phone and time/intent are present
         const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|set kar)\b/i.test(lower);
-        const isTimeSelection = /\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(lower) || /\b(baje|bje|o'clock)\b/i.test(lower);
+        const isTimeSelection = /\b\d{1,2}(?:[:.]\d{2})?\s*(am|pm)?\b/i.test(lower) || /\b(baje|bje|o'clock)\b/i.test(lower);
+        const hasBookingContext = hasBookingWord || isTimeSelection || memory?.entities?.userIntent?.includes('Book') || !!memory?.entities?.targetTime;
 
-        if ((hasBookingWord || isTimeSelection) && memory?.entities?.phone) {
+        if (hasBookingContext && memory?.entities?.phone) {
             return await this.executeTool('book_appointment', {
                 customerName: memory.entities.customerName || 'Valued Client',
                 phone: memory.entities.phone,

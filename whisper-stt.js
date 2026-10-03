@@ -204,8 +204,8 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Hinglish prompt guides Whisper to output in Roman Hinglish alphabet instead of Devanagari Hindi
-            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, aap kaise hain, customer support, retail business, demo booking.');
+            // Hinglish prompt guides Whisper to output in natural Roman Hinglish alphabet instead of Devanagari Hindi
+            whisperForm.append('prompt', 'Converse AI, Sonara, namaste! Aap kaise hain? Kya aap meri madad kar sakte hain? Mujhe retail business ke liye ek demo booking karni hai.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
@@ -241,6 +241,7 @@ export class WhisperSTT {
             text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
             text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
             text = devanagariToHinglish(text);
+            text = cleanHinglishPhonetics(text);
 
             console.log('[GroqWhisper] 🎙️ Transcribed:', text);
             this.isTranscribing = false;
@@ -287,6 +288,7 @@ export class WhisperSTT {
             text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
             text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
             text = devanagariToHinglish(text);
+            text = cleanHinglishPhonetics(text);
 
             console.log('[SarvamSTT] 🎙️ Transcribed:', text);
             this.isTranscribing = false;
@@ -308,64 +310,75 @@ export class WhisperSTT {
 function devanagariToHinglish(text) {
     if (!text || !/[\u0900-\u097F]/.test(text)) return text;
 
-    // 1. English loanwords written in Devanagari
-    const entityMap = [
-        [/\b(?:कन्वर्स|कॉन्वर्स|कन्वेर्स)\b/gi, 'Converse'],
-        [/\b(?:एआई|ए\.आई\.|ए\.आइ\.)\b/gi, 'AI'],
-        [/\b(?:सर्विसेज|सर्विसेज़|सर्विस|सेवाएं|सेवाएँ|सेवा)\b/gi, 'services'],
-        [/\b(?:प्रोवाइड|प्रदान)\b/gi, 'provide'],
-        [/\b(?:बिज़नेस|बिजनेस|बिज़नेस)\b/gi, 'business'],
-        [/\b(?:कस्टमर|ग्राहक)\b/gi, 'customer'],
-        [/\b(?:सपोर्ट|सहायता)\b/gi, 'support'],
-        [/\b(?:हेल्प|मदद)\b/gi, 'help'],
-        [/\b(?:रिटेल)\b/gi, 'retail'],
-        [/\b(?:अपॉइंटमेंट|अपॉइंटमेंटस)\b/gi, 'appointment'],
-        [/\b(?:डेमो)\b/gi, 'demo'],
-        [/\b(?:व्हाट्सएप|वाट्सएप)\b/gi, 'WhatsApp'],
-        [/\b(?:वॉइस|वाइस)\b/gi, 'voice'],
-        [/\b(?:बॉट)\b/gi, 'bot'],
-        [/\b(?:एजेंट|एजेंट्स)\b/gi, 'agent'],
-        [/\b(?:सॉल्यूशन|सॉल्यूशंस)\b/gi, 'solution'],
-        [/\b(?:प्लेटफॉर्म)\b/gi, 'platform']
-    ];
-
     let processed = text;
-    for (const [re, rep] of entityMap) {
-        processed = processed.replace(re, rep);
-    }
 
-    // 2. High-frequency conversational Hindi words
-    const commonWords = [
-        [/\bनमस्ते\b/gi, 'namaste'], [/\bनमस्कार\b/gi, 'namaskar'],
-        [/\bकैसे\b/gi, 'kaise'], [/\bकैसा\b/gi, 'kaisa'], [/\bकैसी\b/gi, 'kaisi'],
-        [/\bहो\b/gi, 'ho'], [/\bहैं\b/gi, 'hain'], [/\bहै\b/gi, 'hai'], [/\bहूँ\b/gi, 'hoon'], [/\bहूं\b/gi, 'hoon'],
-        [/\bआप\b/gi, 'aap'], [/\bतुम\b/gi, 'tum'], [/\bतू\b/gi, 'tu'],
-        [/\bमैं\b/gi, 'main'], [/\bहम\b/gi, 'hum'], [/\bमुझे\b/gi, 'mujhe'], [/\bमेरा\b/gi, 'mera'], [/\bमेरी\b/gi, 'meri'], [/\bमेरे\b/gi, 'mere'],
-        [/\bक्या\b/gi, 'kya'], [/\bक्यों\b/gi, 'kyun'], [/\bकहाँ\b/gi, 'kahan'], [/\bकब\b/gi, 'kab'], [/\bकौन\b/gi, 'kaun'], [/\bकितना\b/gi, 'kitna'], [/\bकितने\b/gi, 'kitne'],
-        [/\bकरता\b/gi, 'karta'], [/\bकरती\b/gi, 'karti'], [/\bकरते\b/gi, 'karte'], [/\bकरना\b/gi, 'karna'], [/\bकरो\b/gi, 'karo'], [/\bकरें\b/gi, 'karein'],
-        [/\bसकता\b/gi, 'sakta'], [/\bसकती\b/gi, 'sakti'], [/\bसकते\b/gi, 'sakte'],
-        [/\bबताओ\b/gi, 'batao'], [/\bबताइए\b/gi, 'bataiye'], [/\bबताइये\b/gi, 'bataiye'],
-        [/\bदीजिए\b/gi, 'dijiye'], [/\bदीजिये\b/gi, 'dijiye'], [/\bचाहिए\b/gi, 'chahiye'],
-        [/\bअच्छा\b/gi, 'accha'], [/\bअच्छी\b/gi, 'acchi'], [/\bअच्छे\b/gi, 'acche'], [/\bठीक\b/gi, 'theek'], [/\bबढ़िया\b/gi, 'badhiya'],
-        [/\bधन्यवाद\b/gi, 'dhanyawad'], [/\bशुक्रिया\b/gi, 'shukriya'], [/\bअलविदा\b/gi, 'alvida'],
-        [/\bनहीं\b/gi, 'nahin'], [/\bहाँ\b/gi, 'haan'], [/\bऔर\b/gi, 'aur'], [/\bलेकिन\b/gi, 'lekin'], [/\bभी\b/gi, 'bhi'],
-        [/\bमें\b/gi, 'mein'], [/\bपर\b/gi, 'par'], [/\bसे\b/gi, 'se'], [/\bको\b/gi, 'ko'], [/\bका\b/gi, 'ka'], [/\bकी\b/gi, 'ki'], [/\bके\b/gi, 'ke'], [/\bने\b/gi, 'ne'],
-        [/\bकुछ\b/gi, 'kuch'], [/\bसब\b/gi, 'sab'], [/\bबहुत\b/gi, 'bahut'], [/\bबोहोत\b/gi, 'bohot'], [/\bज़्यादा\b/gi, 'zyada'], [/\bज्यादा\b/gi, 'zyada'],
-        [/\bएक\b/gi, 'ek'], [/\bदो\b/gi, 'do'], [/\bतीन\b/gi, 'teen'], [/\bचार\b/gi, 'chaar'], [/\bपाँच\b/gi, 'paanch'], [/\bपांच\b/gi, 'paanch']
+    // 1. Multi-word phrases & English loanwords in Devanagari
+    const phraseMap = [
+        ['कन्वर्स एआई', 'Converse AI'], ['कॉन्वर्स एआई', 'Converse AI'],
+        ['कन्वर्स', 'Converse'], ['कॉन्वर्स', 'Converse'], ['कन्वेर्स', 'Converse'],
+        ['एआई', 'AI'], ['ए.आई.', 'AI'], ['ए.आइ.', 'AI'],
+        ['व्हाट्सएप', 'WhatsApp'], ['वाट्सएप', 'WhatsApp'],
+        ['कस्टमर सपोर्ट', 'customer support'], ['कस्टमर केयर', 'customer care'],
+        ['कस्टमर', 'customer'], ['ग्राहक', 'customer'],
+        ['सर्विसेज', 'services'], ['सर्विसेज़', 'services'], ['सर्विस', 'service'],
+        ['सेवाएं', 'services'], ['सेवाएँ', 'services'], ['सेवा', 'services'],
+        ['प्रोवाइड', 'provide'], ['प्रदान', 'provide'],
+        ['बिज़नेस', 'business'], ['बिजनेस', 'business'], ['बिज़नेस', 'business'], ['व्यापार', 'business'],
+        ['सपोर्ट', 'support'], ['सहायता', 'support'],
+        ['हेल्प', 'help'], ['मदद', 'help'],
+        ['रिटेल', 'retail'],
+        ['अपॉइंटमेंट', 'appointment'], ['अपॉइंटमेंट्स', 'appointments'],
+        ['डेमो', 'demo'], ['स्लॉट', 'slot'], ['टाइम स्लॉट', 'time slot'], ['टाइम', 'time'], ['समय', 'time'],
+        ['बुक', 'book'], ['बुकिंग', 'booking'],
+        ['वॉइस', 'voice'], ['वाइस', 'voice'], ['बॉट', 'bot'], ['एजेंट', 'agent'], ['एजेंट्स', 'agents'],
+        ['सॉल्यूशन', 'solution'], ['सॉल्यूशंस', 'solutions'], ['प्लेटफॉर्म', 'platform'],
+        ['एक्ज़ामपल', 'example'], ['एग्जांपल', 'example'], ['उदाहरण', 'example'],
+        ['हिन्दी', 'Hindi'], ['हिंदी', 'Hindi'], ['इंग्लिश', 'English'], ['अंग्रेजी', 'English'], ['हिंग्लिश', 'Hinglish'],
+        ['फोन नंबर', 'phone number'], ['मोबाइल नंबर', 'mobile number'], ['नंबर', 'number'], ['फोन', 'phone'],
+        ['नाम', 'naam'], ['डिटेल', 'details'], ['डिटेल्स', 'details'],
+        ['मेरे लिए', 'mere liye'], ['में लिए', 'mere liye'], ['आपके लिए', 'aapke liye'], ['हमारे लिए', 'hamare liye'], ['के लिए', 'ke liye'],
+        ['बात कर', 'baat kar'], ['बात', 'baat'], ['बातें', 'baatein'],
+        ['नमस्ते', 'namaste'], ['नमस्कार', 'namaskar'], ['शुक्रिया', 'shukriya'], ['धन्यवाद', 'dhanyawad'], ['अलविदा', 'alvida'],
+        ['बिल्कुल', 'bilkul'], ['ज़रूर', 'zaroor'], ['जरूर', 'zaroor'], ['कृपया', 'kripya'],
+        ['अच्छा', 'accha'], ['अच्छी', 'acchi'], ['अच्छे', 'acche'], ['ठीक', 'theek'], ['बढ़िया', 'badhiya'],
+        ['क्या', 'kya'], ['क्यों', 'kyun'], ['कहाँ', 'kahan'], ['कहां', 'kahan'], ['कब', 'kab'], ['कौन', 'kaun'],
+        ['कैसे', 'kaise'], ['कैसा', 'kaisa'], ['कैसी', 'kaisi'], ['कितना', 'kitna'], ['कितने', 'kitne'], ['कितनी', 'kitni'],
+        ['आप', 'aap'], ['आपका', 'aapka'], ['आपकी', 'aapki'], ['आपके', 'aapke'],
+        ['तुम', 'tum'], ['तुम्हारा', 'tumhara'], ['तुम्हारी', 'tumhari'], ['तुम्हारे', 'tumhare'], ['तू', 'tu'],
+        ['मैं', 'main'], ['मेरा', 'mera'], ['मेरी', 'meri'], ['मेरे', 'mere'], ['मुझे', 'mujhe'], ['मुझसे', 'mujhse'],
+        ['हम', 'hum'], ['हमारा', 'hamara'], ['हमारी', 'hamari'], ['हमारे', 'hamare'], ['हमें', 'humein'],
+        ['यह', 'yeh'], ['ये', 'yeh'], ['वह', 'woh'], ['वो', 'woh'], ['इस', 'is'], ['उस', 'us'], ['इन', 'in'], ['उन', 'un'],
+        ['कर', 'kar'], ['करता', 'karta'], ['करती', 'karti'], ['करते', 'karte'], ['करना', 'karna'], ['करो', 'karo'], ['करें', 'karein'], ['करके', 'karke'],
+        ['हो', 'ho'], ['हैं', 'hain'], ['है', 'hai'], ['हूँ', 'hoon'], ['हूं', 'hoon'], ['था', 'tha'], ['थी', 'thi'], ['थे', 'the'],
+        ['सकता', 'sakta'], ['सकती', 'sakti'], ['सकते', 'sakte'], ['सकूं', 'sakoon'], ['सकूँ', 'sakoon'],
+        ['बोल', 'bol'], ['बोलो', 'bolo'], ['बोलिए', 'boliye'], ['बोलते', 'bolte'], ['बोलता', 'bolta'], ['बोलती', 'bolti'],
+        ['बता', 'bata'], ['बताओ', 'batao'], ['बताइए', 'bataiye'], ['बताइये', 'bataiye'], ['बताएं', 'bataein'],
+        ['पूछ', 'pooch'], ['पूछो', 'poocho'], ['पूछिए', 'poochiye'], ['पूछिये', 'poochiye'],
+        ['दे', 'de'], ['दो', 'do'], ['दीजिए', 'dijiye'], ['दीजिये', 'dijiye'], ['देना', 'dena'], ['देता', 'deta'], ['देती', 'deti'], ['देते', 'dete'],
+        ['ले', 'le'], ['लो', 'lo'], ['लीजिए', 'lijiye'], ['लीजिये', 'lijiye'], ['लेना', 'lena'], ['लेता', 'leta'], ['लेती', 'leti'], ['लेते', 'lete'],
+        ['चाहिए', 'chahiye'], ['चाहिये', 'chahiye'], ['चाहता', 'chahta'], ['चाहती', 'chahti'], ['चाहते', 'chahte'],
+        ['लिए', 'liye'],
+        ['में', 'mein'], ['पर', 'par'], ['पे', 'pe'], ['से', 'se'], ['को', 'ko'], ['का', 'ka'], ['की', 'ki'], ['के', 'ke'], ['ने', 'ne'],
+        ['और', 'aur'], ['या', 'ya'], ['लेकिन', 'lekin'], ['मगर', 'magar'], ['भी', 'bhi'], ['तो', 'toh'], ['अगर', 'agar'], ['जब', 'jab'], ['तब', 'tab'], ['क्योंकि', 'kyunki'], ['ताकि', 'taaki'],
+        ['कुछ', 'kuch'], ['सब', 'sab'], ['सभी', 'sabhi'], ['बहुत', 'bahut'], ['बोहोत', 'bohot'], ['ज़्यादा', 'zyada'], ['ज्यादा', 'zyada'], ['कम', 'kam'], ['थोड़ा', 'thoda'], ['थोड़ी', 'thodi'], ['थोड़े', 'thode'],
+        ['एक', 'ek'], ['दो', 'do'], ['तीन', 'teen'], ['चार', 'chaar'], ['पाँच', 'paanch'], ['पांच', 'paanch'], ['छह', 'chhah'], ['सात', 'saat'], ['आठ', 'aath'], ['नौ', 'nau'], ['दस', 'das'],
+        ['आज', 'aaj'], ['कल', 'kal'], ['अभी', 'abhi'], ['बाद', 'baad'], ['पहले', 'pehle'],
+        ['हाँ', 'haan'], ['हां', 'haan'], ['नहीं', 'nahin'], ['ना', 'na'], ['जी', 'ji']
     ];
 
-    for (const [re, rep] of commonWords) {
-        processed = processed.replace(re, rep);
+    for (const [hi, ro] of phraseMap) {
+        const re = new RegExp('(?<![\\u0900-\\u097F])' + hi + '(?![\\u0900-\\u097F])', 'gi');
+        processed = processed.replace(re, ro);
     }
 
-    // 3. Fallback character-level transliteration for remaining Devanagari characters
+    // 2. Character-level fallback for any obscure Devanagari remaining
     if (/[\u0900-\u097F]/.test(processed)) {
         const vMap = {
             'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri',
             'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'अं': 'an', 'अः': 'ah', 'ऑ': 'o', 'ऍ': 'e'
         };
         const mSignMap = {
-            'ा': 'a', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri',
+            'ा': 'a', 'ि': 'i', 'ी': 'i', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri',
             'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'n', 'ँ': 'n', 'ः': 'h', '्': '', 'ॉ': 'o', 'ॅ': 'e'
         };
         const cMap = {
@@ -407,4 +420,28 @@ function devanagariToHinglish(text) {
     }
 
     return processed.replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Cleans up common phonetic misspellings that Whisper outputs for spoken Hinglish
+ */
+function cleanHinglishPhonetics(text) {
+    if (!text) return '';
+    return text
+        .replace(/\bmen\s+lie\b/gi, 'mere liye')
+        .replace(/\bme\s+lie\b/gi, 'mere liye')
+        .replace(/\bke\s+lie\b/gi, 'ke liye')
+        .replace(/\bhindee\b/gi, 'Hindi')
+        .replace(/\bkaartai\b/gi, 'karti hai')
+        .replace(/\bsakatee\b/gi, 'sakti')
+        .replace(/\bsakate\b/gi, 'sakte')
+        .replace(/\bday\s+sakta\b/gi, 'de sakte')
+        .replace(/\bday\s+sakti\b/gi, 'de sakti')
+        .replace(/\bkaya\s+pa\b/gi, 'kya aap')
+        .replace(/\bkaya\b/gi, 'kya')
+        .replace(/\bbat\s+kar\b/gi, 'baat kar')
+        .replace(/\bkya\s+ke\s+services\b/gi, 'kya services')
+        .replace(/\b(\d{1,2})\.(\d{2})\b/g, '$1:$2')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
 }
