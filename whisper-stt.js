@@ -260,7 +260,8 @@ export class WhisperSTT {
 
             const res = await fetch('/api/sarvam-stt', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined
             });
 
             if (!res.ok) {

@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=2.4';
-import { WhisperSTT } from './whisper-stt.js?v=2.4';
+import { SileroVAD } from './vad-silero.js?v=2.5';
+import { WhisperSTT } from './whisper-stt.js?v=2.5';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=2.4';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=2.5';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -162,11 +162,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Sarvam AI saaras:v3 default + Groq Whisper option)
+    // Initialize STT Engine (Groq Whisper Large V3 Turbo default for sub-150ms latency + Sarvam AI option)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '', // Auto-detect (English, Hindi, Hinglish)
-        model: 'sarvam-saaras-v3',
+        model: 'whisper-large-v3-turbo',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -262,15 +262,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v2');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v4');
         if (!sttMigrated) {
-            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
-            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
-            localStorage.setItem('sonara_stt_migrated_v2', 'true');
+            // Groq Whisper Large V3 Turbo default for sub-150ms real-time voice latency!
+            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
+            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
+            localStorage.setItem('sonara_stt_migrated_v4', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'sarvam-saaras-v3';
+            selSttModel.value = 'whisper-large-v3-turbo';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
@@ -278,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : '');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3-turbo');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -319,11 +320,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_silence_dur')) {
             const savedSilence = parseInt(localStorage.getItem('sonara_silence_dur'));
-            rngSilenceDuration.value = (savedSilence < 600) ? 800 : savedSilence;
+            // Reset old slow 800ms values to fast 450ms default for instant turn-taking
+            rngSilenceDuration.value = (savedSilence > 600) ? 450 : savedSilence;
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         } else if (rngSilenceDuration) {
-            rngSilenceDuration.value = 800;
-            lblSilenceDuration.textContent = '800 ms';
+            rngSilenceDuration.value = 450;
+            lblSilenceDuration.textContent = '450 ms';
         }
         if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
             chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
@@ -715,17 +717,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Initialize Silero VAD Engine calibrated against ambient noise:
-            // Silero VAD tuned for robust speech detection without false triggers from room noise:
-            // threshold=0.55, minSpeechRms=0.022, speechStartConfirmFrames=4 (~128ms)
+            // Silero VAD tuned for instant speech detection (2 frames ~64ms) and fast turn-taking (450ms)
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.55,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 750,
-                minSpeechDurationMs: 400,
-                speechStartConfirmFrames: 4,
-                minSpeechRms: 0.022,
-                rmsFloor: 0.022,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.50,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 450,
+                minSpeechDurationMs: 250,
+                speechStartConfirmFrames: 2, // ~64ms for instant pickup
+                minSpeechRms: 0.012,
+                rmsFloor: 0.012,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,

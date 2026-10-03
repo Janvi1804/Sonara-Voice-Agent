@@ -53,6 +53,7 @@ export default async function handler(req, res) {
             return res.status(sarvamRes.status).json({ error: `Sarvam STT error: ${errText}` });
         }
 
+        const data = await sarvamRes.json();
         let transcript = (data.transcript || data.text || '').trim();
         console.log('[SarvamSTT] Raw response:', JSON.stringify(data));
         if (!transcript) {
