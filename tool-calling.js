@@ -199,10 +199,12 @@ export class ToolCallingEngine {
         if (!userText) return null;
         const lower = userText.toLowerCase().trim();
 
-        // 0. Explicit refusal / polite closing / rejection (NEVER trigger booking or other tools on "no thanks", "nahi", etc.)
-        const isRefusal = /^(no|no thanks|nah|nahi|nahi chahiye|shukriya|thanks|thank you|ok thanks|bye|alvida|rehne do)[.!]?$/i.test(lower) ||
-                          /\b(no thanks|nahi chahiye|rehne do|mat karo|don't book|dont book|not now)\b/i.test(lower);
-        if (isRefusal && !lower.includes('cancel')) {
+        // 0. Explicit refusal / rejection / negative intent (NEVER trigger booking or checking on refusal)
+        const hasNegation = /\b(nahi|nhi|naini|nahin|na|no|not|don't|dont|mat|rehne do|never)\b/i.test(lower);
+        const isRefusal = /^(no|no thanks|nah|nahi|naini|nhi|nahi chahiye|shukriya|thanks|thank you|ok thanks|bye|alvida|rehne do)[.,!]?/i.test(lower) ||
+                          /\b(no thanks|nahi chahiye|rehne do|mat karo|don't book|dont book|not now|nahi karni|nhi karni|naini karni|dont want|don't want|no demo|koi demo nahi|koji demo naini|kuch nahi|kuch nhi|nahi book)\b/i.test(lower);
+
+        if ((isRefusal || hasNegation) && !lower.includes('cancel') && !lower.includes('radd')) {
             return null;
         }
 
@@ -235,17 +237,20 @@ export class ToolCallingEngine {
         }
 
         // 4. Booking intent
-        const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|kar dijiye|kar dena|book kardo|book kar do)\b/i.test(lower);
+        const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|kar dijiye|kar dena)\b/i.test(lower);
         const hasPhoneInCurrentText = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b/.test(userText);
         const isTimeSelection = /\b(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|baje|o'clock)?)\b/i.test(lower) && !hasPhoneInCurrentText;
+        const hasExplicitConfirm = /\b(confirm|kar do|kardo|kar dijiye|kar dena|book kardo|book kar do|haan|yes)\b/i.test(lower);
 
         // ONLY trigger booking if:
         // a) User provided their phone number in this turn (and we have targetTime from this or previous turn)
-        // b) User explicitly said a booking keyword (e.g. "booking confirm kardo")
+        // b) User explicitly said a booking confirmation keyword (e.g. "booking confirm kardo")
         // c) User selected a time while phone is already saved and intent was to book
-        const shouldBook = (hasPhoneInCurrentText && (memory?.entities?.targetTime || isTimeSelection)) ||
-                           (hasBookingWord && memory?.entities?.phone) ||
-                           (isTimeSelection && memory?.entities?.phone && memory?.entities?.userIntent?.includes('Book'));
+        const shouldBook = !hasNegation && (
+            (hasPhoneInCurrentText && (memory?.entities?.targetTime || isTimeSelection)) ||
+            (hasExplicitConfirm && hasBookingWord && memory?.entities?.phone) ||
+            (isTimeSelection && memory?.entities?.phone && memory?.entities?.userIntent === 'Book Demo / Consultation')
+        );
 
         if (shouldBook && memory?.entities?.phone) {
             return await this.executeTool('book_appointment', {
@@ -259,9 +264,11 @@ export class ToolCallingEngine {
         }
 
         // 5. Availability checking intent (or asking for demo/slots without providing phone yet)
-        if (/\b(available|availability|free slot|free time|open slot|timing|slots)\b/i.test(lower) || 
+        if (!hasNegation && (
+            /\b(available|availability|free slot|free time|open slot|timing|slots)\b/i.test(lower) || 
             (hasBookingWord && !memory?.entities?.phone) || 
-            (lower.includes('demo') && !memory?.entities?.phone && !hasPhoneInCurrentText)) {
+            (lower.includes('demo') && !memory?.entities?.phone && !hasPhoneInCurrentText)
+        )) {
             return await this.executeTool('check_availability', {
                 date: memory?.entities?.targetDate || 'today',
                 time: memory?.entities?.targetTime || ''

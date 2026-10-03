@@ -428,6 +428,8 @@ function devanagariToHinglish(text) {
 function cleanHinglishPhonetics(text) {
     if (!text) return '';
     return text
+        .replace(/\b(naini|nahin|naheen|nhi)\b/gi, 'nahi')
+        .replace(/\bkoji\b/gi, 'koi')
         .replace(/\bmen\s+lie\b/gi, 'mere liye')
         .replace(/\bme\s+lie\b/gi, 'mere liye')
         .replace(/\bke\s+lie\b/gi, 'ke liye')
