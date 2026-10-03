@@ -197,7 +197,14 @@ export class ToolCallingEngine {
      */
     async detectAndExecute(userText, memory) {
         if (!userText) return null;
-        const lower = userText.toLowerCase();
+        const lower = userText.toLowerCase().trim();
+
+        // 0. Explicit refusal / polite closing / rejection (NEVER trigger booking or other tools on "no thanks", "nahi", etc.)
+        const isRefusal = /^(no|no thanks|nah|nahi|nahi chahiye|shukriya|thanks|thank you|ok thanks|bye|alvida|rehne do)[.!]?$/i.test(lower) ||
+                          /\b(no thanks|nahi chahiye|rehne do|mat karo|don't book|dont book|not now)\b/i.test(lower);
+        if (isRefusal && !lower.includes('cancel')) {
+            return null;
+        }
 
         // 1. Human handoff intent detection
         if (lower.includes('human agent') || lower.includes('insaan se baat') || lower.includes('talk to human') || lower.includes('representative') || lower.includes('manager')) {
@@ -209,11 +216,13 @@ export class ToolCallingEngine {
         }
 
         // 2. Cancellation intent
-        if (lower.includes('cancel appointment') || lower.includes('cancel booking') || lower.includes('appointment cancel')) {
-            return await this.executeTool('cancel_appointment', {
-                appointmentId: memory?.entities?.appointmentId || '',
-                phone: memory?.entities?.phone || ''
-            });
+        if (lower.includes('cancel') || lower.includes('radd') || lower.includes('hata do')) {
+            if (lower.includes('appointment') || lower.includes('booking') || lower.includes('demo') || lower.includes('slot') || lower.includes('kar')) {
+                return await this.executeTool('cancel_appointment', {
+                    appointmentId: memory?.entities?.appointmentId || '',
+                    phone: memory?.entities?.phone || ''
+                });
+            }
         }
 
         // 3. Reschedule intent
@@ -225,12 +234,20 @@ export class ToolCallingEngine {
             });
         }
 
-        // 4. Booking intent when phone and time/intent are present
-        const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|set kar)\b/i.test(lower);
-        const isTimeSelection = /\b\d{1,2}(?:[:.]\d{2})?\s*(am|pm)?\b/i.test(lower) || /\b(baje|bje|o'clock)\b/i.test(lower);
-        const hasBookingContext = hasBookingWord || isTimeSelection || memory?.entities?.userIntent?.includes('Book') || !!memory?.entities?.targetTime;
+        // 4. Booking intent
+        const hasBookingWord = /\b(book|booking|confirm|schedule|kardo|kar do|kar dijiye|kar dena|book kardo|book kar do)\b/i.test(lower);
+        const hasPhoneInCurrentText = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b/.test(userText);
+        const isTimeSelection = /\b(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|baje|o'clock)?)\b/i.test(lower) && !hasPhoneInCurrentText;
 
-        if (hasBookingContext && memory?.entities?.phone) {
+        // ONLY trigger booking if:
+        // a) User provided their phone number in this turn (and we have targetTime from this or previous turn)
+        // b) User explicitly said a booking keyword (e.g. "booking confirm kardo")
+        // c) User selected a time while phone is already saved and intent was to book
+        const shouldBook = (hasPhoneInCurrentText && (memory?.entities?.targetTime || isTimeSelection)) ||
+                           (hasBookingWord && memory?.entities?.phone) ||
+                           (isTimeSelection && memory?.entities?.phone && memory?.entities?.userIntent?.includes('Book'));
+
+        if (shouldBook && memory?.entities?.phone) {
             return await this.executeTool('book_appointment', {
                 customerName: memory.entities.customerName || 'Valued Client',
                 phone: memory.entities.phone,
@@ -241,14 +258,15 @@ export class ToolCallingEngine {
             });
         }
 
-        // 5. Availability checking intent (or time inquiry without phone number yet)
-        if (/\b(available|availability|free slot|free time|open slot|timing)\b/i.test(lower) || (hasBookingWord && !memory?.entities?.phone)) {
+        // 5. Availability checking intent (or asking for demo/slots without providing phone yet)
+        if (/\b(available|availability|free slot|free time|open slot|timing|slots)\b/i.test(lower) || 
+            (hasBookingWord && !memory?.entities?.phone) || 
+            (lower.includes('demo') && !memory?.entities?.phone && !hasPhoneInCurrentText)) {
             return await this.executeTool('check_availability', {
                 date: memory?.entities?.targetDate || 'today',
                 time: memory?.entities?.targetTime || ''
             });
         }
-
 
         return null;
     }

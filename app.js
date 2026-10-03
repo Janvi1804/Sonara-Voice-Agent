@@ -1484,10 +1484,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const toolResult = await toolEngine.detectAndExecute(userPrompt, memory);
         let toolContext = '';
         if (toolResult) {
-            toolContext = `\n[ACTION TAKEN / TOOL RESULT]: ${JSON.stringify(toolResult)}\n`;
-            if (toolResult.tool === 'book_appointment' && toolResult.success) {
-                memory.entities.appointmentId = toolResult.appointmentId;
+            let toolDirective = '';
+            if (toolResult.tool === 'book_appointment') {
+                if (toolResult.success) {
+                    toolDirective = `CRITICAL: The appointment has been successfully booked with ID "${toolResult.appointmentId}". State this exact Appointment ID "${toolResult.appointmentId}" to the user.`;
+                    memory.entities.appointmentId = toolResult.appointmentId;
+                    memory.entities.userIntent = null;
+                } else {
+                    toolDirective = `CRITICAL TRUTHFULNESS: The booking FAILED because the slot was unavailable (${toolResult.message}). You MUST NOT say the booking succeeded! DO NOT invent or fabricate any fake appointment ID! Inform the user that this slot is already booked and offer the open slots: ${(toolResult.availableSlots || []).join(', ')}.`;
+                }
+            } else if (toolResult.tool === 'cancel_appointment') {
+                if (toolResult.success) {
+                    toolDirective = `CRITICAL: Appointment ${toolResult.appointmentId || ''} has been successfully cancelled. Confirm cancellation clearly to the user.`;
+                    memory.entities.appointmentId = null;
+                    memory.entities.targetTime = null;
+                    memory.entities.userIntent = null;
+                } else {
+                    toolDirective = `CRITICAL: Cancellation could not be completed: ${toolResult.message}. Inform user truthfully.`;
+                }
             }
+            toolContext = `\n[SYSTEM ACTION TAKEN / TOOL RESULT]:\n${JSON.stringify(toolResult)}\n${toolDirective}\n`;
         }
 
         // 3. PostgreSQL + pgvector RAG Context Retrieval

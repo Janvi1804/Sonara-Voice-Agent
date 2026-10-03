@@ -118,8 +118,15 @@ export class AppointmentDB {
         if (!timeInput) return '11:30 AM';
         const clean = timeInput.toLowerCase().trim();
 
-        // Extract the first number from the time string (e.g. "3 baje", "11:30 AM", "14:00")
-        const numMatch = clean.match(/\b(\d{1,2})\b/);
+        // Exact pattern match first
+        if (clean.includes('10:00') || clean.includes('10 am') || clean.includes('10am')) return '10:00 AM';
+        if (clean.includes('11:30') || clean.includes('11.30') || clean.includes('11 am') || clean.includes('11am')) return '11:30 AM';
+        if (clean.includes('2:00') || clean.includes('02:00') || clean.includes('2 pm') || clean.includes('2pm') || clean.includes('14:00')) return '02:00 PM';
+        if (clean.includes('3:30') || clean.includes('03:30') || clean.includes('3.30') || clean.includes('3 pm') || clean.includes('3pm') || clean.includes('15:30')) return '03:30 PM';
+        if (clean.includes('5:00') || clean.includes('05:00') || clean.includes('5 pm') || clean.includes('5pm') || clean.includes('17:00')) return '05:00 PM';
+
+        // Extract the first number from the time string (e.g. "3 baje", "11:30 AM", "14:00", "2pm")
+        const numMatch = clean.match(/(\d{1,2})/);
         if (!numMatch) return '11:30 AM';
         const hour = parseInt(numMatch[1], 10);
 
@@ -132,7 +139,7 @@ export class AppointmentDB {
         if (h === 11 || h === 12) return '11:30 AM'; // 12 baje = 12 PM → nearest slot 11:30 AM
         if (h === 1 || h === 2) return '02:00 PM';   // 1 PM, 2 PM
         if (h === 3 || h === 4) return '03:30 PM';   // 3 PM, 4 PM
-        if (h === 5 || h === 6 || h === 7 || h === 8 || h === 9) return '05:00 PM'; // evening slots
+        if (h >= 5 && h <= 9) return '05:00 PM';     // evening slots
 
         return '11:30 AM'; // safe default
     }
@@ -337,6 +344,7 @@ export class AppointmentDB {
             await fetch('/api/db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(1800),
                 body: JSON.stringify({
                     action: 'save_appointment',
                     data: {
@@ -396,6 +404,7 @@ export class AppointmentDB {
             const dbRes = await fetch('/api/db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(1800),
                 body: JSON.stringify({
                     action: 'save_appointment',
                     data: {

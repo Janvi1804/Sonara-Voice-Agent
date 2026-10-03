@@ -87,7 +87,11 @@ export class ConversationMemory {
         const timeWithModifier = text.match(/\b(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|baje|o'clock))\b/i);
         const timeWithSlot = text.match(/\b(\d{1,2}[:.]\d{2})\s*(?:ka\s*(?:time|slot)|baje)?\b/i);
         if (timeWithModifier) {
-            this.entities.targetTime = timeWithModifier[0].replace('.', ':');
+            let t = timeWithModifier[0].replace('.', ':').toUpperCase();
+            if (/^\d{1,2}(AM|PM)$/i.test(t)) {
+                t = t.replace(/(\d{1,2})(AM|PM)/i, (_, h, m) => `${h}:00 ${m}`);
+            }
+            this.entities.targetTime = t;
         } else if (timeWithSlot) {
             let t = timeWithSlot[1].replace('.', ':');
             const hour = parseInt(t.split(':')[0], 10);
