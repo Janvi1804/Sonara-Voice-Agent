@@ -723,7 +723,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.50,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 450,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 400,
                 minSpeechDurationMs: 250,
                 speechStartConfirmFrames: 2, // ~64ms for instant pickup
                 minSpeechRms: 0.012,
@@ -1815,12 +1815,17 @@ The conversation should feel like a natural conversation with a knowledgeable hu
 
             const popCompleteSentences = (buf) => {
                 const sentences = [];
-                const re = /[.!?]+\s/g;
+                // Ultra-low latency streaming: emit at sentence boundary, OR clause boundary (, ; :) if buffer >= 40 chars
+                // This starts TTS synthesis within ~300ms instead of waiting for long sentences to finish streaming!
+                const re = buf.length >= 40 ? /[.!?]+(?:\s+|$)|[,;:]\s+/g : /[.!?]+(?:\s+|$)/g;
                 let lastIndex = 0, m;
                 while ((m = re.exec(buf)) !== null) {
                     const end = m.index + m[0].length;
-                    sentences.push(buf.slice(lastIndex, end).trim());
-                    lastIndex = end;
+                    const chunk = buf.slice(lastIndex, end).trim();
+                    if (chunk.length >= 8) {
+                        sentences.push(chunk);
+                        lastIndex = end;
+                    }
                 }
                 return { sentences, remainder: buf.slice(lastIndex) };
             };

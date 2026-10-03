@@ -162,6 +162,7 @@ export class PgVectorStore {
             const res = await fetch('/api/db', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(600),
                 body: JSON.stringify({
                     action: 'search_embeddings',
                     data: {
