@@ -149,8 +149,18 @@ export class WhisperSTT {
             }
         }
 
+        // Discard Whisper prompt hallucinations (when user said nothing, but Whisper recited prompt keywords)
+        const isPromptHallucination = (
+            lowerText.includes('stylemart') ||
+            lowerText.includes('learnsphere') ||
+            lowerText.includes('carefirst')
+        ) && !lowerText.includes('what') && !lowerText.includes('kya') && !lowerText.includes('tell') && !lowerText.includes('batao') && !lowerText.includes('about') && !lowerText.includes('case study');
 
-
+        if (isPromptHallucination) {
+            console.log('[GroqWhisper] Discarding prompt hallucination on silence:', text);
+            this.audioChunks = [];
+            return '';
+        }
 
         this.onTranscript(text);
         return text;
@@ -194,8 +204,8 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Domain prompt strictly for proper nouns (prevents silence from being biassed into random conversational words)
-            whisperForm.append('prompt', 'Converse AI, Sonara, Revti Digital, WhatsApp automation, voice bot, demo, appointment, case study, StyleMart, LearnSphere, CareFirst Clinics.');
+            // Hinglish prompt guides Whisper to output in Roman Hinglish alphabet instead of Devanagari Hindi
+            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, aap kaise hain, customer support, retail business, demo booking.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
@@ -230,6 +240,7 @@ export class WhisperSTT {
             text = text.replace(/\bConverse\s+eye\b/gi, 'Converse AI');
             text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
             text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
+            text = devanagariToHinglish(text);
 
             console.log('[GroqWhisper] 🎙️ Transcribed:', text);
             this.isTranscribing = false;
@@ -275,6 +286,7 @@ export class WhisperSTT {
             text = text.replace(/\bConverse\s+eye\b/gi, 'Converse AI');
             text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
             text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
+            text = devanagariToHinglish(text);
 
             console.log('[SarvamSTT] 🎙️ Transcribed:', text);
             this.isTranscribing = false;
@@ -286,4 +298,113 @@ export class WhisperSTT {
             return await this.sendToGroqWhisper(wavBlob, meta);
         }
     }
+}
+
+/**
+ * Converts Devanagari Hindi text to clean, natural Roman Hinglish.
+ * Ensures the user's transcript in chat is always readable Roman text (e.g. "aap kaise hain?")
+ * and never raw Devanagari Hindi font.
+ */
+function devanagariToHinglish(text) {
+    if (!text || !/[\u0900-\u097F]/.test(text)) return text;
+
+    // 1. English loanwords written in Devanagari
+    const entityMap = [
+        [/\b(?:कन्वर्स|कॉन्वर्स|कन्वेर्स)\b/gi, 'Converse'],
+        [/\b(?:एआई|ए\.आई\.|ए\.आइ\.)\b/gi, 'AI'],
+        [/\b(?:सर्विसेज|सर्विसेज़|सर्विस|सेवाएं|सेवाएँ|सेवा)\b/gi, 'services'],
+        [/\b(?:प्रोवाइड|प्रदान)\b/gi, 'provide'],
+        [/\b(?:बिज़नेस|बिजनेस|बिज़नेस)\b/gi, 'business'],
+        [/\b(?:कस्टमर|ग्राहक)\b/gi, 'customer'],
+        [/\b(?:सपोर्ट|सहायता)\b/gi, 'support'],
+        [/\b(?:हेल्प|मदद)\b/gi, 'help'],
+        [/\b(?:रिटेल)\b/gi, 'retail'],
+        [/\b(?:अपॉइंटमेंट|अपॉइंटमेंटस)\b/gi, 'appointment'],
+        [/\b(?:डेमो)\b/gi, 'demo'],
+        [/\b(?:व्हाट्सएप|वाट्सएप)\b/gi, 'WhatsApp'],
+        [/\b(?:वॉइस|वाइस)\b/gi, 'voice'],
+        [/\b(?:बॉट)\b/gi, 'bot'],
+        [/\b(?:एजेंट|एजेंट्स)\b/gi, 'agent'],
+        [/\b(?:सॉल्यूशन|सॉल्यूशंस)\b/gi, 'solution'],
+        [/\b(?:प्लेटफॉर्म)\b/gi, 'platform']
+    ];
+
+    let processed = text;
+    for (const [re, rep] of entityMap) {
+        processed = processed.replace(re, rep);
+    }
+
+    // 2. High-frequency conversational Hindi words
+    const commonWords = [
+        [/\bनमस्ते\b/gi, 'namaste'], [/\bनमस्कार\b/gi, 'namaskar'],
+        [/\bकैसे\b/gi, 'kaise'], [/\bकैसा\b/gi, 'kaisa'], [/\bकैसी\b/gi, 'kaisi'],
+        [/\bहो\b/gi, 'ho'], [/\bहैं\b/gi, 'hain'], [/\bहै\b/gi, 'hai'], [/\bहूँ\b/gi, 'hoon'], [/\bहूं\b/gi, 'hoon'],
+        [/\bआप\b/gi, 'aap'], [/\bतुम\b/gi, 'tum'], [/\bतू\b/gi, 'tu'],
+        [/\bमैं\b/gi, 'main'], [/\bहम\b/gi, 'hum'], [/\bमुझे\b/gi, 'mujhe'], [/\bमेरा\b/gi, 'mera'], [/\bमेरी\b/gi, 'meri'], [/\bमेरे\b/gi, 'mere'],
+        [/\bक्या\b/gi, 'kya'], [/\bक्यों\b/gi, 'kyun'], [/\bकहाँ\b/gi, 'kahan'], [/\bकब\b/gi, 'kab'], [/\bकौन\b/gi, 'kaun'], [/\bकितना\b/gi, 'kitna'], [/\bकितने\b/gi, 'kitne'],
+        [/\bकरता\b/gi, 'karta'], [/\bकरती\b/gi, 'karti'], [/\bकरते\b/gi, 'karte'], [/\bकरना\b/gi, 'karna'], [/\bकरो\b/gi, 'karo'], [/\bकरें\b/gi, 'karein'],
+        [/\bसकता\b/gi, 'sakta'], [/\bसकती\b/gi, 'sakti'], [/\bसकते\b/gi, 'sakte'],
+        [/\bबताओ\b/gi, 'batao'], [/\bबताइए\b/gi, 'bataiye'], [/\bबताइये\b/gi, 'bataiye'],
+        [/\bदीजिए\b/gi, 'dijiye'], [/\bदीजिये\b/gi, 'dijiye'], [/\bचाहिए\b/gi, 'chahiye'],
+        [/\bअच्छा\b/gi, 'accha'], [/\bअच्छी\b/gi, 'acchi'], [/\bअच्छे\b/gi, 'acche'], [/\bठीक\b/gi, 'theek'], [/\bबढ़िया\b/gi, 'badhiya'],
+        [/\bधन्यवाद\b/gi, 'dhanyawad'], [/\bशुक्रिया\b/gi, 'shukriya'], [/\bअलविदा\b/gi, 'alvida'],
+        [/\bनहीं\b/gi, 'nahin'], [/\bहाँ\b/gi, 'haan'], [/\bऔर\b/gi, 'aur'], [/\bलेकिन\b/gi, 'lekin'], [/\bभी\b/gi, 'bhi'],
+        [/\bमें\b/gi, 'mein'], [/\bपर\b/gi, 'par'], [/\bसे\b/gi, 'se'], [/\bको\b/gi, 'ko'], [/\bका\b/gi, 'ka'], [/\bकी\b/gi, 'ki'], [/\bके\b/gi, 'ke'], [/\bने\b/gi, 'ne'],
+        [/\bकुछ\b/gi, 'kuch'], [/\bसब\b/gi, 'sab'], [/\bबहुत\b/gi, 'bahut'], [/\bबोहोत\b/gi, 'bohot'], [/\bज़्यादा\b/gi, 'zyada'], [/\bज्यादा\b/gi, 'zyada'],
+        [/\bएक\b/gi, 'ek'], [/\bदो\b/gi, 'do'], [/\bतीन\b/gi, 'teen'], [/\bचार\b/gi, 'chaar'], [/\bपाँच\b/gi, 'paanch'], [/\bपांच\b/gi, 'paanch']
+    ];
+
+    for (const [re, rep] of commonWords) {
+        processed = processed.replace(re, rep);
+    }
+
+    // 3. Fallback character-level transliteration for remaining Devanagari characters
+    if (/[\u0900-\u097F]/.test(processed)) {
+        const vMap = {
+            'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri',
+            'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'अं': 'an', 'अः': 'ah', 'ऑ': 'o', 'ऍ': 'e'
+        };
+        const mSignMap = {
+            'ा': 'a', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri',
+            'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'n', 'ँ': 'n', 'ः': 'h', '्': '', 'ॉ': 'o', 'ॅ': 'e'
+        };
+        const cMap = {
+            'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'ng',
+            'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'ny',
+            'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+            'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+            'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+            'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v',
+            'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+            'क्ष': 'ksh', 'त्र': 'tr', 'ज्ञ': 'gya',
+            'क़': 'q', 'ख़': 'kh', 'ग़': 'gh', 'ज़': 'z', 'फ़': 'f', 'ड़': 'r', 'ढ़': 'rh'
+        };
+
+        let res = '';
+        const chars = Array.from(processed.replace(/\u093C/g, ''));
+        for (let i = 0; i < chars.length; i++) {
+            const ch = chars[i];
+            const next = chars[i + 1] || '';
+            if (cMap[ch]) {
+                res += cMap[ch];
+                if (next === '्') {
+                    i++;
+                } else if (mSignMap[next]) {
+                    res += mSignMap[next];
+                    i++;
+                } else if (cMap[next] || vMap[next] || next === ' ' || next === '' || /[.,!?]/.test(next)) {
+                    if (next !== ' ' && next !== '' && !/[.,!?]/.test(next)) res += 'a';
+                }
+            } else if (vMap[ch]) {
+                res += vMap[ch];
+            } else if (mSignMap[ch]) {
+                res += mSignMap[ch];
+            } else {
+                res += ch;
+            }
+        }
+        processed = res;
+    }
+
+    return processed.replace(/\s{2,}/g, ' ').trim();
 }

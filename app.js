@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=2.5';
-import { WhisperSTT } from './whisper-stt.js?v=2.5';
+import { SileroVAD } from './vad-silero.js?v=2.6';
+import { WhisperSTT } from './whisper-stt.js?v=2.6';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=2.5';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=2.6';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
