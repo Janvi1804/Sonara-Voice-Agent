@@ -222,8 +222,9 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Vocabulary hints for proper capitalization, slot times, and natural Roman Hinglish casing (no conversational sentences to prevent hallucination on silence)
-            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo, slot booking, appointment, 10:00 AM, 2:00 PM, 3:30 PM, 5:00 PM, retail, EdTech, healthcare, pricing, features.');
+            // Bilingual Hinglish guide: Instructs Whisper to output natural Roman Hinglish for Hindi/Hinglish speech (never auto-translate to English)
+            // and preserves proper nouns, slot times, and casing.
+            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo booking, slot, 10:00 AM, 2:00 PM, 3:30 PM, 5:00 PM, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
