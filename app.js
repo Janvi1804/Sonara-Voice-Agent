@@ -223,9 +223,8 @@ document.addEventListener('DOMContentLoaded', () => {
         isAiSpeaking = false;
         isProcessingUtterance = false;
         if (vadEngine) vadEngine.setAiSpeakingState(false);
-        // 750ms speaker drain buffer — clears room reverb tail from TTS audio
-        // so microphone doesn't pick up TTS residue or echo as user speech
-        ttsCooldownUntil = Date.now() + 750;
+        // 150ms micro-drain buffer — prevents audio loopback without clipping user speech
+        ttsCooldownUntil = Date.now() + 150;
         if (whisperEngine) whisperEngine.clearBuffer();
 
         ttsEndGraceTimer = setTimeout(() => {
@@ -235,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setAgentState('listening', 'Connected & Listening (Silero VAD)');
                 startRecognitionSafely();
             }
-        }, 750);
+        }, 150);
     };
 
 

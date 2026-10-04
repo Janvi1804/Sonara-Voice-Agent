@@ -191,6 +191,7 @@ export class SarvamTTS {
      * @param {string} lang - 'hi-IN' or 'en-IN'
      */
     async _fetchAudio(text, lang, retriesLeft = 2) {
+        const tStart = performance.now();
         try {
             const res = await fetch('/api/sarvam-tts', {
                 method: 'POST',
@@ -211,6 +212,8 @@ export class SarvamTTS {
                 throw errObj;
             }
             const buf = await res.arrayBuffer();
+            const latencyMs = Math.round(performance.now() - tStart);
+            console.log(`[SarvamTTS] ⚡ Chunk synthesized in ${latencyMs}ms (${text.slice(0, 35)}...)`);
             const contentType = res.headers.get('content-type') || 'audio/mpeg';
             return new Blob([buf], { type: contentType });
         } catch (err) {

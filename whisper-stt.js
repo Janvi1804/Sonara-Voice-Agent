@@ -16,7 +16,7 @@ export class WhisperSTT {
         this.sampleRate = 16000;
         this.audioChunks = [];
         this.preSpeechRingBuffer = [];
-        this.preSpeechMaxChunks = 12; // ~380ms pre-speech buffer
+        this.preSpeechMaxChunks = 16; // ~512ms pre-speech buffer to preserve initial consonants
         this.isRecording = false;
         this.isTranscribing = false;
 
@@ -216,6 +216,7 @@ export class WhisperSTT {
      */
     async sendToGroqWhisper(wavBlob, meta = {}) {
         this.isTranscribing = true;
+        const tStart = performance.now();
         try {
             const whisperForm = new FormData();
             whisperForm.append('file', wavBlob, 'user_speech.wav');
@@ -223,8 +224,8 @@ export class WhisperSTT {
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
             // Bilingual Hinglish guide: Instructs Whisper to output natural Roman Hinglish for Hindi/Hinglish speech (never auto-translate to English)
-            // and preserves proper nouns, slot times, and casing.
-            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo booking, slot, 10:00 AM, 2:00 PM, 3:30 PM, 5:00 PM, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye.');
+            // and preserves proper nouns, slot times (2 PM, 10 AM, 2 baje), and casing.
+            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo booking, slot, 10:00 AM, 10 AM, 2:00 PM, 2 PM, 3:30 PM, 5:00 PM, 2 baje, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
@@ -247,6 +248,7 @@ export class WhisperSTT {
             }
 
             const data = await res.json();
+            const latencyMs = Math.round(performance.now() - tStart);
             let text = (data.text || '').trim();
 
             // Extract segment-level metadata (verbose_json)
@@ -265,9 +267,9 @@ export class WhisperSTT {
             text = devanagariToHinglish(text);
             text = cleanHinglishPhonetics(text);
 
-            console.log('[GroqWhisper] 🎙️ Transcribed:', text);
+            console.log(`[GroqWhisper] 🎙️ Transcribed in ${latencyMs}ms:`, text);
             this.isTranscribing = false;
-            return { text, noSpeechProb, avgLogProb };
+            return { text, noSpeechProb, avgLogProb, latencyMs };
 
         } catch (err) {
             this.isTranscribing = false;
