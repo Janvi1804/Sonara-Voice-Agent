@@ -49,21 +49,31 @@ export class SarvamTTS {
 
     setVoice(speaker) { if (speaker) this.speaker = speaker; }
     setSpeed(pace) { this.pace = pace || 1.0; }
+    setLanguage(lang) { this.language = (lang === 'hi-IN' || lang === 'en-IN') ? lang : null; }
+    setTurnLanguage(lang) { this.turnLanguage = (lang === 'hi-IN' || lang === 'en-IN') ? lang : null; }
     getAnalyser() { return this.analyser || null; }
 
     /**
-     * Detect language from full response text (called once per speak()).
+     * Detect language from response text chunk.
      * hi-IN for Hindi/Hinglish, en-IN for pure English.
      */
     detectLanguage(text) {
-        if (!text) return 'en-IN';
+        if (!text) return this.turnLanguage || 'en-IN';
+        if (this.language) return this.language;
+
         // Devanagari script → definitely Hindi
         if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
 
-        // Hinglish detection: If ANY common Hindi / Hinglish functional words or verb stems appear,
-        // it MUST use 'hi-IN' so Sarvam Ritu uses natural Indian pronunciation for both English & Hindi words.
-        const hindiPattern = /\b(hai|hain|hoon|ho|kya|nahi|nahin|aur|mujhe|mera|meri|mere|aap|aapka|aapki|aapke|apna|apni|apne|kripya|kal|aaj|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|main|yeh|ye|woh|wo|kyun|kaise|kaisi|kaisa|kab|kahan|lekin|kyunki|phir|abhi|baad|pehle|sirf|sab|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|to|bhi|se|pe|par|ko|ka|ki|ke|ne|ek|do|teen|chaar|paanch|chheh|saat|aath|nau|das|agar|jab|tab|ji|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|de|do|dijiye|dena|deti|deta|le|lo|lijiye|lena|leti|leta)\b/i;
+        // Hinglish detection: Use ONLY clear, unambiguous Hindi/Hinglish words.
+        // REMOVED English collisions: 'to', 'do', 'main', 'se', 'par', 'le', 'de', 'ne', 'ek', 'ho', 'ye', 'wo'
+        // These English collisions were causing pure English sentences like:
+        // "I would love to schedule a live demo..." or "We have slots open today at 10:00 AM, 2:00 PM"
+        // to be falsely tagged as hi-IN, forcing Sarvam to read numbers in Hindi ("do baje") instead of English!
+        const hindiPattern = /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|kab|kahan|kidhar|idhar|udhar|nahi|nahin|aur|mujhe|mera|meri|mere|hum|humara|humari|humare|aap|aapka|aapki|aapke|apna|apni|apne|kripya|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|yeh|woh|lekin|magar|kyunki|phir|abhi|baad|pehle|sirf|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|bhi|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|dijiye|lijiye|kijiye|sunte|sunao|boliye)\b/i;
         if (hindiPattern.test(text)) return 'hi-IN';
+
+        // If turn language is explicitly known (e.g. user asked in English), honor that context
+        if (this.turnLanguage) return this.turnLanguage;
 
         return 'en-IN';
     }

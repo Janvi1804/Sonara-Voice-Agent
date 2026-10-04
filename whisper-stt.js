@@ -116,9 +116,14 @@ export class WhisperSTT {
         // Discard Whisper phantom single-word hallucinations from background noise
         const lowerText = text.toLowerCase().trim().replace(/[^a-z0-9\u0900-\u097f\s]/g, '').trim();
 
-        // Minimum length check — less than 3 real chars = definitely noise
-        if (lowerText.replace(/\s/g, '').length < 3) {
-            console.log('[GroqWhisper] Discarding too-short transcript:', JSON.stringify(text));
+        // Minimum length check — allow valid short inputs like numbers ("2", "10"), times ("2pm", "am", "pm"), and short affirmatives ("ok", "no", "yes", "ji", "ha")
+        const strippedChars = lowerText.replace(/\s/g, '');
+        const validShortTokens = ['ok', 'no', 'hi', 'ha', 'ji', 'am', 'pm', 'yes', 'two', 'ten'];
+        const hasDigits = /\d/.test(strippedChars);
+        const isValidShort = hasDigits || validShortTokens.includes(lowerText);
+
+        if (strippedChars.length < 3 && !isValidShort) {
+            console.log('[GroqWhisper] Discarding too-short noise transcript:', JSON.stringify(text));
             this.audioChunks = [];
             return '';
         }
@@ -149,7 +154,20 @@ export class WhisperSTT {
             }
         }
 
-        // Discard Whisper prompt hallucinations (when user said nothing, but Whisper recited prompt keywords)
+        // Discard Whisper prompt hallucinations (when user said nothing, but Whisper recited prompt phrases)
+        const promptHallucinations = [
+            'kya aap meri madad kar sakte hain',
+            'aap kaise hain',
+            'namaste aap kaise hain',
+            'mujhe retail business ke liye ek demo booking karni hai',
+            'retail business ke liye ek demo booking karni hai'
+        ];
+        if (promptHallucinations.some(p => lowerText.includes(p)) && (rms < 0.035 || durationMs < 1200 || result.noSpeechProb > 0.08)) {
+            console.log('[GroqWhisper] Discarding prompt hallucination on faint noise:', text);
+            this.audioChunks = [];
+            return '';
+        }
+
         const isPromptHallucination = (
             lowerText.includes('stylemart') ||
             lowerText.includes('learnsphere') ||
@@ -204,8 +222,8 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Hinglish prompt guides Whisper to output in natural Roman Hinglish alphabet instead of Devanagari Hindi
-            whisperForm.append('prompt', 'Converse AI, Sonara, namaste! Aap kaise hain? Kya aap meri madad kar sakte hain? Mujhe retail business ke liye ek demo booking karni hai.');
+            // Vocabulary hints for proper capitalization, slot times, and natural Roman Hinglish casing (no conversational sentences to prevent hallucination on silence)
+            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo, slot booking, appointment, 10:00 AM, 2:00 PM, 3:30 PM, 5:00 PM, retail, EdTech, healthcare, pricing, features.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
@@ -240,6 +258,9 @@ export class WhisperSTT {
             text = text.replace(/\bConverse\s+eye\b/gi, 'Converse AI');
             text = text.replace(/\btheconverseeye\b/gi, 'theconverseai');
             text = text.replace(/\bconverse\s*ai\b/gi, 'Converse AI').trim();
+            // Phonetic normalization for slot booking times: e.g. "2 BM" or isolated "BM" -> "2 PM"
+            text = text.replace(/\b([0-9]|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*bm\b/gi, '$1 PM');
+            if (/^\s*bm\s*$/i.test(text)) text = '2 PM';
             text = devanagariToHinglish(text);
             text = cleanHinglishPhonetics(text);
 

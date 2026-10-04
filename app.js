@@ -1477,6 +1477,12 @@ document.addEventListener('DOMContentLoaded', () => {
         appendChatMessage('user', userPrompt);
         conversationHistory.push({ role: 'user', content: effectivePrompt });
 
+        // Sync TTS turn language context with user's language (ensures English responses speak numbers in English, and Hindi in Hindi)
+        const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|kya|kyun|kaise|nahi|nahin|aur|mujhe|mera|meri|mere|aap|aapka|aapki|karo|karna|batao|bataiye|chahiye|madad|namaste|bilkul|theek|accha|haan)\b/i.test(userPrompt);
+        if (ttsEngine && typeof ttsEngine.setTurnLanguage === 'function') {
+            ttsEngine.setTurnLanguage(isUserHindi ? 'hi-IN' : 'en-IN');
+        }
+
         // 1. Multi-Turn Conversation Memory & Entity Extraction
         memory.addTurn('user', userPrompt);
 
