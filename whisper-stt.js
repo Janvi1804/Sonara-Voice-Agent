@@ -20,7 +20,7 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.018;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.022;
         this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 450;
     }
 
@@ -178,13 +178,30 @@ export class WhisperSTT {
             }
         }
 
+        // Discard Whisper prompt recitation / comma-prefixed artifacts (when Whisper recites prompt tokens on ambient silence)
+        const isPromptEcho = /^[,،;:]/.test(text.trim()) || 
+            (lowerText.includes('kya aap') && lowerText.includes('kaise')) ||
+            (lowerText.includes('kaise hain') && lowerText.includes('bataiye')) ||
+            (lowerText.includes('bataiye') && lowerText.includes('sales')) ||
+            (lowerText.includes('kya aap') && lowerText.includes('sales')) ||
+            (lowerText.includes('help') && lowerText.includes('meri sales'));
+
+        if (isPromptEcho) {
+            console.log('[GroqWhisper] Discarding prompt echo hallucination on ambient noise:', text);
+            this.audioChunks = [];
+            return '';
+        }
+
         // Discard Whisper prompt hallucinations (when user said nothing, but Whisper recited prompt phrases)
         const promptHallucinations = [
             'kya aap meri madad kar sakte hain',
             'aap kaise hain',
             'namaste aap kaise hain',
             'mujhe retail business ke liye ek demo booking karni hai',
-            'retail business ke liye ek demo booking karni hai'
+            'retail business ke liye ek demo booking karni hai',
+            'kya aap, kaise hain',
+            'kaise hain, bataiye',
+            'meri sales'
         ];
         if (promptHallucinations.some(p => lowerText.includes(p)) && (rms < 0.035 || durationMs < 1200 || result.noSpeechProb > 0.08)) {
             console.log('[GroqWhisper] Discarding prompt hallucination on faint noise:', text);
@@ -247,7 +264,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Converse AI, Sonara, sales, business, leads, revenue, marketing, increase, customer support, namaste, live demo booking, slot, 10:00 AM, 10 AM, 2:00 PM, 2 PM, 3:30 PM, 5:00 PM, 2 baje, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye, help, meri sales.');
+            whisperForm.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, customer support, sales, revenue, and booking a demo.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
