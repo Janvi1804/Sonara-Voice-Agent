@@ -321,7 +321,22 @@ export class SarvamTTS {
             if (blob) {
                 await this._playBlob(blob);
             } else if (!this.isInterrupted) {
-                console.warn('[SarvamTTS] Failed to synthesize chunk after retries:', currentText.substring(0, 40));
+                console.warn('[SarvamTTS] Failed to synthesize chunk (API credit exhausted / offline):', currentText.substring(0, 40));
+                // Graceful audio fallback so the agent never stays silent when Sarvam credits run out
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    await new Promise(resolve => {
+                        try {
+                            const utt = new SpeechSynthesisUtterance(currentText);
+                            utt.lang = currentLang === 'hi-IN' ? 'hi-IN' : 'en-IN';
+                            utt.rate = 1.0;
+                            utt.onend = () => resolve();
+                            utt.onerror = () => resolve();
+                            window.speechSynthesis.speak(utt);
+                        } catch (_) {
+                            resolve();
+                        }
+                    });
+                }
             }
         }
 
