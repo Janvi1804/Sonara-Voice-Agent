@@ -374,7 +374,9 @@ export class SarvamTTS {
 
                 audio.onended = cleanup;
                 audio.onerror = (e) => {
-                    console.warn('[SarvamTTS] Playback error:', e);
+                    if (!this.isInterrupted) {
+                        console.warn('[SarvamTTS] Playback error:', e);
+                    }
                     cleanup();
                 };
 

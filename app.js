@@ -762,7 +762,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         vadStatus.textContent = 'SILENCE';
                         vadStatus.style.color = 'var(--text-secondary)';
                     }
-                    if (isAiThinking || isAiSpeaking || isProcessingUtterance || isTranscribingSpeech) return;
+                    if (isAiThinking || isAiSpeaking || isProcessingUtterance || isTranscribingSpeech) {
+                        whisperEngine.clearBuffer();
+                        return;
+                    }
                     if (isCallActive) {
                         isTranscribingSpeech = true;
                         try {

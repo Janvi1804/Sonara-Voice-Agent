@@ -48,6 +48,10 @@ export class WhisperSTT {
         const frame = new Float32Array(pcm16kFloat32);
         if (this.isRecording) {
             this.audioChunks.push(frame);
+            // Safety cap: keep max 7 seconds of audio (~220 frames) so background noise cannot pile up
+            if (this.audioChunks.length > 220) {
+                this.audioChunks.shift();
+            }
         } else {
             this.preSpeechRingBuffer.push(frame);
             if (this.preSpeechRingBuffer.length > this.preSpeechMaxChunks) {
