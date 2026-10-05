@@ -58,19 +58,25 @@ export class SarvamTTS {
      * hi-IN for Hindi/Hinglish, en-IN for pure English.
      */
     detectLanguage(text) {
-        if (!text) return this.turnLanguage || 'hi-IN';
+        if (!text) return this.turnLanguage || 'en-IN';
         if (this.language) return this.language;
-
-        // Turn-level consistency: all chunks in a single turn MUST use the same language code
-        // so that the first sentence doesn't sound like a different speaker/accent from the rest!
-        if (this.turnLanguage) return this.turnLanguage;
 
         // Devanagari script → definitely Hindi
         if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
 
         // Hinglish detection: Use ONLY clear, unambiguous Hindi/Hinglish words.
-        const hindiPattern = /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|kab|kahan|kidhar|idhar|udhar|nahi|nahin|aur|mujhe|mera|meri|mere|hum|humara|humari|humare|aap|aapka|aapki|aapke|apna|apni|apne|kripya|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|yeh|woh|lekin|magar|kyunki|phir|abhi|baad|pehle|sirf|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|bhi|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|dijiye|lijiye|kijiye|sunte|sunao|boliye)\b/i;
+        const hindiPattern = /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|kab|kahan|kidhar|idhar|udhar|nahi|nahin|nhi|aur|mujhe|mera|meri|mere|hum|humara|humari|humare|aap|aapka|aapki|aapke|apna|apni|apne|kripya|theek|bahut|bohot|accha|acchi|acche|achha|zaroor|bilkul|namaskar|namaste|dhanyavad|shukriya|haan|bata|batao|bataiye|karo|karna|karta|karti|karte|karein|chahiye|yeh|woh|lekin|magar|kyunki|phir|abhi|baad|pehle|sirf|kuch|zyada|thoda|hoga|hogi|honge|hona|toh|bhi|liye|wala|wali|wale|sakta|sakti|sakte|sakoon|madad|yahan|wahan|pooch|poochiye|pasand|kaunsa|kaunsi|kaunse|taaki|dijiye|lijiye|kijiye|sunte|sunao|boliye)\b/i;
         if (hindiPattern.test(text)) return 'hi-IN';
+
+        // If the text is pure English (contains zero Hindi words), ALWAYS return en-IN!
+        // This ensures English responses like "We have slots open today at 10:00 AM, 2:00 PM..."
+        // pronounce time in 100% natural English ("ten AM, two PM") instead of Hindi ("das baje, do baje")!
+        if (!hindiPattern.test(text) && !/[\u0900-\u097F]/.test(text)) {
+            return 'en-IN';
+        }
+
+        // If turn language is explicitly known, honor that context
+        if (this.turnLanguage) return this.turnLanguage;
 
         return 'en-IN';
     }
