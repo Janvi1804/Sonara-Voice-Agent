@@ -20,8 +20,8 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.022;
-        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 450;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.008;
+        this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 200;
     }
 
     setApiKey(key) { this.apiKey = key; }

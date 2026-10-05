@@ -203,8 +203,8 @@ export class SileroVAD {
             }
         } else {
             // High-reliability Acoustic/Energy Fallback VAD:
-            // Tuned so faint background room noise / TV (RMS 0.010 - 0.022) does NOT trigger false speech onset
-            prob = rms >= 0.028 ? Math.min(0.95, (rms - 0.028) * 20 + 0.55) : (rms > 0.015 ? 0.15 : 0.01);
+            // Tuned for natural conversational speech (RMS 0.015+) while rejecting ambient room silence (< 0.008)
+            prob = rms >= 0.015 ? Math.min(0.95, (rms - 0.015) * 25 + 0.55) : (rms > 0.008 ? 0.20 : 0.01);
         }
 
         // Emit frame stats for UI visualizer

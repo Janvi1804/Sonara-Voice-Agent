@@ -1825,9 +1825,8 @@ The conversation should feel like a natural conversation with a knowledgeable hu
 
             const popCompleteSentences = (buf) => {
                 const sentences = [];
-                // Ultra-low latency streaming: emit at sentence boundary, OR clause boundary (, ; :) if buffer >= 40 chars
-                // This starts TTS synthesis within ~300ms instead of waiting for long sentences to finish streaming!
-                const re = buf.length >= 40 ? /[.!?]+(?:\s+|$)|[,;:]\s+/g : /[.!?]+(?:\s+|$)/g;
+                // Emit at complete sentence boundaries (. ! ?) for natural prosody without chopped fragments or repeat artifacts
+                const re = /[.!?]+(?:\s+|$)/g;
                 let lastIndex = 0, m;
                 while ((m = re.exec(buf)) !== null) {
                     const end = m.index + m[0].length;

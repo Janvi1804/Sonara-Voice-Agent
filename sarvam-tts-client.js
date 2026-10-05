@@ -160,8 +160,9 @@ export class SarvamTTS {
             .replace(/\b(\d{1,2})\s*(pm|p\.m\.)\b/gi, '$1 P M')
             .replace(/\b(\d{1,2})\s*(am|a\.m\.)\b/gi, '$1 A M')
             .replace(/\b(\d{1,2})[:.](\d{2})\b/g, '$1 $2')
-            .replace(/\b(am|a\.m\.)\b/gi, 'A M')
-            .replace(/\b(pm|p\.m\.)\b/gi, 'P M')
+            .replace(/\bA\.M\.\b/gi, 'A M')
+            .replace(/\bP\.M\.\b/gi, 'P M')
+            .replace(/\bPM\b/g, 'P M')
             .replace(/\b10-digit\b/gi, '10 digit')
             // Ratios, multipliers and percentages
             .replace(/(\d+)x\b/g, '$1 times')
