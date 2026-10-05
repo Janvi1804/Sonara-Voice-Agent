@@ -6,9 +6,9 @@
 export const STANDARD_DAILY_SLOTS = [
     '10:00 AM',
     '11:30 AM',
-    '02:00 PM',
-    '03:30 PM',
-    '05:00 PM'
+    '2:00 PM',
+    '3:30 PM',
+    '5:00 PM'
 ];
 
 export function isValidIndianPhone(phone) {
@@ -121,9 +121,9 @@ export class AppointmentDB {
         // Exact pattern match first
         if (clean.includes('10:00') || clean.includes('10 am') || clean.includes('10am')) return '10:00 AM';
         if (clean.includes('11:30') || clean.includes('11.30') || clean.includes('11 am') || clean.includes('11am')) return '11:30 AM';
-        if (clean.includes('2:00') || clean.includes('02:00') || clean.includes('2 pm') || clean.includes('2pm') || clean.includes('14:00')) return '02:00 PM';
-        if (clean.includes('3:30') || clean.includes('03:30') || clean.includes('3.30') || clean.includes('3 pm') || clean.includes('3pm') || clean.includes('15:30')) return '03:30 PM';
-        if (clean.includes('5:00') || clean.includes('05:00') || clean.includes('5 pm') || clean.includes('5pm') || clean.includes('17:00')) return '05:00 PM';
+        if (clean.includes('2:00') || clean.includes('02:00') || clean.includes('2 pm') || clean.includes('2pm') || clean.includes('14:00')) return '2:00 PM';
+        if (clean.includes('3:30') || clean.includes('03:30') || clean.includes('3.30') || clean.includes('3 pm') || clean.includes('3pm') || clean.includes('15:30')) return '3:30 PM';
+        if (clean.includes('5:00') || clean.includes('05:00') || clean.includes('5 pm') || clean.includes('5pm') || clean.includes('17:00')) return '5:00 PM';
 
         // Extract the first number from the time string (e.g. "3 baje", "11:30 AM", "14:00", "2pm")
         const numMatch = clean.match(/(\d{1,2})/);
@@ -137,9 +137,9 @@ export class AppointmentDB {
         // Map to nearest standard slot
         if (h === 10) return '10:00 AM';
         if (h === 11 || h === 12) return '11:30 AM'; // 12 baje = 12 PM → nearest slot 11:30 AM
-        if (h === 1 || h === 2) return '02:00 PM';   // 1 PM, 2 PM
-        if (h === 3 || h === 4) return '03:30 PM';   // 3 PM, 4 PM
-        if (h >= 5 && h <= 9) return '05:00 PM';     // evening slots
+        if (h === 1 || h === 2) return '2:00 PM';   // 1 PM, 2 PM
+        if (h === 3 || h === 4) return '3:30 PM';   // 3 PM, 4 PM
+        if (h >= 5 && h <= 9) return '5:00 PM';     // evening slots
 
         return '11:30 AM'; // safe default
     }

@@ -218,11 +218,20 @@ export class ToolCallingEngine {
         }
 
         // 2. Cancellation intent
-        if (lower.includes('cancel') || lower.includes('radd') || lower.includes('hata do')) {
-            if (lower.includes('appointment') || lower.includes('booking') || lower.includes('demo') || lower.includes('slot') || lower.includes('kar')) {
+        const hasCancelIntent = /\b(cancel|cancelled|cancelling|radd|hata do|hatado|hata dena|nahi chahiye|drop)\b/i.test(lower);
+        if (hasCancelIntent) {
+            // Check if there is an explicit appointment ID mentioned (e.g. APPT-4247 or 4247)
+            const idMatch = userText.match(/\b(APPT-\d{4,6}|\d{4})\b/i);
+            const foundId = idMatch ? (idMatch[1].toUpperCase().startsWith('APPT-') ? idMatch[1].toUpperCase() : 'APPT-' + idMatch[1]) : '';
+            const targetApptId = foundId || memory?.entities?.appointmentId || '';
+            const targetPhone = memory?.entities?.phone || '';
+
+            // If we have an appointment in memory OR user specified an ID OR explicitly mentioned booking/demo/appointment/meeting/it/this/etc.
+            const hasContext = targetApptId || /\b(appointment|booking|demo|slot|meeting|call|it|this|ise|isko|yeh|kar)\b/i.test(lower);
+            if (hasContext) {
                 return await this.executeTool('cancel_appointment', {
-                    appointmentId: memory?.entities?.appointmentId || '',
-                    phone: memory?.entities?.phone || ''
+                    appointmentId: targetApptId,
+                    phone: targetPhone
                 });
             }
         }
