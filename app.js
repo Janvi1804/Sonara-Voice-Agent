@@ -1477,7 +1477,7 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationHistory.push({ role: 'user', content: effectivePrompt });
 
         // Sync TTS turn language context with user's language (ensures English responses speak numbers in English, and Hindi in Hindi)
-        const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|kya|kyun|kaise|nahi|nahin|aur|mujhe|mera|meri|mere|aap|aapka|aapki|karo|karna|batao|bataiye|chahiye|madad|namaste|bilkul|theek|accha|haan)\b/i.test(userPrompt);
+        const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|nahi|nahin|nhi|aur|mujhe|mera|meri|mere|hum|aap|aapka|aapki|aapke|karo|karna|karta|karti|karte|krne|kr|rahi|raha|rahe|h|mai|me|batao|bataiye|chahiye|madad|namaste|bilkul|theek|accha|acchi|haan|karein|kar|hoga|hogi|honge|toh|bhi|liye|sakta|sakti|sakte|boliye|kaam|baat)\b/i.test(userPrompt);
         if (ttsEngine && typeof ttsEngine.setTurnLanguage === 'function') {
             ttsEngine.setTurnLanguage(isUserHindi ? 'hi-IN' : 'en-IN');
         }

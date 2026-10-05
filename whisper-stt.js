@@ -144,11 +144,35 @@ export class WhisperSTT {
             'hindi', 'english', 'hinglish', 'bye', 'goodbye', 'subtitles by'
         ];
 
-        // If it matches a known phantom hallucination AND audio was faint, short, or had elevated noSpeechProb, discard it!
+        // If it matches a known phantom hallucination:
         if (noiseHallucinations.includes(lowerText)) {
+            // Case 1: Audio was faint, short, or had elevated noSpeechProb
             const isFaintOrSuspicious = (rms < 0.018) || (result.noSpeechProb > 0.15) || (durationMs < 650);
-            if (isFaintOrSuspicious) {
-                console.log('[GroqWhisper] Discarding background noise hallucination:', { text, noSpeechProb: result.noSpeechProb, rms: rms.toFixed(4), durationMs: Math.round(durationMs) });
+
+            // Case 2: User spoke for longer (durationMs >= 800ms) but Whisper produced a 1-2 word phantom hallucination like "thank you"
+            const isLongSpeechHallucination = durationMs >= 800 && [
+                'thank you', 'thank you very much', 'thank you so much',
+                'thank you for watching', 'thanks for watching', 'thank you for listening',
+                'subtitles by', 'you', 'thanks', 'bye', 'goodbye'
+            ].includes(lowerText);
+
+            // If a longer Hinglish question hallucinated as "thank you", automatically retry with Sarvam STT
+            if (isLongSpeechHallucination && !isSarvam) {
+                console.warn(`[GroqWhisper] Phantom "${text}" on ${Math.round(durationMs)}ms speech. Retrying with Sarvam STT...`);
+                try {
+                    const sarvamRes = await this.sendToSarvam(wavBlob, { durationMs, rms });
+                    if (sarvamRes && sarvamRes.text && !noiseHallucinations.includes(sarvamRes.text.toLowerCase().trim())) {
+                        this.audioChunks = [];
+                        this.onTranscript(sarvamRes.text);
+                        return sarvamRes.text;
+                    }
+                } catch (e) {
+                    console.warn('[STT] Sarvam STT retry note:', e.message);
+                }
+            }
+
+            if (isFaintOrSuspicious || isLongSpeechHallucination) {
+                console.log('[GroqWhisper] Discarding phantom hallucination:', { text, noSpeechProb: result.noSpeechProb, rms: rms.toFixed(4), durationMs: Math.round(durationMs) });
                 this.audioChunks = [];
                 return '';
             }
@@ -223,9 +247,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            // Bilingual Hinglish guide: Instructs Whisper to output natural Roman Hinglish for Hindi/Hinglish speech (never auto-translate to English)
-            // and preserves proper nouns, slot times (2 PM, 10 AM, 2 baje), and casing.
-            whisperForm.append('prompt', 'Converse AI, Sonara, namaste, live demo booking, slot, 10:00 AM, 10 AM, 2:00 PM, 2 PM, 3:30 PM, 5:00 PM, 2 baje, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye.');
+            whisperForm.append('prompt', 'Converse AI, Sonara, sales, business, leads, revenue, marketing, increase, customer support, namaste, live demo booking, slot, 10:00 AM, 10 AM, 2:00 PM, 2 PM, 3:30 PM, 5:00 PM, 2 baje, retail, EdTech, kya aap, kaise hain, bataiye, example, mujhe chahiye, help, meri sales.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
