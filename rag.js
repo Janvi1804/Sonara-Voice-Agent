@@ -37,8 +37,8 @@ export class RAGEngine {
         const results = await this.vectorStore.similaritySearch(query, topK);
         if (!results || results.length === 0) return '';
 
-        // Filter results with meaningful similarity score
-        const relevant = results.filter(r => r.similarity >= 0.15 || results.length <= 2);
+        // Filter results with meaningful semantic similarity (0.65 = genuinely relevant)
+        const relevant = results.filter(r => r.similarity >= 0.40 || results.length <= 1);
         if (relevant.length === 0) return '';
 
         const formatted = relevant.map((r, idx) => {

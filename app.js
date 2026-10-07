@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=2.7';
-import { WhisperSTT } from './whisper-stt.js?v=2.7';
+import { SileroVAD } from './vad-silero.js?v=2.8';
+import { WhisperSTT } from './whisper-stt.js?v=2.8';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=2.7';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=2.8';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -320,12 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (localStorage.getItem('sonara_silence_dur')) {
             const savedSilence = parseInt(localStorage.getItem('sonara_silence_dur'));
-            // Reset old slow 800ms values to fast 450ms default for instant turn-taking
-            rngSilenceDuration.value = (savedSilence > 600) ? 450 : savedSilence;
+            rngSilenceDuration.value = savedSilence;
             lblSilenceDuration.textContent = `${rngSilenceDuration.value} ms`;
         } else if (rngSilenceDuration) {
-            rngSilenceDuration.value = 450;
-            lblSilenceDuration.textContent = '450 ms';
+            rngSilenceDuration.value = 900;
+            lblSilenceDuration.textContent = '900 ms';
         }
         if (chkRagEnabled && localStorage.getItem('sonara_rag_enabled') !== null) {
             chkRagEnabled.checked = localStorage.getItem('sonara_rag_enabled') === 'true';
@@ -717,16 +716,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Initialize Silero VAD Engine calibrated against ambient noise:
-            // Silero VAD tuned for instant speech detection (2 frames ~64ms) and fast turn-taking (450ms)
+            // Silero VAD tuned for instant speech detection (2 frames ~64ms) and natural turn-taking (900ms)
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
                 threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.50,
-                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 400,
+                silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 900,
                 minSpeechDurationMs: 250,
                 speechStartConfirmFrames: 2, // ~64ms for instant pickup
-                minSpeechRms: 0.012,
-                rmsFloor: 0.012,
+                minSpeechRms: 0.018,
+                rmsFloor: 0.018,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,
@@ -1362,7 +1361,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return '';
         let s = text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
         if (!s || s.length < 2) {
-            return "Aapko Converse AI ke case studies, pricing ya free AI audit ki details chahiye? Aap apna requirement bata sakte hain, main turant help karungi!";
+            return "I'm sorry, I didn't catch that clearly. Could you please repeat your question?";
         }
         // Convert fractions \frac{a}{b} -> a over b
         s = s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/gi, (match, num, den) => {
@@ -1395,6 +1394,40 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/\[\s*adjective\s*[^\]]*\]/gi, 'great')
             .replace(/\[[^\]]{1,40}\]/g, '');
         return s.replace(/\s{2,}/g, ' ').trim();
+    };
+
+    /**
+     * Fast check for keysmashing or unintelligible inputs (e.g. "sjasdkjbfkhfbnsfb")
+     */
+    const isGibberishText = (text) => {
+        if (!text || typeof text !== 'string') return false;
+        const clean = text.trim();
+        if (clean.length < 5) return false;
+        if (/^\d+$/.test(clean) || /[@:/+\-*=]/.test(clean)) return false;
+        if (/[\u0900-\u097F]/.test(clean)) return false;
+
+        const words = clean.split(/\s+/).filter(Boolean);
+        const ABBREV = /^[A-Z]{2,6}$|^\d+$|^(ok|hi|ha|ji|yes|no|am|pm|sir|mam|pls|thx)$/i;
+
+        let gibberishCount = 0;
+        let testableWords = 0;
+
+        for (const w of words) {
+            const cleanWord = w.replace(/[^a-zA-Z]/g, '');
+            if (cleanWord.length < 4 || ABBREV.test(cleanWord)) continue;
+            testableWords++;
+
+            const vowels = (cleanWord.match(/[aeiouy]/gi) || []).length;
+            const vowelRatio = vowels / cleanWord.length;
+            const longConsonantRun = /[^aeiouy\s\d]{5,}/i.test(cleanWord);
+            const repeatedChars = /(.)\1{3,}/i.test(cleanWord);
+
+            if (vowelRatio < 0.15 || longConsonantRun || repeatedChars) {
+                gibberishCount++;
+            }
+        }
+
+        return testableWords > 0 && (gibberishCount / testableWords) >= 0.5;
     };
 
     /**
@@ -1469,7 +1502,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 4. VOICE COMMAND: "Next Question" / "Agla Sawal"
+        // 4. GIBBERISH / UNINTELLIGIBLE INPUT GUARD (e.g. "sjasdkjbfkhfbnsfb")
+        if (isGibberishText(userPrompt)) {
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            isAiThinking = false;
+            const gibberishMsg = "I'm sorry, I couldn't understand that clearly. Could you please rephrase or repeat your question?";
+            appendChatMessage('assistant', gibberishMsg);
+            if (ttsEngine) {
+                ttsEngine.setTurnLanguage('en-IN');
+                ttsEngine.speak(gibberishMsg);
+            }
+            setAgentState('listening', 'Listening • Ready for next question');
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // 5. VOICE COMMAND: "Next Question" / "Agla Sawal"
         let effectivePrompt = userPrompt;
         if (cleanCmd === 'next question' || cleanCmd === 'next' || cleanCmd === 'agla sawal' || cleanCmd === 'ask me next question' || cleanCmd === 'another question' || cleanCmd === 'ask me a question') {
             effectivePrompt = "Ask me an engaging, fun trivia or test question across science, history, coding, or general knowledge.";
@@ -1480,10 +1529,21 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationHistory.push({ role: 'user', content: effectivePrompt });
 
         // Sync TTS turn language context with user's language (ensures English responses speak numbers in English, and Hindi in Hindi)
-        const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|nahi|nahin|nhi|aur|mujhe|mera|meri|mere|hum|humara|aap|aapka|aapki|aapke|karo|karna|karta|karti|karte|krne|rahi|raha|rahe|mai|mein|batao|bataiye|chahiye|madad|namaste|bilkul|theek|accha|acchi|haan|karein|hoga|hogi|honge|toh|bhi|liye|sakta|sakti|sakte|boliye|kaam|baat)\b/i.test(userPrompt);
+        const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|nahi|nahin|nhi|aur|mujhe|mera|meri|mere|hum|humara|aap|aapka|aapki|aapke|karo|karna|karta|karti|karte|krne|krdo|kardo|rahi|raha|rahe|mai|mein|batao|bataiye|bata|chahiye|madad|namaste|bilkul|theek|accha|acchi|haan|karein|hoga|hogi|honge|toh|bhi|liye|wala|wali|wale|sakta|sakti|sakte|boliye|kaam|baat|phir|sirf|zyada|thoda|abhi|baad|pehle|yahan|wahan|lekin|magar|kyunki|taaki|dijiye|lijiye|kijiye|pooch|pasand|kaunsa|zaroor|jaldi|samajh|kuch|sab|bahut|bohot|kabhi|kaafi|dono|poora|seedha|alag|naya|purana|mat|iska|uska|jo)\b/i.test(userPrompt);
         if (ttsEngine && typeof ttsEngine.setTurnLanguage === 'function') {
             ttsEngine.setTurnLanguage(isUserHindi ? 'hi-IN' : 'en-IN');
         }
+        // Pass language hint to Whisper STT for the NEXT turn.
+        // When user speaks Hindi/Hinglish, Whisper is told to expect Hindi → correct transcript.
+        // When user speaks English, use auto-detect '' so Hinglish mid-session isn't blocked.
+        if (whisperEngine && typeof whisperEngine.setLanguage === 'function') {
+            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
+            const isWhisper = !sttChoice.startsWith('sarvam');
+            if (isWhisper) {
+                whisperEngine.setLanguage(isUserHindi ? 'hi' : '');
+            }
+        }
+
 
         // 1. Multi-Turn Conversation Memory & Entity Extraction
         memory.addTurn('user', userPrompt);

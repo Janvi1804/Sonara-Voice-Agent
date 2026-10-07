@@ -20,6 +20,14 @@ export function isValidIndianPhone(phone) {
     return /^[6-9]\d{9}$/.test(clean);
 }
 
+function isStaticDevServer() {
+    return typeof window !== 'undefined' && (
+        window.location.port === '5500' || 
+        window.location.port === '5501' || 
+        window.location.protocol === 'file:'
+    );
+}
+
 export class AppointmentDB {
     constructor(options = {}) {
         this.postgresUrl = options.postgresUrl || '';
@@ -33,7 +41,9 @@ export class AppointmentDB {
         if (this.isInitialized) return;
         await this.initIndexedDB();
         await this.loadAll();           // Load from local IndexedDB first (fast)
-        await this.loadFromSupabase();  // Then sync from remote Supabase (cross-device)
+        if (!isStaticDevServer()) {
+            await this.loadFromSupabase();  // Then sync from remote Supabase (cross-device)
+        }
         this.isInitialized = true;
     }
 
@@ -42,6 +52,7 @@ export class AppointmentDB {
      * Merges remote records into inMemoryAppointments — remote wins on conflict.
      */
     async loadFromSupabase() {
+        if (isStaticDevServer()) return;
         try {
             const res = await fetch('/api/db', {
                 method: 'POST',

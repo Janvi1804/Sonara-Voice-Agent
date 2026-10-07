@@ -22,7 +22,7 @@ export class SileroVAD {
         this.sampleRate           = 16000;
         this.frameSize            = 512;
         this.threshold            = options.threshold !== undefined ? options.threshold : 0.50;
-        this.silenceDurationMs    = options.silenceDurationMs || 450;
+        this.silenceDurationMs    = options.silenceDurationMs || 900;
         this.minSpeechDurationMs  = options.minSpeechDurationMs || 250;
         this.maxSpeechDurationMs  = options.maxSpeechDurationMs || 15000;
 
@@ -131,7 +131,7 @@ export class SileroVAD {
     }
 
     setSilenceDuration(ms) {
-        this.silenceDurationMs = Number(ms) || 800;
+        this.silenceDurationMs = Number(ms) || 900;
     }
 
     setSpeechStartConfirmFrames(n) {
@@ -141,7 +141,16 @@ export class SileroVAD {
     setAiSpeakingState(isSpeaking) {
         this.aiIsSpeaking = !!isSpeaking;
         this._bargeInConfirmCount = 0;
-        if (!isSpeaking) {
+        if (isSpeaking) {
+            // FIX: When AI starts speaking, reset any lingering user speech state.
+            // Without this, speakingStartTime stays alive from the user's last onset,
+            // so when AI finishes a 30-second response, the next speech-end event
+            // computes speechDuration = 30000ms → Whisper receives a bloated 30s WAV.
+            this.isSpeaking = false;
+            this.speakingStartTime = 0;
+            this.lastSpeechTime = 0;
+            this._onsetConfirmCount = 0;
+        } else {
             this._onsetConfirmCount = 0;
         }
     }

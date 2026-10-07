@@ -88,7 +88,7 @@ export class SarvamTTS {
      */
     splitIntoChunks(text) {
         if (!text) return [];
-        const MAX_CHUNK = 450; // Standard responses fit in 1 single chunk -> 1 API call, zero gaps!
+        const MAX_CHUNK = 700; // Most LLM responses (~260 tokens = ~250-350 chars) fit in ONE chunk → 1 API call → ~2-3s TTS latency instead of 9-12s from 3 chunks
 
         // Short enough → single chunk (zero pause, one API call)
         if (text.length <= MAX_CHUNK) return [text];
@@ -200,30 +200,71 @@ export class SarvamTTS {
      */
     async _fetchAudio(text, lang, retriesLeft = 2) {
         const tStart = performance.now();
+        const isStaticDev = typeof window !== 'undefined' && (
+            window.location.port === '5500' || 
+            window.location.port === '5501' || 
+            window.location.protocol === 'file:'
+        );
+
         try {
-            const res = await fetch('/api/sarvam-tts', {
+            let res = null;
+            if (!isStaticDev) {
+                res = await fetch('/api/sarvam-tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text,
+                        speaker: this.speaker,
+                        language_code: lang,
+                        pace: this.pace
+                    })
+                }).catch(() => null);
+            }
+
+            if (res && res.ok) {
+                const buf = await res.arrayBuffer();
+                const latencyMs = Math.round(performance.now() - tStart);
+                console.log(`[SarvamTTS] ⚡ Chunk synthesized in ${latencyMs}ms (${text.slice(0, 35)}...)`);
+                const contentType = res.headers.get('content-type') || 'audio/mpeg';
+                return new Blob([buf], { type: contentType });
+            }
+
+            // Direct Sarvam AI call for local development (Live Server)
+            console.log(`[SarvamTTS] 🎙️ Calling Sarvam AI API directly (Speaker: ${this.speaker || 'ritu'})...`);
+            const directRes = await fetch('https://api.sarvam.ai/text-to-speech', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'api-subscription-key': 'sk_6sqicebf_5Yf0ukSk0PFULy1peAEmqvvA',
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
-                    text,
-                    speaker: this.speaker,
-                    language_code: lang,
-                    pace: this.pace
+                    inputs: [text],
+                    target_language_code: lang || 'hi-IN',
+                    speaker: this.speaker || 'ritu',
+                    model: 'bulbul:v3',
+                    pace: this.pace || 1.05
                 })
             });
-            if (!res.ok) {
-                const err = await res.text();
-                // 401 (Unauthorized) and 402 (Insufficient Quota) won't resolve on retry
-                const isNonRetryable = res.status === 401 || res.status === 402;
-                const errObj = new Error(`Sarvam TTS failed (${res.status}): ${err}`);
-                if (isNonRetryable) errObj.nonRetryable = true;
-                throw errObj;
+
+            if (!directRes.ok) {
+                const err = await directRes.text();
+                throw new Error(`Direct Sarvam TTS failed (${directRes.status}): ${err}`);
             }
-            const buf = await res.arrayBuffer();
-            const latencyMs = Math.round(performance.now() - tStart);
-            console.log(`[SarvamTTS] ⚡ Chunk synthesized in ${latencyMs}ms (${text.slice(0, 35)}...)`);
-            const contentType = res.headers.get('content-type') || 'audio/mpeg';
-            return new Blob([buf], { type: contentType });
+
+            const data = await directRes.json();
+            if (data.audios && data.audios[0]) {
+                const byteChars = atob(data.audios[0]);
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteNumbers[i] = byteChars.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'audio/wav' });
+                const latencyMs = Math.round(performance.now() - tStart);
+                console.log(`[SarvamTTS] ⚡ Chunk synthesized directly in ${latencyMs}ms (${this.speaker || 'ritu'}): ${text.slice(0, 35)}...`);
+                return blob;
+            }
+            throw new Error('No audio returned from Sarvam API');
         } catch (err) {
             if (err.name === 'AbortError') return null;
 

@@ -16,7 +16,7 @@ export class WhisperSTT {
         this.sampleRate = 16000;
         this.audioChunks = [];
         this.preSpeechRingBuffer = [];
-        this.preSpeechMaxChunks = 16; // ~512ms pre-speech buffer to preserve initial consonants
+        this.preSpeechMaxChunks = 8; // ~256ms pre-speech buffer — enough for consonants, less junk audio
         this.isRecording = false;
         this.isTranscribing = false;
 
@@ -135,6 +135,28 @@ export class WhisperSTT {
         // Discard any transcript where Whisper itself indicates low confidence / high silence probability
         if (result.noSpeechProb > 0.45) {
             console.log('[GroqWhisper] Discarding high no_speech_prob noise artifact:', { text, noSpeechProb: result.noSpeechProb.toFixed(3) });
+            this.audioChunks = [];
+            return '';
+        }
+
+        // ── Gibberish detection ──
+        // Catches random keysmashing like "sjasdkjbfkhfbnsfb", "asfkjhsdfkj", etc.
+        // Heuristic: real words (English + Hindi romanization) have >= 15% vowels.
+        // Gibberish has long consonant runs and near-zero vowels.
+        // Exempt: short words (<4 chars), numbers, known abbreviations (AI, CRM, etc.)
+        const ABBREV = /^[A-Z]{2,5}$|^\d+$|^(ok|hi|ha|ji|yes|no|am|pm|sir|mam)$/i;
+        const gibberishWords = text.trim().split(/\s+/).filter(w => {
+            if (w.length < 4 || ABBREV.test(w)) return false; // exempt short/known
+            if (/[\u0900-\u097F]/.test(w)) return false;       // exempt Devanagari
+            const vowels = (w.match(/[aeiouy]/gi) || []).length;
+            const vowelRatio = vowels / w.length;
+            const longConsonantRun = /[^aeiouy\s\d]{5,}/i.test(w); // 5+ consonants in a row
+            const repeatedChars = /(.)\1{3,}/i.test(w); // 4+ repeated chars like aaaaa or zzzz
+            return vowelRatio < 0.15 || longConsonantRun || repeatedChars;
+        });
+        const totalWords = text.trim().split(/\s+/).filter(w => w.length >= 4).length;
+        if (totalWords > 0 && gibberishWords.length / totalWords > 0.5) {
+            console.log('[GroqWhisper] Discarding gibberish transcript:', JSON.stringify(text));
             this.audioChunks = [];
             return '';
         }

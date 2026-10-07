@@ -5,6 +5,57 @@
  */
 
 import { setCorsHeaders, checkRateLimit } from './_utils.js';
+import { EmbeddingsEngine } from '../embeddings.js';
+import pg from 'pg';
+
+const { Pool } = pg;
+let _pgPool = null;
+
+function getPgPool() {
+    const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    if (!url) return null;
+    if (!_pgPool) {
+        _pgPool = new Pool({
+            connectionString: url,
+            ssl: { rejectUnauthorized: false },
+            max: 3,
+            idleTimeoutMillis: 20000,
+            connectionTimeoutMillis: 2000
+        });
+    }
+    return _pgPool;
+}
+
+const _embeddingsEngine = new EmbeddingsEngine({ dimensions: 384 });
+
+/**
+ * Semantic pgvector search — server-side, direct DB call
+ * Returns top-K chunks with similarity >= minSimilarity
+ */
+async function pgvectorSearch(query, topK = 3, minSimilarity = 0.40) {
+    try {
+        const pool = getPgPool();
+        if (!pool) return null; // No DB configured — caller falls back to keyword RAG
+
+        const queryVector = await _embeddingsEngine.embedText(query);
+        const vectorString = `[${queryVector.slice(0, 384).join(',')}]`;
+
+        const result = await pool.query(`
+            SELECT id, title, content, 1 - (embedding <=> $1::vector) as similarity
+            FROM knowledge_embeddings
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding <=> $1::vector ASC
+            LIMIT $2;
+        `, [vectorString, topK]);
+
+        const relevant = result.rows.filter(r => parseFloat(r.similarity) >= minSimilarity);
+        return relevant.length > 0 ? relevant : null;
+    } catch (err) {
+        console.warn('[pgvectorSearch] Error, falling back to keyword RAG:', err.message);
+        return null;
+    }
+}
+
 
 // 100% Verified Knowledge Base from https://theconverseai.com/
 const CONVERSE_AI_KB = [
@@ -80,7 +131,7 @@ function retrieveRAGContext(query = '', isDefinitional = false) {
         }
 
         return { doc, score };
-    }).filter(item => item.score >= 3).sort((a, b) => b.score - a.score);
+    }).filter(item => item.score >= 6).sort((a, b) => b.score - a.score);
 
     if (scored.length === 0) return '';
 
@@ -111,6 +162,38 @@ function sanitizeAiResponse(text) {
         clean = sentences.slice(0, 4).map(s => s.trim()).join(' ');
     }
     return clean;
+}
+
+// Fast check for keysmashing or unintelligible inputs (e.g. "sjasdkjbfkhfbnsfb")
+function isGibberish(text) {
+    if (!text || typeof text !== 'string') return false;
+    const clean = text.trim();
+    if (clean.length < 5) return false;
+    if (/^\d+$/.test(clean) || /[@:/+\-*=]/.test(clean)) return false;
+    if (/[\u0900-\u097F]/.test(clean)) return false;
+
+    const words = clean.split(/\s+/).filter(Boolean);
+    const ABBREV = /^[A-Z]{2,6}$|^\d+$|^(ok|hi|ha|ji|yes|no|am|pm|sir|mam|pls|thx)$/i;
+
+    let gibberishCount = 0;
+    let testableWords = 0;
+
+    for (const w of words) {
+        const cleanWord = w.replace(/[^a-zA-Z]/g, '');
+        if (cleanWord.length < 4 || ABBREV.test(cleanWord)) continue;
+        testableWords++;
+
+        const vowels = (cleanWord.match(/[aeiouy]/gi) || []).length;
+        const vowelRatio = vowels / cleanWord.length;
+        const longConsonantRun = /[^aeiouy\s\d]{5,}/i.test(cleanWord);
+        const repeatedChars = /(.)\1{3,}/i.test(cleanWord);
+
+        if (vowelRatio < 0.15 || longConsonantRun || repeatedChars) {
+            gibberishCount++;
+        }
+    }
+
+    return testableWords > 0 && (gibberishCount / testableWords) >= 0.5;
 }
 
 
@@ -155,9 +238,54 @@ export default async function handler(req, res) {
         const userMessages = messages.filter(m => m.role === 'user');
         const lastUserMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
 
+        // Immediate Guard: Unintelligible or keysmash gibberish input (e.g. "sjasdkjbfkhfbnsfb")
+        if (isGibberish(lastUserMsg)) {
+            const fallbackMsg = "I'm sorry, I couldn't understand that clearly. Could you please rephrase or repeat your question?";
+            if (stream) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache, no-transform');
+                res.setHeader('Connection', 'keep-alive');
+                if (typeof res.flushHeaders === 'function') res.flushHeaders();
+                res.write(`data: ${JSON.stringify({ delta: fallbackMsg })}\n\n`);
+                res.write(`data: ${JSON.stringify({ done: true, text: fallbackMsg, model: 'guard-rail', provider: 'local' })}\n\n`);
+                return res.end();
+            } else {
+                return res.status(200).json({
+                    choices: [{ message: { role: 'assistant', content: fallbackMsg } }],
+                    model: 'guard-rail',
+                    provider: 'local'
+                });
+            }
+        }
+
         // Classify query type: definitional ("what is X", "explain X") vs. service/company inquiry
         const isDefinitionalQuery = DEFINITIONAL_PATTERNS.test(lastUserMsg.trim());
-        const ragContext = retrieveRAGContext(lastUserMsg, isDefinitionalQuery);
+
+        // GK bypass: obvious general-knowledge questions get no RAG context injected
+        // Prevents Converse AI KB from contaminating answers about geography, history, math, etc.
+        const GK_PATTERNS = [
+            /\b(capital|continent|country|ocean|river|mountain|planet|galaxy|star|moon|sun)\b/i,
+            /\b(president|prime minister|king|queen|election|war|history|century|born|died|founder)\b/i,
+            /\b(population|distance|temperature|weather|forecast|speed of light|height of)\b/i,
+            /\b(movie|film|actor|actress|sport|cricket|football|basketball|music|song|recipe|food|dish)\b/i,
+            /\b(\d+\s*[\+\-\*\/]\s*\d+|square root|factorial|percentage of|convert \d)\b/i
+        ];
+        const isGK = GK_PATTERNS.some(p => p.test(lastUserMsg));
+
+        let ragContext = '';
+        if (!isGK) {
+            // Primary: pgvector semantic search (real ML similarity)
+            const pgResults = await pgvectorSearch(lastUserMsg, 3, 0.40);
+            if (pgResults && pgResults.length > 0) {
+                const chunks = pgResults.map(r => `[${r.title}]:\n${r.content}`).join('\n\n');
+                ragContext = `\n\n--- VERIFIED CONVERSE AI KNOWLEDGE (pgvector semantic search) ---\n${chunks}\n(CRITICAL: Base facts strictly on the above. Never invent.)`;
+                console.log(`[RAG] pgvector: ${pgResults.length} chunks (similarity >= 0.40)`);
+            } else {
+                // Fallback: keyword scorer (when DB empty or unavailable)
+                ragContext = retrieveRAGContext(lastUserMsg, isDefinitionalQuery);
+                if (ragContext) console.log('[RAG] keyword fallback used');
+            }
+        }
 
         // Build the definitional-query guard instruction (injected only when query is definitional)
         const definitionalGuard = isDefinitionalQuery
@@ -234,6 +362,7 @@ CORE ROLE & BEHAVIOR:
 - Strict Honesty: Never hallucinate facts, statistics, integrations, client names, or fixed pricing. If information is not in your verified knowledge, say so honestly.
 - Voice Naturalness: Spoken complete sentences only. NO markdown, NO asterisks, NO bullet points, NO headings.
 - DEFINITIONAL QUESTIONS: When the user asks "what is X?", "what are X?", "explain X", "define X", ALWAYS explain what X actually IS first in your own words, then briefly how Converse AI implements it — strictly within 3-4 sentences.${definitionalGuard}
+- GENERAL KNOWLEDGE RULE: For questions about geography, history, math, science, sports, entertainment, or any topic NOT related to AI voice agents, WhatsApp automation, or Converse AI — answer directly and factually from your knowledge. Do NOT mention Converse AI, do NOT redirect to sales. Keep it brief and accurate.
 
 ${ragContext}`;
 

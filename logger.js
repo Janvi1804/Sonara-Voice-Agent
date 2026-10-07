@@ -59,17 +59,20 @@ export class ConversationLogger {
         await this.saveToIndexedDB(record);
 
         // Remote PostgreSQL sync via backend API (uses server-side DATABASE_URL/POSTGRES_URL)
-        try {
-            await fetch('/api/db', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'save_log',
-                    data: record
-                })
-            });
-        } catch (err) {
-            console.warn('Postgres log sync note:', err);
+        const isStaticDev = typeof window !== 'undefined' && (window.location.port === '5500' || window.location.port === '5501' || window.location.protocol === 'file:');
+        if (!isStaticDev) {
+            try {
+                await fetch('/api/db', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'save_log',
+                        data: record
+                    })
+                });
+            } catch (err) {
+                console.warn('Postgres log sync note:', err);
+            }
         }
 
         return record;
