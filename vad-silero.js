@@ -21,7 +21,7 @@ export class SileroVAD {
     constructor(options = {}) {
         this.sampleRate           = 16000;
         this.frameSize            = 512;
-        this.threshold            = options.threshold !== undefined ? options.threshold : 0.30;
+        this.threshold            = options.threshold !== undefined ? options.threshold : 0.50;
         this.silenceDurationMs    = options.silenceDurationMs || 700;
         this.minSpeechDurationMs  = options.minSpeechDurationMs || 200;
         this.maxSpeechDurationMs  = options.maxSpeechDurationMs || 15000;

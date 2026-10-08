@@ -20,7 +20,7 @@ export class WhisperSTT {
         this.isRecording = false;
         this.isTranscribing = false;
 
-        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.018;
+        this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.012;
         this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 200;
     }
 
