@@ -178,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         onError: (err) => {
             console.warn('STT fallback note:', err.message);
+            appendSystemMessage(`⚠️ Speech-to-text error: ${err.message}. Please try speaking again.`);
         }
     });
 
