@@ -146,6 +146,15 @@ export class WhisperSTT {
             return '';
         }
 
+        // Discard transcripts where Whisper's own token confidence is low — this catches cases
+        // where audio was real speech (not silence/noise, so noSpeechProb looks fine) but garbled
+        // enough that Whisper guessed/hallucinated plausible-sounding words instead of transcribing.
+        if (result.avgLogProb < -0.7) {
+            console.log('[GroqWhisper] Discarding low-confidence transcript:', { text, avgLogProb: result.avgLogProb.toFixed(3) });
+            this.audioChunks = [];
+            return '';
+        }
+
         // ── Gibberish detection ──
         // Catches random keysmashing like "sjasdkjbfkhfbnsfb", "asfkjhsdfkj", etc.
         // Heuristic: real words (English + Hindi romanization) have >= 15% vowels.
@@ -297,7 +306,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, customer support, sales, revenue, and booking a demo. नमस्ते, आप कैसे हो? क्या आप हिंदी में बात कर सकती हैं?');
+            whisperForm.append('prompt', 'Transcribe exactly what the caller says, in whichever language or mix of Hindi/English they use.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
