@@ -1560,7 +1560,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Automated Tool Calling (availability check, booking, cancel, escalate)
         const toolResult = await toolEngine.detectAndExecute(userPrompt, memory);
-        let toolContext = '';
+        let toolContext = isUserHindi
+            ? 'CRITICAL LANGUAGE RULE: The user just asked this question in Hindi/Hinglish. You MUST respond in warm, natural Hindi/Hinglish — even if the user\'s sentence contains English product/brand names like "Converse AI" or "Solutions". Do NOT switch the rest of your answer to English.\n'
+            : '';
         if (toolResult) {
             let toolDirective = '';
             if (toolResult.tool === 'book_appointment') {
@@ -1593,7 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     toolDirective = `CRITICAL TRUTHFULNESS: Slot ${toolResult.time} on ${toolResult.date} is NOT available. You MUST explicitly tell the user this exact slot is already booked, and then offer these open alternative slots so they can pick one: ${(toolResult.availableSlots || []).join(', ')}. Do not skip mentioning the alternatives.`;
                 }
             }
-            toolContext = `\n[SYSTEM ACTION TAKEN / TOOL RESULT]:\n${JSON.stringify(toolResult)}\n${toolDirective}\n`;
+            toolContext += `\n[SYSTEM ACTION TAKEN / TOOL RESULT]:\n${JSON.stringify(toolResult)}\n${toolDirective}\n`;
         }
 
         // 3. Ultra-Low Latency Knowledge Retrieval (<1ms):
