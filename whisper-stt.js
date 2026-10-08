@@ -110,7 +110,10 @@ export class WhisperSTT {
             result = await this.sendToSarvam(wavBlob, { durationMs, rms });
         }
 
-        if (!result || !result.text) return '';
+        if (!result || !result.text) {
+            if (!isSarvam) this.onError(new Error('Transcription failed on both Groq and Sarvam.'));
+            return '';
+        }
 
         const text = result.text.trim();
 
@@ -355,8 +358,10 @@ export class WhisperSTT {
 
         } catch (err) {
             this.isTranscribing = false;
-            console.error('[GroqWhisper] Transcription failed:', err.message);
-            this.onError(err);
+            // Don't surface this to the user yet -- the caller (transcribe()) automatically
+            // falls back to Sarvam on a null/empty result. Only a final, total failure
+            // (both engines down) should show an error.
+            console.warn('[GroqWhisper] Transcription failed, will try Sarvam fallback:', err.message);
             return null;
         }
     }
