@@ -111,7 +111,9 @@ export class WhisperSTT {
         }
 
         if (!result || !result.text) {
-            if (!isSarvam) this.onError(new Error('Transcription failed on both Groq and Sarvam.'));
+            // By this point both the primary engine and its internal fallback (Sarvam <-> Groq,
+            // see sendToSarvam's catch and the block above) have been tried.
+            this.onError(new Error('Transcription failed on both Sarvam and Groq.'));
             return '';
         }
 
@@ -375,11 +377,9 @@ export class WhisperSTT {
             const formData = new FormData();
             formData.append('file', wavBlob, 'user_speech.wav');
             formData.append('model', 'saaras:v3');
-            if (this.language === 'en') {
-                formData.append('language_code', 'en-IN');
-            } else if (this.language === 'hi') {
-                formData.append('language_code', 'hi-IN');
-            }
+            // Don't lock language_code to the previous turn's detected language -- saaras:v3
+            // auto-detects Hindi/English/Hinglish per utterance, and forcing hi-IN right after a
+            // Hindi turn broke transcription when the user then switched to English.
 
             const res = await fetch('/api/sarvam-stt', {
                 method: 'POST',

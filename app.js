@@ -166,13 +166,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Groq Whisper Large-v3-Turbo default — better accented Hindi/English/Hinglish
-    // accuracy than Sarvam, plus supports a domain-biasing prompt hint. Sarvam remains an automatic
-    // fallback on error or on known phantom hallucinations — see whisper-stt.js)
+    // Initialize STT Engine (Sarvam saaras:v3 default — better Hindi/Hinglish code-switching
+    // accuracy than Groq Whisper, which kept hallucinating/translating on Hindi input in testing.
+    // Groq Whisper remains an automatic fallback on Sarvam error — see whisper-stt.js)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '',
-        model: 'whisper-large-v3-turbo',
+        model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
