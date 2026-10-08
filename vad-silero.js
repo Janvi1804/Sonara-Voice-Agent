@@ -39,6 +39,12 @@ export class SileroVAD {
 
         this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.003);
 
+        // The bundled silero_vad.onnx produces a flat near-zero probability regardless of
+        // input volume once loaded (confirmed via debug logging: prob stayed 0.001-0.003 even
+        // at rms=0.38). Force the acoustic/energy fallback path, which correctly tracks volume,
+        // until the ONNX model/tensor mismatch is fixed.
+        this.disableNeuralModel   = options.disableNeuralModel !== undefined ? options.disableNeuralModel : true;
+
         // Gating & onset state: 1 frame (~32ms) for immediate pickup on conversational voice
         this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 1);
         this.bargeInConfirmFrames     = Math.max(1, options.bargeInConfirmFrames !== undefined ? options.bargeInConfirmFrames : 14);
@@ -61,8 +67,10 @@ export class SileroVAD {
         this._bargeInConfirmCount = 0;
         this._debugLog            = options.debugLog !== false;
 
-        // Auto-initialize neural model
-        this.init().catch(err => console.error('[SileroVAD] Initialization error:', err));
+        // Auto-initialize neural model (skipped while disableNeuralModel forces the acoustic fallback)
+        if (!this.disableNeuralModel) {
+            this.init().catch(err => console.error('[SileroVAD] Initialization error:', err));
+        }
     }
 
     /**
@@ -198,11 +206,11 @@ export class SileroVAD {
         let prob = 0;
         const now = performance.now();
 
-        if (!this.session && !this.isLoading && !this.hasFailed && getOrt()) {
+        if (!this.disableNeuralModel && !this.session && !this.isLoading && !this.hasFailed && getOrt()) {
             this.init().catch(() => {});
         }
 
-        if (this.isReady && this.session) {
+        if (!this.disableNeuralModel && this.isReady && this.session) {
             // Prepare 512-sample Float32 slice
             let frame512 = pcmData;
             if (pcmData.length !== 512) {
