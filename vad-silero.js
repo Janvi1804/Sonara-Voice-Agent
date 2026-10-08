@@ -37,7 +37,7 @@ export class SileroVAD {
         this.stateData            = new Float32Array(2 * 1 * 128);
         this.srTensor             = null;
 
-        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.003);
+        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.018);
 
         // The bundled silero_vad.onnx produces a flat near-zero probability regardless of
         // input volume once loaded (confirmed via debug logging: prob stayed 0.001-0.003 even
@@ -239,14 +239,14 @@ export class SileroVAD {
                 }
             } catch (inferErr) {
                 console.warn('[SileroVAD] Neural step failed, using acoustic fallback:', inferErr.message);
-                prob = rms > 0.008 ? Math.min(1.0, (rms - 0.008) * 30 + 0.50) : 0.05;
+                prob = rms > 0.018 ? Math.min(1.0, (rms - 0.018) * 30 + 0.50) : 0.05;
             }
         } else {
             // High-reliability Acoustic/Energy Fallback VAD:
-            // Tuned for natural conversational speech (RMS 0.008+) while rejecting ambient room silence (< 0.004)
-            prob = rms >= 0.009 ? Math.min(0.98, (rms - 0.009) * 35 + 0.60)
-                 : (rms >= 0.006 ? Math.min(0.55, (rms - 0.006) * 50 + 0.30)
-                 : (rms > 0.003 ? 0.12 : 0.01));
+            // Tuned for natural conversational speech (RMS 0.025+) while rejecting ambient room noise (< 0.018)
+            prob = rms >= 0.025 ? Math.min(0.98, (rms - 0.025) * 35 + 0.60)
+                 : (rms >= 0.018 ? Math.min(0.55, (rms - 0.018) * 50 + 0.30)
+                 : (rms > 0.012 ? 0.12 : 0.01));
         }
 
         // Emit frame stats for UI visualizer
