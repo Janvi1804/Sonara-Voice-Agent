@@ -166,11 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Groq Whisper Large V3 Turbo default for sub-150ms latency + Sarvam AI option)
+    // Initialize STT Engine (Sarvam saaras:v3 default — handles Hindi/Hinglish code-switching without
+    // mistranslating into English the way Groq Whisper's auto-detect does on short mixed-language speech)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
-        language: '', // Auto-detect (English, Hindi, Hinglish)
-        model: 'whisper-large-v3-turbo',
+        language: 'hi',
+        model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -266,24 +267,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v4');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v5');
         if (!sttMigrated) {
-            // Groq Whisper Large V3 Turbo default for sub-150ms real-time voice latency!
-            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
-            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
-            localStorage.setItem('sonara_stt_migrated_v4', 'true');
+            // Sarvam saaras:v3 default — avoids Groq Whisper auto-detect mistranslating
+            // short Hindi/Hinglish speech into garbled English.
+            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
+            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
+            localStorage.setItem('sonara_stt_migrated_v5', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'whisper-large-v3-turbo';
+            selSttModel.value = 'sarvam-saaras-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
         }
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
-        whisperEngine.setLanguage(selLanguage ? selLanguage.value : '');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3-turbo');
+        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
