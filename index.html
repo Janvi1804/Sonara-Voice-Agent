@@ -10,7 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="stylesheet" href="/style.css">
-    <script src="/ort.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.all.min.js"></script>
+    <script>
+        if (typeof ort === 'undefined') {
+            document.write('<script src="/public/ort.all.min.js"><\/script>');
+        }
+    </script>
 </head>
 <body class="dark-theme">
     <!-- Background Ambient Glows -->
@@ -476,6 +481,6 @@
     </div>
 
     <!-- Main Module Script -->
-    <script type="module" src="/app.js?v=2.8"></script>
+    <script type="module" src="/app.js?v=2.9"></script>
 </body>
 </html>

@@ -8,5 +8,15 @@
       "memory": 1024,
       "maxDuration": 30
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/silero_vad.onnx", "destination": "/public/silero_vad.onnx" },
+    { "source": "/ort.all.min.js", "destination": "/public/ort.all.min.js" },
+    { "source": "/ort-wasm-simd-threaded.wasm", "destination": "/public/ort-wasm-simd-threaded.wasm" },
+    { "source": "/ort-wasm-simd-threaded.mjs", "destination": "/public/ort-wasm-simd-threaded.mjs" },
+    { "source": "/ort-wasm-simd-threaded.jsep.wasm", "destination": "/public/ort-wasm-simd-threaded.jsep.wasm" },
+    { "source": "/ort-wasm-simd-threaded.jsep.mjs", "destination": "/public/ort-wasm-simd-threaded.jsep.mjs" },
+    { "source": "/vad-worklet.js", "destination": "/public/vad-worklet.js" }
+  ]
 }
+

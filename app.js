@@ -648,27 +648,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const wantAutoGain = chkAutoGain ? chkAutoGain.checked : true;
             const constraints = {
                 audio: {
-                    echoCancellation: { exact: wantAec },
-                    noiseSuppression: { exact: wantNoiseSuppression },
-                    autoGainControl: { exact: wantAutoGain },
+                    echoCancellation: wantAec ? { ideal: true } : false,
+                    noiseSuppression: wantNoiseSuppression ? { ideal: true } : false,
+                    autoGainControl: wantAutoGain ? { ideal: true } : false,
                     channelCount: 1
                 }
             };
 
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-            } catch (exactErr) {
-                // Some devices/browsers don't support `exact` audio-processing constraints —
-                // fall back to `ideal` rather than failing to start the call entirely.
-                console.warn('[App] Exact AEC constraints unsupported, falling back to ideal:', exactErr.message);
-                mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: { ideal: wantAec },
-                        noiseSuppression: { ideal: wantNoiseSuppression },
-                        autoGainControl: { ideal: wantAutoGain },
-                        channelCount: 1
-                    }
-                });
+            } catch (idealErr) {
+                console.warn('[App] Preferred constraints failed, falling back to basic audio:', idealErr.message);
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             }
             micSource = audioContext.createMediaStreamSource(mediaStream);
 
@@ -720,12 +711,12 @@ document.addEventListener('DOMContentLoaded', () => {
             vadEngine = new SileroVAD({
                 sampleRate: 16000,
                 frameSize: 512,
-                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.50,
+                threshold: rngVadThreshold ? parseFloat(rngVadThreshold.value) : 0.45,
                 silenceDurationMs: rngSilenceDuration ? parseInt(rngSilenceDuration.value) : 900,
                 minSpeechDurationMs: 250,
                 speechStartConfirmFrames: 2, // ~64ms for instant pickup
-                minSpeechRms: 0.018,
-                rmsFloor: 0.018,
+                minSpeechRms: 0.008,
+                rmsFloor: 0.008,
 
                 bargeInConfirmFrames: 14,
                 bargeInThreshold: 0.85,

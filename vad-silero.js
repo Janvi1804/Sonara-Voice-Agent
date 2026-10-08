@@ -31,13 +31,13 @@ export class SileroVAD {
         this.isLoading            = false;
         this.isReady              = false;
         this.hasFailed            = false;
-        this.modelPath            = options.modelPath || '/silero_vad.onnx';
+        this.modelPath            = options.modelPath || '/public/silero_vad.onnx';
 
         // Recurrent state tensor: shape [2, 1, 128] Float32Array
         this.stateData            = new Float32Array(2 * 1 * 128);
         this.srTensor             = null;
 
-        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.012);
+        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.008);
 
         // Gating & onset state: 2 frames (~64ms) for instant pickup
         this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 2);
@@ -96,24 +96,47 @@ export class SileroVAD {
                 ort.env.wasm.numThreads = 1;
                 ort.env.wasm.simd = true;
                 ort.env.wasm.proxy = false;
-                ort.env.wasm.wasmPaths = window.location.origin + '/';
+                // Prefer jsdelivr CDN for wasm binaries to avoid local 404s
+                ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
             }
 
-            console.log('[SileroVAD] Loading official Silero VAD ONNX model from', this.modelPath);
-            this.session = await ort.InferenceSession.create(this.modelPath, {
-                executionProviders: ['wasm'],
-                graphOptimizationLevel: 'all'
-            });
+            const modelCandidates = [
+                this.modelPath,
+                '/public/silero_vad.onnx',
+                '/silero_vad.onnx',
+                `${window.location.origin}/public/silero_vad.onnx`,
+                `${window.location.origin}/silero_vad.onnx`
+            ].filter(Boolean);
+
+            let lastErr = null;
+            for (const candidate of modelCandidates) {
+                try {
+                    console.log('[SileroVAD] Trying to load Silero VAD ONNX model from:', candidate);
+                    this.session = await ort.InferenceSession.create(candidate, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    if (this.session) {
+                        this.modelPath = candidate;
+                        break;
+                    }
+                } catch (loadErr) {
+                    lastErr = loadErr;
+                }
+            }
+
+            if (!this.session) {
+                throw lastErr || new Error('Failed to load Silero ONNX model from any candidate path.');
+            }
 
             this.resetState();
             this.isReady = true;
             this.isLoading = false;
-            console.log('[SileroVAD] Neural network loaded successfully. Real Silero inference active.');
+            console.log('[SileroVAD] Neural network loaded successfully. Real Silero inference active from:', this.modelPath);
         } catch (err) {
             this.isLoading = false;
             this.hasFailed = true;
-            console.error('[SileroVAD] Failed to load ONNX model:', err.message);
-            throw err;
+            console.warn('[SileroVAD] Failed to load ONNX model, running acoustic fallback:', err.message);
         }
     }
 
@@ -208,12 +231,14 @@ export class SileroVAD {
                 }
             } catch (inferErr) {
                 console.warn('[SileroVAD] Neural step failed, using acoustic fallback:', inferErr.message);
-                prob = rms > 0.015 ? Math.min(1.0, (rms - 0.015) * 20 + 0.5) : 0.05;
+                prob = rms > 0.008 ? Math.min(1.0, (rms - 0.008) * 30 + 0.50) : 0.05;
             }
         } else {
             // High-reliability Acoustic/Energy Fallback VAD:
-            // Tuned for natural conversational speech (RMS 0.015+) while rejecting ambient room silence (< 0.008)
-            prob = rms >= 0.015 ? Math.min(0.95, (rms - 0.015) * 25 + 0.55) : (rms > 0.008 ? 0.20 : 0.01);
+            // Tuned for natural conversational speech (RMS 0.008+) while rejecting ambient room silence (< 0.004)
+            prob = rms >= 0.009 ? Math.min(0.98, (rms - 0.009) * 35 + 0.60)
+                 : (rms >= 0.006 ? Math.min(0.55, (rms - 0.006) * 50 + 0.30)
+                 : (rms > 0.003 ? 0.12 : 0.01));
         }
 
         // Emit frame stats for UI visualizer
