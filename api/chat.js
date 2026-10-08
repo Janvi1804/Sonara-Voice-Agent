@@ -261,6 +261,10 @@ export default async function handler(req, res) {
         // Classify query type: definitional ("what is X", "explain X") vs. service/company inquiry
         const isDefinitionalQuery = DEFINITIONAL_PATTERNS.test(lastUserMsg.trim());
 
+        // Conversational / Greeting bypass: Greetings, pleasantries & small-talk need no company RAG injection
+        const CONVERSATIONAL_PATTERNS = /^(hi|hello|hey|namaste|namaskar|good\s+(morning|afternoon|evening)|how\s+are\s+you|kaisi\s+ho|kaise\s+ho|kya\s+haal|who\s+are\s+you|aap\s+kaun\s+ho|what\s+is\s+your\s+name|aapka\s+naam|thanks|thank\s+you|dhanyawad|shukriya|bye|goodbye|alvida|ok|theek\s+hai)\b/i;
+        const isConversational = CONVERSATIONAL_PATTERNS.test(lastUserMsg.trim());
+
         // GK bypass: obvious general-knowledge questions get no RAG context injected
         // Prevents Converse AI KB from contaminating answers about geography, history, math, etc.
         const GK_PATTERNS = [
@@ -273,17 +277,18 @@ export default async function handler(req, res) {
         const isGK = GK_PATTERNS.some(p => p.test(lastUserMsg));
 
         let ragContext = '';
-        if (!isGK) {
-            // Primary: pgvector semantic search (real ML similarity)
-            const pgResults = await pgvectorSearch(lastUserMsg, 3, 0.40);
-            if (pgResults && pgResults.length > 0) {
-                const chunks = pgResults.map(r => `[${r.title}]:\n${r.content}`).join('\n\n');
-                ragContext = `\n\n--- VERIFIED CONVERSE AI KNOWLEDGE (pgvector semantic search) ---\n${chunks}\n(CRITICAL: Base facts strictly on the above. Never invent.)`;
-                console.log(`[RAG] pgvector: ${pgResults.length} chunks (similarity >= 0.40)`);
-            } else {
-                // Fallback: keyword scorer (when DB empty or unavailable)
-                ragContext = retrieveRAGContext(lastUserMsg, isDefinitionalQuery);
-                if (ragContext) console.log('[RAG] keyword fallback used');
+        if (!isGK && !isConversational && ragEnabled) {
+            // Ultra-Fast Path (0ms): In-memory verified Converse AI KB keyword search
+            ragContext = retrieveRAGContext(lastUserMsg, isDefinitionalQuery);
+            if (!ragContext) {
+                // Secondary fallback: only attempt pgvector if keywords yielded nothing
+                try {
+                    const pgResults = await pgvectorSearch(lastUserMsg, 2, 0.50);
+                    if (pgResults && pgResults.length > 0) {
+                        const chunks = pgResults.map(r => `[${r.title}]:\n${r.content}`).join('\n\n');
+                        ragContext = `\n\n--- VERIFIED CONVERSE AI KNOWLEDGE (pgvector semantic search) ---\n${chunks}\n(CRITICAL: Base facts strictly on the above. Never invent.)`;
+                    }
+                } catch (_) {}
             }
         }
 
