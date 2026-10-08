@@ -310,7 +310,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken. Do not translate. उदाहरण: नमस्ते, आप कैसे हैं?');
+            whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken (Devanagari for Hindi, e.g. नमस्ते). Do not translate.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
