@@ -1583,6 +1583,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     toolDirective = `CRITICAL: Cancellation could not be completed: ${toolResult.message}. Inform user truthfully.`;
                 }
+            } else if (toolResult.tool === 'check_availability') {
+                if (toolResult.isAvailable) {
+                    toolDirective = `CRITICAL: Slot ${toolResult.time} on ${toolResult.date} IS available. Tell the user clearly that it's available and ask if they want to confirm it.`;
+                } else {
+                    toolDirective = `CRITICAL TRUTHFULNESS: Slot ${toolResult.time} on ${toolResult.date} is NOT available. You MUST explicitly tell the user this exact slot is already booked, and then offer these open alternative slots so they can pick one: ${(toolResult.availableSlots || []).join(', ')}. Do not skip mentioning the alternatives.`;
+                }
             }
             toolContext = `\n[SYSTEM ACTION TAKEN / TOOL RESULT]:\n${JSON.stringify(toolResult)}\n${toolDirective}\n`;
         }

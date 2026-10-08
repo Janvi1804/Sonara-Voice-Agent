@@ -516,7 +516,7 @@ function devanagariToHinglish(text) {
  */
 function cleanHinglishPhonetics(text) {
     if (!text) return '';
-    return text
+    let cleaned = text
         .replace(/\b(naini|nahin|naheen|nhi)\b/gi, 'nahi')
         .replace(/\bkoji\b/gi, 'koi')
         .replace(/\bmen\s+lie\b/gi, 'mere liye')
@@ -532,7 +532,77 @@ function cleanHinglishPhonetics(text) {
         .replace(/\bkaya\b/gi, 'kya')
         .replace(/\bbat\s+kar\b/gi, 'baat kar')
         .replace(/\bkya\s+ke\s+services\b/gi, 'kya services')
+        // Common English/domain words Sarvam/Whisper mis-hear phonetically in code-switched speech
+        .replace(/\bso\s+nara\b/gi, 'Sonara')
+        .replace(/\bkainsil\b/gi, 'cancel')
+        .replace(/\bhyooman\b/gi, 'human')
+        .replace(/\briyal\s+parsan\b/gi, 'real person')
+        .replace(/\bavelebal\b/gi, 'available')
+        .replace(/\bpraising\s+plans\b/gi, 'pricing plans')
+        .replace(/\bsetaap\b/gi, 'setup')
+        .replace(/\bhau\s+das\b/gi, 'how does')
+        .replace(/\byor\b/gi, 'your')
+        .replace(/\botometed\s+koling\b/gi, 'automated calling')
+        .replace(/\blid\s+janareshan\b/gi, 'lead generation')
+        .replace(/\bselsaphors?\s+siaaraem\b/gi, 'Salesforce system')
+        .replace(/\bkonvarsiya\b/gi, 'Converse AI')
+        .replace(/\bintigret\b/gi, 'integrate')
+        .replace(/\blaiv\b/gi, 'live')
+        .replace(/\bthaink\s+yoo\b/gi, 'thank you')
         .replace(/\b(\d{1,2})\.(\d{2})\b/g, '$1:$2')
         .replace(/\s{2,}/g, ' ')
         .trim();
+    cleaned = convertSpokenDigitSequences(cleaned);
+    return cleaned;
+}
+
+/**
+ * STT often transcribes a dictated phone number ("two three four five...") as literal
+ * words/phonetic approximations instead of digits. Detect runs of 6+ consecutive
+ * digit-words and collapse them into an actual number string so the LLM can extract
+ * the phone number correctly. Short runs (1-5 words) are left alone since words like
+ * "for"/"to"/"ate" are common in normal speech and would false-positive.
+ */
+function convertSpokenDigitSequences(text) {
+    if (!text) return text;
+    const digitWordMap = {
+        zero: '0', jiro: '0', jero: '0', 'o': '0',
+        one: '1', van: '1', wan: '1',
+        two: '2', too: '2', tu: '2',
+        three: '3', thri: '3', tree: '3', thiri: '3',
+        four: '4', phor: '4', 'for': '4', fore: '4',
+        five: '5', phaiv: '5', phive: '5',
+        six: '6', siks: '6', sicks: '6',
+        seven: '7', sevan: '7',
+        eight: '8', et: '8', ate: '8',
+        nine: '9', nain: '9', nien: '9'
+    };
+    const tokens = text.split(/(\s+)/); // keep whitespace tokens for reassembly
+    const wordTokens = tokens.filter((_, i) => i % 2 === 0);
+    const runs = [];
+    let current = [];
+    wordTokens.forEach((raw, idx) => {
+        const key = raw.toLowerCase().replace(/[.,!?।]/g, '');
+        if (digitWordMap[key] !== undefined) {
+            current.push({ idx, digit: digitWordMap[key] });
+        } else {
+            if (current.length >= 6) runs.push(current);
+            current = [];
+        }
+    });
+    if (current.length >= 6) runs.push(current);
+    if (!runs.length) return text;
+
+    runs.forEach(run => {
+        const digits = run.map(r => r.digit).join('');
+        wordTokens[run[0].idx] = digits;
+        for (let i = 1; i < run.length; i++) wordTokens[run[i].idx] = '';
+    });
+
+    let out = '';
+    let w = 0;
+    for (let i = 0; i < tokens.length; i++) {
+        out += (i % 2 === 0) ? wordTokens[w++] : tokens[i];
+    }
+    return out.replace(/\s{2,}/g, ' ').trim();
 }
