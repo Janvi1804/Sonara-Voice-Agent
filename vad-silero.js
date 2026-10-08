@@ -273,9 +273,11 @@ export class SileroVAD {
         }
 
         // 2. Normal Speech State Machine
-        // Require both neural probability AND minimum RMS energy to prevent background noise from triggering speech
+        // Neural mode relies on deep neural probability; acoustic mode requires calibrated RMS energy
         const meetsThreshold = prob >= this.threshold;
-        const meetsRms = this.isSpeaking ? (rms >= this.minSpeechRms * 0.55) : (rms >= this.minSpeechRms);
+        const meetsRms = this.session
+            ? (rms >= 0.0025)
+            : (this.isSpeaking ? (rms >= this.minSpeechRms * 0.50) : (rms >= this.minSpeechRms));
 
         if (meetsThreshold && meetsRms) {
             this.lastSpeechTime = now;

@@ -650,8 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 audio: {
                     echoCancellation: wantAec ? { ideal: true } : false,
                     noiseSuppression: wantNoiseSuppression ? { ideal: true } : false,
-                    autoGainControl: wantAutoGain ? { ideal: true } : false,
-                    channelCount: 1
+                    autoGainControl: wantAutoGain ? { ideal: true } : false
                 }
             };
 
@@ -660,6 +659,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (idealErr) {
                 console.warn('[App] Preferred constraints failed, falling back to basic audio:', idealErr.message);
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            }
+            const activeMicTrack = mediaStream.getAudioTracks()[0];
+            if (activeMicTrack) {
+                console.log('[App] 🎤 Active Mic Track:', activeMicTrack.label, '| Muted:', activeMicTrack.muted, '| State:', activeMicTrack.readyState);
             }
             micSource = audioContext.createMediaStreamSource(mediaStream);
 
@@ -817,6 +820,35 @@ document.addEventListener('DOMContentLoaded', () => {
             silentSink.gain.value = 0;
             silentSink.connect(audioContext.destination);
 
+            // Continuous 16kHz FIFO Buffer: Guarantees exact 512-sample continuous slices to Silero VAD
+            const pcm16kFifo = [];
+
+            const dispatchAudioToVadAndWhisper = (rawNativeSamples) => {
+                if (!isCallActive || !vadEngine || !rawNativeSamples || rawNativeSamples.length === 0) return;
+                if (isAiThinking) return;
+
+                // 1. Resample native samples (e.g. 48kHz or 44.1kHz) to 16kHz
+                const outLen = Math.floor(rawNativeSamples.length * resampleRatio);
+                for (let i = 0; i < outLen; i++) {
+                    const srcIdx = i / resampleRatio;
+                    const lo = Math.floor(srcIdx);
+                    const hi = Math.min(lo + 1, rawNativeSamples.length - 1);
+                    const frac = srcIdx - lo;
+                    pcm16kFifo.push(rawNativeSamples[lo] * (1 - frac) + rawNativeSamples[hi] * frac);
+                }
+
+                // 2. Dispatch in EXACT 512-sample slices to Silero VAD
+                while (pcm16kFifo.length >= 512) {
+                    const frame512 = new Float32Array(pcm16kFifo.splice(0, 512));
+                    vadEngine.processFrame(frame512);
+
+                    // Push audio to Whisper only when not in TTS cooldown and AI is not speaking
+                    if (!isAiSpeaking && Date.now() >= ttsCooldownUntil) {
+                        whisperEngine.pushAudioFrame(frame512);
+                    }
+                }
+            };
+
             let workletSuccess = false;
             if (audioContext.audioWorklet) {
                 try {
@@ -850,43 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const workletNode = new AudioWorkletNode(audioContext, 'sonara-vad-processor');
                     workletNode.port.onmessage = (event) => {
-                        if (!isCallActive || !vadEngine) return;
-                        // If AI is thinking, skip entirely (not speaking -- no barge-in needed during LLM processing)
-                        if (isAiThinking) return;
-                        // If AI is speaking: pass frames to VAD for barge-in monitoring ONLY.
-                        // VAD handles the ai-speaking gate internally and monitors for genuine user barge-in.
-                        // Do NOT push to whisperEngine during AI speech -- VAD's onBargeIn callback handles recording onset.
-                        if (isAiSpeaking) {
-                            const pcmData = event.data;
-                            const outputLength = Math.floor(pcmData.length * resampleRatio);
-                            const pcm16k = new Float32Array(outputLength);
-                            for (let i = 0; i < outputLength; i++) {
-                                const srcIdx = i / resampleRatio;
-                                const lo = Math.floor(srcIdx);
-                                const hi = Math.min(lo + 1, pcmData.length - 1);
-                                const frac = srcIdx - lo;
-                                pcm16k[i] = pcmData[lo] * (1 - frac) + pcmData[hi] * frac;
-                            }
-                            vadEngine.processFrame(pcm16k);
-                            return; // do NOT push to whisperEngine
-                        }
-                        // If in TTS cooldown grace period (right after AI finished speaking), skip.
-                        // The grace timer prevents tail-word/reverb capture by keeping mic locked.
-                        if (Date.now() < ttsCooldownUntil) return;
-                        const pcmData = event.data;
-                        const outputLength = Math.floor(pcmData.length * resampleRatio);
-                        const pcm16k = new Float32Array(outputLength);
-                        // Linear interpolation resampling: smoother than nearest-neighbor.
-                        // Reduces aliasing for speech-frequency content.
-                        for (let i = 0; i < outputLength; i++) {
-                            const srcIdx = i / resampleRatio;
-                            const lo = Math.floor(srcIdx);
-                            const hi = Math.min(lo + 1, pcmData.length - 1);
-                            const frac = srcIdx - lo;
-                            pcm16k[i] = pcmData[lo] * (1 - frac) + pcmData[hi] * frac;
-                        }
-                        vadEngine.processFrame(pcm16k);
-                        whisperEngine.pushAudioFrame(pcm16k);
+                        dispatchAudioToVadAndWhisper(event.data);
                     };
                     micSource.connect(workletNode);
                     workletNode.connect(silentSink);
@@ -900,42 +896,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!workletSuccess) {
                 const spNode = audioContext.createScriptProcessor(1024, 1, 1);
                 spNode.onaudioprocess = (e) => {
-                    if (!isCallActive || !vadEngine) return;
-                    if (isAiThinking) return;
-                    // If AI is speaking: pass frames to VAD for barge-in monitoring ONLY.
-                    if (isAiSpeaking) {
-                        const inputData = e.inputBuffer.getChannelData(0);
-                        const outputLength = Math.floor(inputData.length * resampleRatio);
-                        const pcm16k = new Float32Array(outputLength);
-                        for (let i = 0; i < outputLength; i++) {
-                            const srcIdx = i / resampleRatio;
-                            const lo = Math.floor(srcIdx);
-                            const hi = Math.min(lo + 1, inputData.length - 1);
-                            const frac = srcIdx - lo;
-                            pcm16k[i] = inputData[lo] * (1 - frac) + inputData[hi] * frac;
-                        }
-                        for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                            vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                        }
-                        return; // do NOT push to whisperEngine during AI speech
-                    }
-                    // If in post-TTS grace period, skip
-                    if (Date.now() < ttsCooldownUntil) return;
                     const inputData = e.inputBuffer.getChannelData(0);
-                    const outputLength = Math.floor(inputData.length * resampleRatio);
-                    const pcm16k = new Float32Array(outputLength);
-                    // Linear interpolation resampling (same as worklet path)
-                    for (let i = 0; i < outputLength; i++) {
-                        const srcIdx = i / resampleRatio;
-                        const lo = Math.floor(srcIdx);
-                        const hi = Math.min(lo + 1, inputData.length - 1);
-                        const frac = srcIdx - lo;
-                        pcm16k[i] = inputData[lo] * (1 - frac) + inputData[hi] * frac;
-                    }
-                    for (let offset = 0; offset + 512 <= pcm16k.length; offset += 512) {
-                        vadEngine.processFrame(pcm16k.subarray(offset, offset + 512));
-                    }
-                    whisperEngine.pushAudioFrame(pcm16k);
+                    dispatchAudioToVadAndWhisper(inputData);
                 };
                 micSource.connect(spNode);
                 spNode.connect(silentSink);
@@ -2112,15 +2074,16 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             if (inputAnalyser && isCallActive) {
                 inputAnalyser.getByteFrequencyData(inputDataArray);
                 // Real-time dynamic audio input level (AEC + NS)
-                let sum = 0;
+                let sumSq = 0;
                 for (let i = 0; i < inputDataArray.length; i++) {
-                    sum += inputDataArray[i];
+                    sumSq += inputDataArray[i] * inputDataArray[i];
                 }
-                const avg = sum / inputDataArray.length;
-                const db = Math.round((avg / 255) * 60 - 60);
-                const dbPct = Math.min(100, Math.round((avg / 128) * 100));
+                const rmsRaw = Math.sqrt(sumSq / inputDataArray.length) / 255;
+                const db = rmsRaw > 0.001 ? Math.round(20 * Math.log10(rmsRaw)) : -60;
+                const dbClamped = Math.max(-60, Math.min(0, db));
+                const dbPct = Math.min(100, Math.max(0, Math.round(((dbClamped + 60) / 60) * 100)));
                 if (audioLevelBar) audioLevelBar.style.width = `${dbPct}%`;
-                if (audioLevelLabel) audioLevelLabel.textContent = `${db} dB`;
+                if (audioLevelLabel) audioLevelLabel.textContent = `${dbClamped} dB`;
             }
 
             if (ttsEngine && typeof ttsEngine.getAnalyser === 'function') {
