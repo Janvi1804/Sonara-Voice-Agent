@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=3.4';
-import { WhisperSTT } from './whisper-stt.js?v=3.4';
+import { SileroVAD } from './vad-silero.js?v=3.5';
+import { WhisperSTT } from './whisper-stt.js?v=3.5';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=3.4';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=3.5';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -268,17 +268,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v6');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v7');
         if (!sttMigrated) {
-            // Groq Whisper Large-v3-Turbo default — better accented Hindi/English/Hinglish accuracy
-            // than Sarvam, and supports a domain-biasing prompt hint that Sarvam's API lacks.
-            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
-            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
-            localStorage.setItem('sonara_stt_migrated_v6', 'true');
+            // Sarvam saaras:v3 default — better Hindi/Hinglish code-switching accuracy than Groq
+            // Whisper, which kept hallucinating/translating on Hindi input in testing.
+            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
+            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
+            localStorage.setItem('sonara_stt_migrated_v7', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'whisper-large-v3-turbo';
+            selSttModel.value = 'sarvam-saaras-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
