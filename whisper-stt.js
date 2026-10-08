@@ -161,8 +161,9 @@ export class WhisperSTT {
         // Gibberish has long consonant runs and near-zero vowels.
         // Exempt: short words (<4 chars), numbers, known abbreviations (AI, CRM, etc.)
         const ABBREV = /^[A-Z]{2,5}$|^\d+$|^(ok|hi|ha|ji|yes|no|am|pm|sir|mam)$/i;
+        const isTimeToken = /^\d+[:.]?\d*\s*(am|pm)\.?$/i; // e.g. "2pm", "2pm.", "2:30pm", "3 PM"
         const gibberishWords = text.trim().split(/\s+/).filter(w => {
-            if (w.length < 4 || ABBREV.test(w)) return false; // exempt short/known
+            if (w.length < 4 || ABBREV.test(w) || isTimeToken.test(w)) return false; // exempt short/known/time
             if (/[\u0900-\u097F]/.test(w)) return false;       // exempt Devanagari
             const vowels = (w.match(/[aeiouy]/gi) || []).length;
             const vowelRatio = vowels / w.length;
