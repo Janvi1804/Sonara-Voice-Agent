@@ -839,11 +839,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('[App] Short sound suppressed, Whisper buffer cleared. Duration:', Math.round(duration) + 'ms');
                 },
                 onBargeIn: () => {
-                    // Suppress barge-in during initial welcome greeting to prevent laptop speaker bleed cut-off
-                    if (isWelcomeGreetingPlaying) {
-                        console.log('🔇 Barge-in suppressed during initial welcome greeting to prevent speaker echo cut-off.');
-                        return;
-                    }
                     // Confirmed genuine user speech while AI TTS is playing (after bargeInConfirmFrames).
                     console.log('⚡ BARGE-IN CONFIRMED: User spoke during AI output. Interrupting TTS.');
                     if (ttsEngine) ttsEngine.interrupt();
@@ -878,9 +873,26 @@ document.addEventListener('DOMContentLoaded', () => {
             // Continuous 16kHz FIFO Buffer: Guarantees exact 512-sample continuous slices to Silero VAD
             const pcm16kFifo = [];
 
+            let _lastDropLog = 0;
+            let _lastHeartbeat = 0;
+            let _dispatchCallCount = 0;
             const dispatchAudioToVadAndWhisper = (rawNativeSamples) => {
+                _dispatchCallCount++;
+                const hbNow = Date.now();
+                if (hbNow - _lastHeartbeat > 2000) {
+                    _lastHeartbeat = hbNow;
+                    console.log('[DEBUG] Pipeline heartbeat — calls/2s=' + _dispatchCallCount + ' isCallActive=' + isCallActive + ' isAiSpeaking=' + isAiSpeaking + ' isAiThinking=' + isAiThinking + ' vadEngine=' + !!vadEngine);
+                    _dispatchCallCount = 0;
+                }
                 if (!isCallActive || !vadEngine || !rawNativeSamples || rawNativeSamples.length === 0) return;
-                if (isAiThinking) return;
+                if (isAiThinking) {
+                    const now = Date.now();
+                    if (now - _lastDropLog > 1000) {
+                        _lastDropLog = now;
+                        console.warn('[DEBUG] Audio frame DROPPED — isAiThinking=true isAiSpeaking=' + isAiSpeaking + ' isCallActive=' + isCallActive);
+                    }
+                    return;
+                }
 
                 // 1. Resample native samples (e.g. 48kHz or 44.1kHz) to 16kHz
                 const outLen = Math.floor(rawNativeSamples.length * resampleRatio);
