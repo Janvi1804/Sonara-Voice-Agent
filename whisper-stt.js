@@ -297,7 +297,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, customer support, sales, revenue, and booking a demo.');
+            whisperForm.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, customer support, sales, revenue, and booking a demo. नमस्ते, आप कैसे हो? क्या आप हिंदी में बात कर सकती हैं?');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
