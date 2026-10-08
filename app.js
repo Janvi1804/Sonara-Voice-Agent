@@ -783,6 +783,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 onFrame: (data) => {
                     const probPct = Math.round(data.prob * 100);
+                    if (data.rms > 0.004) {
+                        console.log('[DEBUG] VAD frame — prob=' + data.prob.toFixed(3) + ' rms=' + data.rms.toFixed(4) + ' db=' + data.db + ' usingNeuralModel=' + (vadEngine.isReady && !!vadEngine.session));
+                    }
                     if (vadConfidenceBar) vadConfidenceBar.style.width = `${probPct}%`;
                     if (vadConfidenceLabel) vadConfidenceLabel.textContent = `${probPct}%`;
 
