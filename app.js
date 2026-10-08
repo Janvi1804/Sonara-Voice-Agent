@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // mistranslating into English the way Groq Whisper's auto-detect does on short mixed-language speech)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
-        language: 'hi',
+        language: '',
         model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
@@ -1550,11 +1550,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // When user speaks Hindi/Hinglish, Whisper is told to expect Hindi → correct transcript.
         // When user speaks English, use auto-detect '' so Hinglish mid-session isn't blocked.
         if (whisperEngine && typeof whisperEngine.setLanguage === 'function') {
-            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
-            const isWhisper = !sttChoice.startsWith('sarvam');
-            if (isWhisper) {
-                whisperEngine.setLanguage(isUserHindi ? 'hi' : '');
-            }
+            whisperEngine.setLanguage(isUserHindi ? 'hi' : '');
         }
 
 
