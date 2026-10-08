@@ -21,9 +21,9 @@ export class SileroVAD {
     constructor(options = {}) {
         this.sampleRate           = 16000;
         this.frameSize            = 512;
-        this.threshold            = options.threshold !== undefined ? options.threshold : 0.50;
-        this.silenceDurationMs    = options.silenceDurationMs || 900;
-        this.minSpeechDurationMs  = options.minSpeechDurationMs || 250;
+        this.threshold            = options.threshold !== undefined ? options.threshold : 0.30;
+        this.silenceDurationMs    = options.silenceDurationMs || 700;
+        this.minSpeechDurationMs  = options.minSpeechDurationMs || 200;
         this.maxSpeechDurationMs  = options.maxSpeechDurationMs || 15000;
 
         // Neural inference session
@@ -37,10 +37,10 @@ export class SileroVAD {
         this.stateData            = new Float32Array(2 * 1 * 128);
         this.srTensor             = null;
 
-        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.008);
+        this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.003);
 
-        // Gating & onset state: 2 frames (~64ms) for instant pickup
-        this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 2);
+        // Gating & onset state: 1 frame (~32ms) for immediate pickup on conversational voice
+        this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 1);
         this.bargeInConfirmFrames     = Math.max(1, options.bargeInConfirmFrames !== undefined ? options.bargeInConfirmFrames : 14);
         this.bargeInThreshold         = options.bargeInThreshold || 0.85;
         this.bargeInMinRms            = options.bargeInMinRms || 0.080;

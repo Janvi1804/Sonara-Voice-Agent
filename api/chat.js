@@ -224,7 +224,8 @@ export default async function handler(req, res) {
             model = 'qwen/qwen3.8-27b',
             temperature = 0.65,
             max_tokens = 180,
-            stream = false
+            stream = false,
+            ragEnabled = true
         } = body;
 
 
