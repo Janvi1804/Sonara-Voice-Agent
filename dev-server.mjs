@@ -22,6 +22,7 @@ const PORT = process.env.DEV_PORT || 3000;
 const apiHandlers = {
     '/api/chat': (await import('./api/chat.js')).default,
     '/api/sarvam-tts': (await import('./api/sarvam-tts.js')).default,
+    '/api/sarvam-stt': (await import('./api/sarvam-stt.js')).default,
     '/api/transcribe': (await import('./api/transcribe.js')).default,
     '/api/db': (await import('./api/db.js')).default
 };
@@ -117,6 +118,6 @@ server.listen(PORT, () => {
     console.log(`\n======================================================`);
     console.log(`  🚀 Sonara Voice Agent Local Full-Stack Server Ready!`);
     console.log(`  🌐 Open in browser: http://localhost:${PORT}`);
-    console.log(`  ⚡ APIs active: /api/chat, /api/sarvam-tts, /api/db, /api/transcribe`);
+    console.log(`  ⚡ APIs active: /api/chat, /api/sarvam-tts, /api/sarvam-stt, /api/db, /api/transcribe`);
     console.log(`======================================================\n`);
 });
