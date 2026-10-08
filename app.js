@@ -3,11 +3,11 @@
  * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
-import { SileroVAD } from './vad-silero.js?v=3.2';
-import { WhisperSTT } from './whisper-stt.js?v=3.2';
+import { SileroVAD } from './vad-silero.js?v=3.3';
+import { WhisperSTT } from './whisper-stt.js?v=3.3';
 // import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
 // import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
-import { SarvamTTS } from './sarvam-tts-client.js?v=3.2';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
+import { SarvamTTS } from './sarvam-tts-client.js?v=3.3';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
 import { ConversationMemory } from './memory.js';
@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const transcriptContainer = document.getElementById('transcriptContainer');
     const manualTextInput = document.getElementById('manualTextInput');
     const btnSendText = document.getElementById('btnSendText');
+    const micMuteBanner = document.getElementById('micMuteBanner');
 
     // Settings Form Elements
     const selLlmModel = document.getElementById('selLlmModel');
@@ -78,6 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isCallActive = false;
     let audioContext = null;
     let mediaStream = null;
+    let activeMicTrack = null;
+    let isHardwareMicMuted = false;
     let micSource = null;
     let scriptProcessor = null;
     let inputAnalyser = null;
@@ -602,6 +605,10 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const setAgentState = (state, labelText) => {
         if (!orbCore) return;
+        if (isHardwareMicMuted && (state === 'listening' || state === 'idle')) {
+            state = 'paused';
+            labelText = '⚠️ Mic Muted in Windows/Keyboard';
+        }
         orbCore.className = 'orb-core';
         const dot = document.querySelector('.status-dot');
         if (dot) dot.className = 'status-dot';
@@ -624,13 +631,39 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (state === 'paused') {
             orbCore.classList.add('state-paused');
             if (dot) dot.classList.add('active-thinking');
-            if (orbStateIcon) orbStateIcon.className = 'fa-solid fa-pause';
+            if (orbStateIcon) orbStateIcon.className = isHardwareMicMuted ? 'fa-solid fa-microphone-slash' : 'fa-solid fa-pause';
             if (btnInterrupt) btnInterrupt.disabled = true;
         } else {
             if (orbStateIcon) orbStateIcon.className = 'fa-solid fa-microphone-slash';
             if (btnInterrupt) btnInterrupt.disabled = true;
         }
         if (agentStatusText) agentStatusText.textContent = labelText;
+    };
+
+    /**
+     * Updates UI, Banner, and Agent State when Hardware/OS Microphone Mute status changes
+     */
+    const updateMicMuteStatus = (isMuted) => {
+        isHardwareMicMuted = isMuted;
+        if (micMuteBanner) {
+            micMuteBanner.style.display = isMuted ? 'block' : 'none';
+        }
+        const callOverlaySubtext = document.getElementById('callOverlaySubtext');
+        if (isMuted) {
+            setAgentState('paused', '⚠️ Mic Muted in Windows/Keyboard');
+            if (callOverlaySubtext) {
+                callOverlaySubtext.textContent = '⚠️ Microphone is muted in Windows or headset! Please unmute to speak.';
+                callOverlaySubtext.style.color = '#fbbf24';
+            }
+        } else {
+            if (callOverlaySubtext) {
+                callOverlaySubtext.textContent = 'Speak naturally. Sonara is listening…';
+                callOverlaySubtext.style.color = '';
+            }
+            if (isCallActive && !isAiSpeaking && !isAiThinking) {
+                setAgentState('listening', 'Connected & Listening (Silero VAD)');
+            }
+        }
     };
 
     /**
@@ -660,9 +693,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn('[App] Preferred constraints failed, falling back to basic audio:', idealErr.message);
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             }
-            const activeMicTrack = mediaStream.getAudioTracks()[0];
+            activeMicTrack = mediaStream.getAudioTracks()[0];
             if (activeMicTrack) {
                 console.log('[App] 🎤 Active Mic Track:', activeMicTrack.label, '| Muted:', activeMicTrack.muted, '| State:', activeMicTrack.readyState);
+
+                activeMicTrack.onmute = () => {
+                    console.warn('[App] 🎤 Active Mic Track muted by OS/hardware');
+                    updateMicMuteStatus(true);
+                    appendSystemMessage('⚠️ Microphone is muted in Windows or via keyboard/headset button. Please unmute to speak.');
+                };
+
+                activeMicTrack.onunmute = () => {
+                    console.log('[App] 🎤 Active Mic Track unmuted by OS/hardware');
+                    updateMicMuteStatus(false);
+                    appendSystemMessage('🎙️ Microphone unmuted and active.');
+                };
+
+                // Check initial muted state immediately upon acquiring track
+                if (activeMicTrack.muted) {
+                    console.warn('[App] 🎤 Active Mic Track is initially muted by OS/hardware!');
+                    updateMicMuteStatus(true);
+                    appendSystemMessage('⚠️ Microphone is muted in Windows or via keyboard/headset button. Please unmute to speak.');
+                } else {
+                    updateMicMuteStatus(false);
+                }
             }
             micSource = audioContext.createMediaStreamSource(mediaStream);
 
@@ -953,6 +1007,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (vadConfidenceLabel) vadConfidenceLabel.textContent = '0%';
         if (audioLevelBar) audioLevelBar.style.width = '0%';
         if (audioLevelLabel) audioLevelLabel.textContent = '0 dB';
+        if (activeMicTrack) {
+            try {
+                activeMicTrack.onmute = null;
+                activeMicTrack.onunmute = null;
+            } catch (_) {}
+            activeMicTrack = null;
+        }
+        updateMicMuteStatus(false);
         if (vadStatus) {
             vadStatus.textContent = 'OFFLINE';
             vadStatus.style.color = 'var(--text-secondary)';
@@ -2086,6 +2148,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 const dbPct = Math.min(100, Math.max(0, Math.round(((dbClamped + 60) / 60) * 100)));
                 if (audioLevelBar) audioLevelBar.style.width = `${dbPct}%`;
                 if (audioLevelLabel) audioLevelLabel.textContent = `${dbClamped} dB`;
+            }
+
+            // Continuous sanity check for OS/hardware mic mute state
+            if (activeMicTrack && isCallActive) {
+                if (activeMicTrack.muted && !isHardwareMicMuted) {
+                    updateMicMuteStatus(true);
+                } else if (!activeMicTrack.muted && isHardwareMicMuted) {
+                    updateMicMuteStatus(false);
+                }
             }
 
             if (ttsEngine && typeof ttsEngine.getAnalyser === 'function') {

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/style.css?v=3.3">
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.all.min.js"></script>
     <script>
         if (typeof ort === 'undefined') {
@@ -66,6 +66,17 @@
                 <div class="handoff-text">
                     <strong>Live Human Escalation Triggered</strong>
                     <p id="handoffReason">Connecting to Converse AI specialist desk...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hardware/OS Microphone Mute Warning Banner -->
+        <div id="micMuteBanner" class="mic-mute-banner" style="display:none;">
+            <div class="mic-mute-banner-content">
+                <div class="mic-mute-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="mic-mute-text">
+                    <strong>⚠️ Microphone is Muted in Windows / Hardware</strong>
+                    <p>Microphone is muted in Windows settings or via keyboard/headset mute switch. Please unmute your microphone to speak.</p>
                 </div>
             </div>
         </div>
@@ -481,6 +492,6 @@
     </div>
 
     <!-- Main Module Script -->
-    <script type="module" src="/app.js?v=3.2"></script>
+    <script type="module" src="/app.js?v=3.3"></script>
 </body>
 </html>
