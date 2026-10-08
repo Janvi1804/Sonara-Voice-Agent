@@ -39,11 +39,13 @@ export class SileroVAD {
 
         this.minSpeechRms         = options.minSpeechRms !== undefined ? options.minSpeechRms : (options.rmsFloor !== undefined ? options.rmsFloor : 0.018);
 
-        // The bundled silero_vad.onnx produces a flat near-zero probability regardless of
-        // input volume once loaded (confirmed via debug logging: prob stayed 0.001-0.003 even
-        // at rms=0.38). Force the acoustic/energy fallback path, which correctly tracks volume,
-        // until the ONNX model/tensor mismatch is fixed.
-        this.disableNeuralModel   = options.disableNeuralModel !== undefined ? options.disableNeuralModel : true;
+        // Silero's streaming ONNX graph requires each 512-sample frame to be prefixed with the
+        // trailing 64 samples from the previous frame (576 total) — without this context window
+        // the model outputs a flat near-zero probability regardless of input volume. See
+        // this._contextSize / frame construction in _runInference.
+        this.contextSize          = 64;
+        this._context             = new Float32Array(this.contextSize);
+        this.disableNeuralModel   = options.disableNeuralModel !== undefined ? options.disableNeuralModel : false;
 
         // Gating & onset state: 1 frame (~32ms) for immediate pickup on conversational voice
         this.speechStartConfirmFrames = Math.max(1, options.speechStartConfirmFrames !== undefined ? options.speechStartConfirmFrames : 1);
@@ -153,6 +155,7 @@ export class SileroVAD {
      */
     resetState() {
         this.stateData.fill(0);
+        this._context.fill(0);
         this._onsetConfirmCount = 0;
         this._bargeInConfirmCount = 0;
     }
@@ -220,7 +223,14 @@ export class SileroVAD {
 
             try {
                 const ort = getOrt();
-                const inputTensor = new ort.Tensor('float32', frame512, [1, 512]);
+                // Silero's streaming graph expects each 512-sample frame prefixed with the
+                // trailing 64 samples of the previous frame (576 total) — feeding bare 512
+                // samples silently produces a flat near-zero probability regardless of volume.
+                const windowed = new Float32Array(this.contextSize + 512);
+                windowed.set(this._context, 0);
+                windowed.set(frame512, this.contextSize);
+
+                const inputTensor = new ort.Tensor('float32', windowed, [1, this.contextSize + 512]);
                 const stateTensor = new ort.Tensor('float32', this.stateData, [2, 1, 128]);
 
                 const feeds = {
@@ -233,10 +243,11 @@ export class SileroVAD {
                 const rawProb = results.output.data[0];
                 prob = Math.round(rawProb * 1000) / 1000;
 
-                // Update recurrent hidden state
+                // Update recurrent hidden state and carry forward the next context window
                 if (results.stateN && results.stateN.data) {
                     this.stateData.set(results.stateN.data);
                 }
+                this._context = windowed.slice(windowed.length - this.contextSize);
             } catch (inferErr) {
                 console.warn('[SileroVAD] Neural step failed, using acoustic fallback:', inferErr.message);
                 prob = rms > 0.018 ? Math.min(1.0, (rms - 0.018) * 30 + 0.50) : 0.05;
