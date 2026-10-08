@@ -99,9 +99,16 @@ export class WhisperSTT {
 
         const wavBlob = this.encodeWAV(merged);
         const isSarvam = this.model === 'sarvam-saaras-v3' || this.model.startsWith('sarvam');
-        const result = isSarvam
+        let result = isSarvam
             ? await this.sendToSarvam(wavBlob, { durationMs, rms })
             : await this.sendToGroqWhisper(wavBlob, { durationMs, rms });
+
+        // Groq shares its daily token quota with the chat LLM — if it's rate-limited or
+        // otherwise erroring out, fall back to Sarvam so transcription still works.
+        if (!isSarvam && (!result || !result.text)) {
+            console.warn('[GroqWhisper] Primary STT failed. Falling back to Sarvam...');
+            result = await this.sendToSarvam(wavBlob, { durationMs, rms });
+        }
 
         if (!result || !result.text) return '';
 
@@ -516,7 +523,7 @@ function devanagariToHinglish(text) {
  */
 function cleanHinglishPhonetics(text) {
     if (!text) return '';
-    let cleaned = text
+    let cleaned = normalizeSpokenTimeWords(text)
         .replace(/\b(naini|nahin|naheen|nhi)\b/gi, 'nahi')
         .replace(/\bkoji\b/gi, 'koi')
         .replace(/\bmen\s+lie\b/gi, 'mere liye')
@@ -554,6 +561,42 @@ function cleanHinglishPhonetics(text) {
         .trim();
     cleaned = convertSpokenDigitSequences(cleaned);
     return cleaned;
+}
+
+/**
+ * Normalizes spoken/phonetic time expressions so downstream time-entity extraction
+ * (memory.js) can match them. Handles two STT failure modes seen in practice:
+ *   1. "pi em" / "ei em" phonetic spellings of "PM" / "AM" (e.g. "thri pi em" for "3 PM").
+ *   2. Spoken number words instead of digits, in English, common STT mishears, or
+ *      romanized Hindi ("teen baje" for "3 baje", "thri pm" for "3 pm").
+ * Without this, "kya teen baje ka slot available hai?" never produces a time entity
+ * and the booking flow silently falls back to a default/stale time.
+ */
+function normalizeSpokenTimeWords(text) {
+    if (!text) return text;
+
+    let out = text
+        .replace(/\bpi\s*\.?\s*em\b/gi, 'PM')
+        .replace(/\bei\s*\.?\s*em\b/gi, 'AM')
+        .replace(/\be\s*em\b/gi, 'AM');
+
+    const numberWordMap = {
+        // English
+        one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+        // Common STT phonetic mishears of English numbers
+        too: 2, tu: 2, thri: 3, tree: 3, thiri: 3, phor: 4, fore: 4, phaiv: 5, siks: 6, sicks: 6,
+        sevan: 7, et: 8, ate: 8, nain: 9, nien: 9,
+        // Romanized Hindi number words
+        ek: 1, do: 2, teen: 3, tin: 3, chaar: 4, char: 4, paanch: 5, panch: 5, chhe: 6, che: 6,
+        saat: 7, aath: 8, nau: 9, das: 10, gyarah: 11, barah: 12
+    };
+
+    out = out.replace(/\b([a-z]+)\s*(am|pm|baje|o'clock)\b/gi, (match, word, suffix) => {
+        const num = numberWordMap[word.toLowerCase()];
+        return num !== undefined ? `${num} ${suffix}` : match;
+    });
+
+    return out;
 }
 
 /**

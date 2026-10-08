@@ -107,16 +107,27 @@ export class ToolCallingEngine {
         switch (toolName) {
             case 'check_availability': {
                 const avail = await this.appointmentDB.checkAvailability(args.date, args.time);
+                let message;
+                if (!avail.exactMatch && avail.requestedTimeRaw) {
+                    // The requested time doesn't match a real slot exactly — be truthful about the rounding
+                    // instead of implying the exact requested time is what's available.
+                    message = avail.isAvailable
+                        ? `There is no exact ${avail.requestedTimeRaw} slot. The closest available slot is ${avail.requestedTime} on ${avail.requestedDate}.`
+                        : `There is no ${avail.requestedTimeRaw} slot, and the closest slot (${avail.requestedTime}) is also booked. Open slots: ${avail.availableSlots.join(', ')}`;
+                } else {
+                    message = avail.isAvailable
+                        ? `Slot ${avail.requestedTime} on ${avail.requestedDate} is available!`
+                        : `Slot ${avail.requestedTime} on ${avail.requestedDate} is booked. Open slots: ${avail.availableSlots.join(', ')}`;
+                }
                 result = {
                     tool: 'check_availability',
                     success: true,
                     isAvailable: avail.isAvailable,
                     date: avail.requestedDate,
                     time: avail.requestedTime,
+                    exactMatch: avail.exactMatch,
                     availableSlots: avail.availableSlots,
-                    message: avail.isAvailable 
-                        ? `Slot ${avail.requestedTime} on ${avail.requestedDate} is available!`
-                        : `Slot ${avail.requestedTime} on ${avail.requestedDate} is booked. Open slots: ${avail.availableSlots.join(', ')}`
+                    message
                 };
                 break;
             }

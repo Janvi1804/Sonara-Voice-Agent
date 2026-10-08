@@ -126,33 +126,52 @@ export class AppointmentDB {
      * Standard slots: 10:00 AM | 11:30 AM | 02:00 PM | 03:30 PM | 05:00 PM
      */
     normalizeTime(timeInput) {
-        if (!timeInput) return '11:30 AM';
+        return this.matchTimeSlot(timeInput).slot;
+    }
+
+    /**
+     * Match a free-form time string to one of the 5 standard slots AND report
+     * whether that match was exact or just the nearest slot. "3 PM"/"3pm" is NOT
+     * an exact match for the 3:30 PM slot — callers need to know that distinction
+     * so they don't tell the customer their exact requested time is available
+     * when it was actually rounded to a different slot.
+     */
+    matchTimeSlot(timeInput) {
+        if (!timeInput) return { slot: '11:30 AM', exact: false, hadInput: false };
         const clean = timeInput.toLowerCase().trim();
 
-        // Exact pattern match first
-        if (clean.includes('10:00') || clean.includes('10 am') || clean.includes('10am')) return '10:00 AM';
-        if (clean.includes('11:30') || clean.includes('11.30') || clean.includes('11 am') || clean.includes('11am')) return '11:30 AM';
-        if (clean.includes('2:00') || clean.includes('02:00') || clean.includes('2 pm') || clean.includes('2pm') || clean.includes('14:00')) return '2:00 PM';
-        if (clean.includes('3:30') || clean.includes('03:30') || clean.includes('3.30') || clean.includes('3 pm') || clean.includes('3pm') || clean.includes('15:30')) return '3:30 PM';
-        if (clean.includes('5:00') || clean.includes('05:00') || clean.includes('5 pm') || clean.includes('5pm') || clean.includes('17:00')) return '5:00 PM';
+        // Exact pattern match first — only patterns that are truly that slot's time
+        const exactSlots = [
+            { slot: '10:00 AM', patterns: ['10:00', '10 am', '10am'] },
+            { slot: '11:30 AM', patterns: ['11:30', '11.30'] },
+            { slot: '2:00 PM', patterns: ['2:00', '02:00', '2 pm', '2pm', '14:00'] },
+            { slot: '3:30 PM', patterns: ['3:30', '03:30', '3.30', '15:30'] },
+            { slot: '5:00 PM', patterns: ['5:00', '05:00', '5 pm', '5pm', '17:00'] }
+        ];
+        for (const { slot, patterns } of exactSlots) {
+            if (patterns.some(p => clean.includes(p))) return { slot, exact: true, hadInput: true };
+        }
 
-        // Extract the first number from the time string (e.g. "3 baje", "11:30 AM", "14:00", "2pm")
+        // Extract the first number from the time string (e.g. "3 baje", "11 am", "14:00", "2pm")
         const numMatch = clean.match(/(\d{1,2})/);
-        if (!numMatch) return '11:30 AM';
+        if (!numMatch) return { slot: '11:30 AM', exact: false, hadInput: true };
         const hour = parseInt(numMatch[1], 10);
 
         // Handle 24-hour format
         const is24h = hour >= 13 && hour <= 23;
         const h = is24h ? hour - 12 : hour;
 
-        // Map to nearest standard slot
-        if (h === 10) return '10:00 AM';
-        if (h === 11 || h === 12) return '11:30 AM'; // 12 baje = 12 PM → nearest slot 11:30 AM
-        if (h === 1 || h === 2) return '2:00 PM';   // 1 PM, 2 PM
-        if (h === 3 || h === 4) return '3:30 PM';   // 3 PM, 4 PM
-        if (h >= 5 && h <= 9) return '5:00 PM';     // evening slots
+        // Map to nearest standard slot — mark exact only when the hour genuinely equals the slot's hour
+        if (h === 10) return { slot: '10:00 AM', exact: true, hadInput: true };
+        if (h === 11) return { slot: '11:30 AM', exact: false, hadInput: true }; // asked 11:00, slot is 11:30
+        if (h === 12) return { slot: '11:30 AM', exact: false, hadInput: true };
+        if (h === 1) return { slot: '2:00 PM', exact: false, hadInput: true };
+        if (h === 2) return { slot: '2:00 PM', exact: true, hadInput: true };
+        if (h === 3) return { slot: '3:30 PM', exact: false, hadInput: true };  // asked 3:00, slot is 3:30
+        if (h === 4) return { slot: '3:30 PM', exact: false, hadInput: true };
+        if (h >= 5 && h <= 9) return { slot: '5:00 PM', exact: h === 5, hadInput: true };
 
-        return '11:30 AM'; // safe default
+        return { slot: '11:30 AM', exact: false, hadInput: true }; // safe default
     }
 
     /**
@@ -178,12 +197,14 @@ export class AppointmentDB {
     async checkAvailability(date, time) {
         await this.init();
         const normDate = this.normalizeDate(date);
-        const normTime = this.normalizeTime(time);
+        const match = this.matchTimeSlot(time);
         const available = await this.getAvailableSlots(normDate);
         return {
-            isAvailable: available.includes(normTime),
+            isAvailable: available.includes(match.slot),
             requestedDate: normDate,
-            requestedTime: normTime,
+            requestedTime: match.slot,
+            requestedTimeRaw: time || '',
+            exactMatch: match.exact,
             availableSlots: available
         };
     }

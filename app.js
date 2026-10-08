@@ -166,12 +166,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Sarvam saaras:v3 default — handles Hindi/Hinglish code-switching without
-    // mistranslating into English the way Groq Whisper's auto-detect does on short mixed-language speech)
+    // Initialize STT Engine (Groq Whisper Large-v3-Turbo default — better accented Hindi/English/Hinglish
+    // accuracy than Sarvam, plus supports a domain-biasing prompt hint. Sarvam remains an automatic
+    // fallback on error or on known phantom hallucinations — see whisper-stt.js)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '',
-        model: 'sarvam-saaras-v3',
+        model: 'whisper-large-v3-turbo',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -267,17 +268,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v5');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v6');
         if (!sttMigrated) {
-            // Sarvam saaras:v3 default — avoids Groq Whisper auto-detect mistranslating
-            // short Hindi/Hinglish speech into garbled English.
-            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
-            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
-            localStorage.setItem('sonara_stt_migrated_v5', 'true');
+            // Groq Whisper Large-v3-Turbo default — better accented Hindi/English/Hinglish accuracy
+            // than Sarvam, and supports a domain-biasing prompt hint that Sarvam's API lacks.
+            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
+            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
+            localStorage.setItem('sonara_stt_migrated_v6', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'sarvam-saaras-v3';
+            selSttModel.value = 'whisper-large-v3-turbo';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
@@ -285,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3-turbo');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -819,7 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isCallActive) {
                         isTranscribingSpeech = true;
                         try {
-                            const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
+                            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
                             const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
                             const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
                             setAgentState('thinking', `Transcribing (${sttLabel})...`);
@@ -1580,7 +1581,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     toolDirective = `CRITICAL: Cancellation could not be completed: ${toolResult.message}. Inform user truthfully.`;
                 }
             } else if (toolResult.tool === 'check_availability') {
-                if (toolResult.isAvailable) {
+                if (!toolResult.exactMatch) {
+                    // The user's requested time doesn't correspond exactly to a real slot — tell the LLM the
+                    // real slot time explicitly so it doesn't claim the user's exact requested time is free.
+                    toolDirective = toolResult.isAvailable
+                        ? `CRITICAL TRUTHFULNESS: There is no slot at exactly the time the user asked for. The closest real slot is ${toolResult.time} on ${toolResult.date}, which IS available. You MUST tell the user there's no exact match at their requested time and offer them the ${toolResult.time} slot instead — do not claim their exact requested time is available.`
+                        : `CRITICAL TRUTHFULNESS: There is no slot at exactly the time the user asked for, and the closest slot (${toolResult.time}) is also booked. Offer these open alternative slots: ${(toolResult.availableSlots || []).join(', ')}.`;
+                } else if (toolResult.isAvailable) {
                     toolDirective = `CRITICAL: Slot ${toolResult.time} on ${toolResult.date} IS available. Tell the user clearly that it's available and ask if they want to confirm it.`;
                 } else {
                     toolDirective = `CRITICAL TRUTHFULNESS: Slot ${toolResult.time} on ${toolResult.date} is NOT available. You MUST explicitly tell the user this exact slot is already booked, and then offer these open alternative slots so they can pick one: ${(toolResult.availableSlots || []).join(', ')}. Do not skip mentioning the alternatives.`;
@@ -2031,7 +2038,15 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             }).catch(() => {});
 
             if (isCallActive && ttsEngine) {
-                ttsEngine.speak(fullResponse);
+                // Keep the full raw error in the chat bubble/log for debugging (truthful, nothing hidden),
+                // but never read a technical API error aloud to a live caller — speak a short, equally
+                // truthful, human sentence instead. This is NOT a fake success response, just a
+                // caller-appropriate phrasing of the same failure.
+                const isRateLimit = /rate limit|quota exceeded|tokens per day/i.test(err.message);
+                const spokenError = isRateLimit
+                    ? 'Maaf kijiye, hamara AI system abhi thodi der ke liye busy hai. Kripya kuch minute baad dobara try karein.'
+                    : 'Maaf kijiye, ek technical issue aa gaya hai. Kripya thodi der baad dobara try karein.';
+                ttsEngine.speak(spokenError);
             } else {
                 setAgentState('idle', 'Agent Inactive • Click to Start');
             }
