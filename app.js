@@ -1900,12 +1900,17 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                 throw new Error(`Groq API error: ${detail}`);
             }
 
-            // ─── Consume the SSE token stream, speaking each completed sentence immediately ───
+            // ─── Consume the SSE token stream. Speak ONLY the first sentence immediately
+            // (fast TTFT), then batch everything else into a single TTS call at the end.
+            // Reason: each TTS call costs ~1.7-2.8s regardless of chunk size, so speaking
+            // every sentence separately (3 sentences = 3 calls) stacks that cost 3x. One
+            // batched call for the remainder keeps the fast opening without paying per-sentence. ───
             const canSpeak = isCallActive && !!ttsEngine;
             let rawAccumulated = '';
             let speechBuffer = '';
             let streamError = null;
             let reportedModel = selLlmModel ? selLlmModel.value : 'qwen/qwen3.8-27b';
+            let firstSentenceSpoken = false;
 
             const speakSentence = (sentence) => {
                 const spoken = sentence.replace(/[*_#`~[\]]/g, '').trim();
@@ -1963,9 +1968,19 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                         aiMessageBubble.textContent = rawAccumulated;
 
                         speechBuffer += json.delta;
-                        const { sentences, remainder } = popCompleteSentences(speechBuffer);
-                        speechBuffer = remainder;
-                        sentences.forEach(speakSentence);
+                        if (!firstSentenceSpoken) {
+                            const { sentences, remainder } = popCompleteSentences(speechBuffer);
+                            if (sentences.length > 0) {
+                                // Speak only the very first sentence for a fast start; keep any
+                                // other already-complete sentences buffered with the remainder
+                                // so they go out together in the single end-of-stream flush.
+                                speakSentence(sentences[0]);
+                                firstSentenceSpoken = true;
+                                speechBuffer = sentences.slice(1).join(' ') + (sentences.length > 1 ? ' ' : '') + remainder;
+                            }
+                        }
+                        // After the first sentence is spoken, stop popping/speaking per-sentence —
+                        // just keep accumulating. The full remainder is flushed as one TTS call below.
                     }
 
                     if (json.done) {
