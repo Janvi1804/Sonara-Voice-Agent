@@ -282,6 +282,34 @@ export class SarvamTTS {
     }
 
     /**
+     * Play a pre-generated, locally-cached greeting file instead of calling the Sarvam API.
+     * Used for the fixed opening greeting so the agent starts talking instantly (0 network
+     * latency) instead of paying Sarvam's ~2-3s synthesis round-trip on every call start.
+     * Falls back to a normal speak() call if the cached file can't be fetched.
+     */
+    async speakPrecached(url, text) {
+        if (this.isPlaying) this.interrupt();
+        this.isInterrupted = false;
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const blob = await res.blob();
+
+            this.isPlaying = true;
+            this.onStart();
+            this.onSentenceStart(text || '');
+            await this._playBlob(blob);
+            this.isPlaying = false;
+            if (!this.isInterrupted) this.onEnd();
+        } catch (err) {
+            console.warn('[SarvamTTS] Precached greeting failed, falling back to live synthesis:', err.message);
+            this.isPlaying = false;
+            return this.speak(text);
+        }
+    }
+
+    /**
      * Main speak — detects language once, splits into clean chunks,
      * pipelines fetch+play to eliminate all inter-chunk pauses with 100% Sarvam voice.
      */

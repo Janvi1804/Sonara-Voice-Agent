@@ -189,7 +189,9 @@ export class WhisperSTT {
             'thank you for watching', 'thanks for watching', 'thank you for listening',
             'thanks', 'you', 'namaste', 'um', 'uh', 'hmm', 'hm',
             'music', 'applause', 'laughter', 'silence', 'background noise',
-            'hindi', 'english', 'hinglish', 'bye', 'goodbye', 'subtitles by'
+            'hindi', 'english', 'hinglish', 'bye', 'goodbye', 'subtitles by',
+            'cough', 'coughing', 'sigh', 'sighing', 'sneeze', 'sneezing',
+            'throat clearing', 'clears throat', 'breathing', 'sniff', 'sniffing'
         ];
 
         // If it matches a known phantom hallucination:
@@ -556,6 +558,7 @@ function cleanHinglishPhonetics(text) {
         .replace(/\bkya\s+ke\s+services\b/gi, 'kya services')
         // Common English/domain words Sarvam/Whisper mis-hear phonetically in code-switched speech
         .replace(/\bso\s+nara\b/gi, 'Sonara')
+        .replace(/\bsanara\b/gi, 'Sonara')
         .replace(/\bkainsil\b/gi, 'cancel')
         .replace(/\bhyooman\b/gi, 'human')
         .replace(/\briyal\s+parsan\b/gi, 'real person')

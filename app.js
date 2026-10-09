@@ -1351,7 +1351,8 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationHistory.push({ role: 'assistant', content: welcomeText });
         if (ttsEngine && isCallActive) {
             isWelcomeGreetingPlaying = true;
-            ttsEngine.speak(welcomeText);
+            // Pre-cached static audio — plays instantly, skips Sarvam API round-trip
+            ttsEngine.speakPrecached('/public/audio/welcome-greeting.wav', welcomeText);
             // Safety: greeting takes ~4.5s; release flag after 6s max
             setTimeout(() => {
                 isWelcomeGreetingPlaying = false;
@@ -2400,7 +2401,12 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                         : "Namaste! Welcome to Converse AI. I'm Sonara — how can I help you today?";
                     appendChatMessage('assistant', greeting);
                     conversationHistory.push({ role: 'assistant', content: greeting });
-                    if (ttsEngine) ttsEngine.speak(greeting);
+                    if (ttsEngine) {
+                        // Personalised greeting (has a name) must still be synthesized live;
+                        // the generic one uses the pre-cached static file for instant playback.
+                        if (name) ttsEngine.speak(greeting);
+                        else ttsEngine.speakPrecached('/public/audio/welcome-greeting.wav', greeting);
+                    }
                 }, 450);
 
             } else {
