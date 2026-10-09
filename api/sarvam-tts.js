@@ -5,6 +5,7 @@
  * Supports: Hindi (hi-IN), English (en-IN), Hinglish (auto-detected)
  * Endpoint: REST Stream for lowest latency
  */
+import { Readable } from 'node:stream';
 import { setCorsHeaders, checkRateLimit } from './_utils.js';
 
 export default async function handler(req, res) {
@@ -91,11 +92,25 @@ export default async function handler(req, res) {
         const contentType = activeRes.headers.get('content-type') || 'audio/mpeg';
 
         if (contentType.includes('audio/')) {
-            // Direct audio stream — pipe bytes to client
-            const audioBuffer = await activeRes.arrayBuffer();
+            // Pipe bytes through to the client as Sarvam sends them, instead of
+            // buffering the full response here first — avoids paying the whole
+            // upstream generation time twice (once waiting to buffer, once
+            // forwarding) and lets the client start receiving sooner.
             res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Length', audioBuffer.byteLength);
             res.statusCode = 200;
+            if (activeRes.body) {
+                await new Promise((resolve, reject) => {
+                    const nodeStream = Readable.fromWeb(activeRes.body);
+                    nodeStream.on('error', reject);
+                    res.on('error', reject);
+                    res.on('close', resolve);
+                    nodeStream.pipe(res);
+                    nodeStream.on('end', resolve);
+                });
+                return;
+            }
+            const audioBuffer = await activeRes.arrayBuffer();
+            res.setHeader('Content-Length', audioBuffer.byteLength);
             if (typeof res.send === 'function') {
                 return res.send(Buffer.from(audioBuffer));
             }

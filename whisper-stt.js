@@ -99,8 +99,12 @@ export class WhisperSTT {
 
         const wavBlob = this.encodeWAV(merged);
         const isSarvam = this.model === 'sarvam-saaras-v3' || this.model.startsWith('sarvam');
+
+        // Both configured models are hedged against each other via transcribeRace():
+        // whichever of Sarvam/Groq returns a usable transcript first wins, instead of
+        // trying one fully, timing out, then paying the full latency of the other.
         let result = isSarvam
-            ? await this.sendToSarvam(wavBlob, { durationMs, rms })
+            ? await this.transcribeRace(wavBlob, { durationMs, rms })
             : await this.sendToGroqWhisper(wavBlob, { durationMs, rms });
 
         // Groq shares its daily token quota with the chat LLM — if it's rate-limited or
@@ -111,8 +115,7 @@ export class WhisperSTT {
         }
 
         if (!result || !result.text) {
-            // By this point both the primary engine and its internal fallback (Sarvam <-> Groq,
-            // see sendToSarvam's catch and the block above) have been tried.
+            // By this point both engines (Sarvam and Groq) have been tried.
             this.onError(new Error('Transcription failed on both Sarvam and Groq.'));
             return '';
         }
@@ -371,7 +374,9 @@ export class WhisperSTT {
     }
 
     /**
-     * Send recorded audio to Sarvam AI STT endpoint (saaras:v3)
+     * Send recorded audio to Sarvam AI STT endpoint (saaras:v3).
+     * Pure attempt -- no internal fallback. Callers that want a Groq fallback
+     * should use transcribeRace(), which hedges both engines concurrently.
      */
     async sendToSarvam(wavBlob, meta = {}) {
         this.isTranscribing = true;
@@ -409,9 +414,64 @@ export class WhisperSTT {
         } catch (err) {
             this.isTranscribing = false;
             console.error('[SarvamSTT] Transcription error:', err.message);
-            console.warn('[STT] Auto-falling back to Groq Whisper Large V3 Turbo...');
-            return await this.sendToGroqWhisper(wavBlob, meta);
+            return null;
         }
+    }
+
+    /**
+     * Hedged race between Sarvam and Groq Whisper. Sarvam always starts first;
+     * Groq only joins in if Sarvam hasn't answered within HEDGE_DELAY_MS, or
+     * immediately if Sarvam errors out -- so a normal fast Sarvam response
+     * never burns Groq's shared quota, but a slow/failing one no longer pays
+     * the full sequential 3.5s-timeout + Groq-roundtrip penalty before falling
+     * back. Resolves with whichever usable transcript ({ text: ... }) lands
+     * first; resolves null only if both engines end up without usable text.
+     */
+    async transcribeRace(wavBlob, meta = {}) {
+        const HEDGE_DELAY_MS = 1200;
+        return new Promise((resolve) => {
+            let settled = false;
+            let sarvamDone = false;
+            let groqStarted = false;
+
+            const settleWith = (result) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(hedgeTimer);
+                resolve(result);
+            };
+
+            const maybeSettleNull = () => {
+                if (sarvamDone && groqStarted) settleWith(null);
+            };
+
+            const startGroq = () => {
+                if (groqStarted) return;
+                groqStarted = true;
+                this.sendToGroqWhisper(wavBlob, meta).then((r) => {
+                    if (r && r.text) settleWith(r);
+                    else maybeSettleNull();
+                });
+            };
+
+            const hedgeTimer = setTimeout(() => {
+                if (!sarvamDone) {
+                    console.log('[STT] Sarvam slow to respond, hedging with Groq Whisper...');
+                    startGroq();
+                }
+            }, HEDGE_DELAY_MS);
+
+            this.sendToSarvam(wavBlob, meta).then((r) => {
+                sarvamDone = true;
+                if (r && r.text) {
+                    settleWith(r);
+                    return;
+                }
+                console.warn('[STT] Sarvam returned nothing usable, falling back to Groq Whisper...');
+                startGroq();
+                maybeSettleNull();
+            });
+        });
     }
 }
 
