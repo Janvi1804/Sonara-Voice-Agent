@@ -10,7 +10,7 @@ export class WhisperSTT {
         // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
         // Set to 'hi' or 'en' only if you want to FORCE a specific language
         this.language = options.language || '';
-        this.model = options.model || 'sarvam-saaras-v3';
+        this.model = options.model || 'whisper-large-v3-turbo';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
         this.sampleRate = 16000;
@@ -25,7 +25,7 @@ export class WhisperSTT {
     }
 
     setApiKey(key) { this.apiKey = key; }
-    setModel(m) { this.model = m || 'sarvam-saaras-v3'; }
+    setModel(m) { this.model = m || 'whisper-large-v3-turbo'; }
     // Allow 'hi', 'en', or '' (auto-detect)
     setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.005, Math.min(0.05, Number(val) || 0.018)); }

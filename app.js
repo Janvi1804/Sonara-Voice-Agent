@@ -268,17 +268,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v7');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v8');
         if (!sttMigrated) {
-            // Sarvam saaras:v3 default — better Hindi/Hinglish code-switching accuracy than Groq
-            // Whisper, which kept hallucinating/translating on Hindi input in testing.
-            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
-            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
-            localStorage.setItem('sonara_stt_migrated_v7', 'true');
+            // Groq Whisper Large V3 Turbo default for sub-150ms real-time latency
+            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
+            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
+            localStorage.setItem('sonara_stt_migrated_v8', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'sarvam-saaras-v3';
+            selSttModel.value = 'whisper-large-v3-turbo';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
