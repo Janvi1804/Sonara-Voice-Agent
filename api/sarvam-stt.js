@@ -31,9 +31,19 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: 'SARVAM_API_KEY is not configured on server.' });
         }
 
-        // Buffer incoming multipart request
+        // Buffer incoming multipart request. Cap total size as defense-in-depth — the
+        // platform has its own payload limit, but this avoids fully buffering an
+        // oversized-but-platform-permitted upload into memory before Sarvam sees it.
+        const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
         const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
+        let totalBytes = 0;
+        for await (const chunk of req) {
+            totalBytes += chunk.length;
+            if (totalBytes > MAX_AUDIO_BYTES) {
+                return res.status(413).json({ error: 'Audio payload too large.' });
+            }
+            chunks.push(chunk);
+        }
         const buffer = Buffer.concat(chunks);
 
         // Forward to Sarvam STT with same Content-Type boundary
