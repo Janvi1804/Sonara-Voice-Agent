@@ -293,8 +293,17 @@ export class WhisperSTT {
             'throat clearing', 'clears throat', 'breathing', 'sniff', 'sniffing'
         ];
 
+        // Match exact phrase OR lowerText starting with a known hallucination phrase
+        // followed by more words (e.g. Whisper padding "subtitles by" into "subtitles by
+        // the amara.org community" — a real hallucination seen in production that an
+        // exact-match-only check let through because the full string never equals the
+        // bare phrase).
+        const matchedHallucination = noiseHallucinations.find(
+            p => lowerText === p || lowerText.startsWith(p + ' ')
+        );
+
         // If it matches a known phantom hallucination:
-        if (noiseHallucinations.includes(lowerText)) {
+        if (matchedHallucination) {
             // Case 1: Audio was faint, short, or had elevated noSpeechProb
             const isFaintOrSuspicious = (rms < 0.018) || (result.noSpeechProb > 0.15) || (durationMs < 650);
 
@@ -303,14 +312,16 @@ export class WhisperSTT {
                 'thank you', 'thank you very much', 'thank you so much',
                 'thank you for watching', 'thanks for watching', 'thank you for listening',
                 'subtitles by', 'you', 'thanks', 'bye', 'goodbye'
-            ].includes(lowerText);
+            ].includes(matchedHallucination);
 
             // If a longer Hinglish question hallucinated as "thank you", automatically retry with Sarvam STT
             if (isLongSpeechHallucination && !isSarvam) {
                 console.warn(`[GroqWhisper] Phantom "${text}" on ${Math.round(durationMs)}ms speech. Retrying with Sarvam STT...`);
                 try {
                     const sarvamRes = await this.sendToSarvam(wavBlob, { durationMs, rms });
-                    if (sarvamRes && sarvamRes.text && !noiseHallucinations.includes(sarvamRes.text.toLowerCase().trim())) {
+                    const sarvamLower = sarvamRes ? sarvamRes.text.toLowerCase().trim() : '';
+                    const sarvamIsHallucination = noiseHallucinations.some(p => sarvamLower === p || sarvamLower.startsWith(p + ' '));
+                    if (sarvamRes && sarvamRes.text && !sarvamIsHallucination) {
                         this.audioChunks = [];
                         this.onTranscript(sarvamRes.text);
                         return sarvamRes.text;
