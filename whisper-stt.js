@@ -22,6 +22,29 @@ export class WhisperSTT {
 
         this.rmsFloor = options.rmsFloor !== undefined ? options.rmsFloor : 0.012;
         this.minDurationMs = options.minDurationMs !== undefined ? options.minDurationMs : 200;
+
+        // Compressed upload path: a MediaRecorder running in parallel to the raw PCM
+        // capture (which we still need for VAD/rms/duration checks). Sending Opus/WebM
+        // instead of a hand-rolled 16-bit PCM WAV cuts upload payload ~5-10x, which is
+        // most of the Groq/Sarvam round-trip latency for anything but very short utterances.
+        this.mediaStream = null;
+        this.mediaRecorder = null;
+        this.recordedChunks = [];
+        this.recorderMimeType = WhisperSTT.pickSupportedMimeType();
+    }
+
+    static pickSupportedMimeType() {
+        const candidates = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus'
+        ];
+        if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return null;
+        return candidates.find(t => MediaRecorder.isTypeSupported(t)) || null;
+    }
+
+    setMediaStream(stream) {
+        this.mediaStream = stream || null;
     }
 
     setApiKey(key) { this.apiKey = key; }
@@ -41,6 +64,52 @@ export class WhisperSTT {
         this.audioChunks = [...this.preSpeechRingBuffer];
         this.preSpeechRingBuffer = [];
         this.isRecording = true;
+        this._startCompressedRecorder();
+    }
+
+    /**
+     * Start a MediaRecorder in parallel with raw PCM capture so we have a small
+     * Opus/WebM blob ready by the time speech ends, instead of uploading a raw
+     * 16-bit PCM WAV (~5-10x larger) to Groq. Falls back silently to WAV if the
+     * browser/stream doesn't support it.
+     */
+    _startCompressedRecorder() {
+        this.recordedChunks = [];
+        if (!this.mediaStream || !this.recorderMimeType) return;
+        try {
+            this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType: this.recorderMimeType });
+            this.mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
+            };
+            this.mediaRecorder.start();
+        } catch (e) {
+            console.warn('[GroqWhisper] Compressed recorder unavailable, falling back to WAV:', e.message);
+            this.mediaRecorder = null;
+        }
+    }
+
+    /**
+     * Stop the MediaRecorder (if running) and resolve with the assembled Opus/WebM
+     * blob, or null if unavailable/empty — callers fall back to WAV in that case.
+     */
+    _stopCompressedRecorder() {
+        return new Promise((resolve) => {
+            if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+                resolve(null);
+                return;
+            }
+            const mimeType = this.recorderMimeType;
+            this.mediaRecorder.onstop = () => {
+                const chunks = this.recordedChunks;
+                this.recordedChunks = [];
+                resolve(chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null);
+            };
+            try {
+                this.mediaRecorder.stop();
+            } catch (_) {
+                resolve(null);
+            }
+        });
     }
 
     pushAudioFrame(pcm16kFloat32) {
@@ -98,14 +167,19 @@ export class WhisperSTT {
         this.audioChunks = [];
 
         const wavBlob = this.encodeWAV(merged);
+        // Opus/WebM is ~5-10x smaller than raw PCM16 WAV for the same audio — cuts
+        // upload time to Groq, which is the dominant cost for anything but very short
+        // utterances. Sarvam keeps using WAV since its webm/opus support is unverified.
+        const compressedBlob = await this._stopCompressedRecorder();
+        const groqBlob = compressedBlob || wavBlob;
         const isSarvam = this.model === 'sarvam-saaras-v3' || this.model.startsWith('sarvam');
 
         // Both configured models are hedged against each other via transcribeRace():
         // whichever of Sarvam/Groq returns a usable transcript first wins, instead of
         // trying one fully, timing out, then paying the full latency of the other.
         let result = isSarvam
-            ? await this.transcribeRace(wavBlob, { durationMs, rms })
-            : await this.sendToGroqWhisper(wavBlob, { durationMs, rms });
+            ? await this.transcribeRace(wavBlob, groqBlob, { durationMs, rms })
+            : await this.sendToGroqWhisper(groqBlob, { durationMs, rms });
 
         // Groq shares its daily token quota with the chat LLM — if it's rate-limited or
         // otherwise erroring out, fall back to Sarvam so transcription still works.
@@ -308,12 +382,13 @@ export class WhisperSTT {
     /**
      * Send recorded audio strictly to Groq Whisper endpoint
      */
-    async sendToGroqWhisper(wavBlob, meta = {}, signal) {
+    async sendToGroqWhisper(audioBlob, meta = {}, signal) {
         this.isTranscribing = true;
         const tStart = performance.now();
         try {
+            const ext = audioBlob.type.includes('ogg') ? 'ogg' : audioBlob.type.includes('webm') ? 'webm' : 'wav';
             const whisperForm = new FormData();
-            whisperForm.append('file', wavBlob, 'user_speech.wav');
+            whisperForm.append('file', audioBlob, `user_speech.${ext}`);
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
@@ -444,7 +519,7 @@ export class WhisperSTT {
      * back. Resolves with whichever usable transcript ({ text: ... }) lands
      * first; resolves null only if both engines end up without usable text.
      */
-    async transcribeRace(wavBlob, meta = {}) {
+    async transcribeRace(wavBlob, groqBlob, meta = {}) {
         // Fires both Sarvam and Groq together after a short head start for Sarvam, instead of
         // waiting a near-fixed 1.2s for Sarvam before even starting Groq. Sarvam still gets to
         // win uncontested if it answers fast; Groq joins quickly as a hedge otherwise, and the
@@ -476,7 +551,7 @@ export class WhisperSTT {
             const startGroq = () => {
                 if (groqStarted) return;
                 groqStarted = true;
-                this.sendToGroqWhisper(wavBlob, meta, groqController.signal).then((r) => {
+                this.sendToGroqWhisper(groqBlob || wavBlob, meta, groqController.signal).then((r) => {
                     if (r && r.text) settleWith(r, 'groq');
                     else maybeSettleNull();
                 });

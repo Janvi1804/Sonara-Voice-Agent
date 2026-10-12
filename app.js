@@ -701,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn('[App] Preferred constraints failed, falling back to basic audio:', idealErr.message);
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             }
+            if (whisperEngine) whisperEngine.setMediaStream(mediaStream);
             activeMicTrack = mediaStream.getAudioTracks()[0];
             if (activeMicTrack) {
                 console.log('[App] 🎤 Active Mic Track:', activeMicTrack.label, '| Muted:', activeMicTrack.muted, '| State:', activeMicTrack.readyState);
