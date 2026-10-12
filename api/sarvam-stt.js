@@ -1,6 +1,6 @@
 /**
  * Vercel Serverless Function: /api/sarvam-stt
- * Proxy for Sarvam AI Speech-to-Text (saarika:v2 model)
+ * Proxy for Sarvam AI Speech-to-Text (saaras:v3 model)
  * Hindi, English, Hinglish transcription
  */
 import { setCorsHeaders, checkRateLimit } from './_utils.js';
