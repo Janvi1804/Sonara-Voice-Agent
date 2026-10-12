@@ -178,13 +178,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Sarvam saaras:v3 default — better Hindi/Hinglish code-switching
-    // accuracy than Groq Whisper, which kept hallucinating/translating on Hindi input in testing.
-    // Groq Whisper remains an automatic fallback on Sarvam error — see whisper-stt.js)
+    // Initialize STT Engine (Groq Whisper default — Sarvam was adding a 400ms+ hedge-wait
+    // on every turn with no benefit since it kept failing silently in production.
+    // Sarvam remains an automatic fallback on Groq error — see whisper-stt.js)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '',
-        model: 'sarvam-saaras-v3',
+        model: 'whisper-large-v3-turbo',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -1302,16 +1302,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.error === 'no-speech' || e.error === 'aborted') return;
                 console.warn('STT Note:', e.error);
                 isRecognizing = false;
-                if (isCallActive && !isAiSpeaking) {
+                // Must restart even while isAiSpeaking -- this recognizer is the only thing
+                // listening for "stop"/"pause" voice commands, and the user needs those to
+                // work precisely while the AI is talking. Only isCallActive gates it now.
+                if (isCallActive) {
                     setTimeout(startRecognitionSafely, 300);
                 }
             };
 
             speechRecognition.onend = () => {
                 isRecognizing = false;
-                if (!isCallActive || isAiSpeaking || isAiThinking || isProcessingUtterance) return;
+                if (!isCallActive) return;
                 setTimeout(() => {
-                    if (isCallActive && !isAiSpeaking && !isAiThinking && !isProcessingUtterance) {
+                    if (isCallActive) {
                         startRecognitionSafely();
                     }
                 }, 200);
