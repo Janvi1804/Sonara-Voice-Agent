@@ -414,7 +414,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3-turbo');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken (Devanagari for Hindi, e.g. नमस्ते). Do not translate.');
+            whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken (Devanagari for Hindi, e.g. नमस्ते). Do not translate. Domain vocabulary: Converse AI, Sonara, WhatsApp automation, lead generation, automatic calling, AI voice agents, unified inbox, enterprise RAG, Groq, Sarvam.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }
@@ -754,6 +754,11 @@ function cleanHinglishPhonetics(text) {
         .replace(/\byor\b/gi, 'your')
         .replace(/\botometed\s+koling\b/gi, 'automated calling')
         .replace(/\blid\s+janareshan\b/gi, 'lead generation')
+        .replace(/\byoot\s+janareshan\b/gi, 'lead generation')
+        .replace(/\bjanareshan\b/gi, 'generation')
+        .replace(/\bvase\s+AI\b/gi, 'Converse AI')
+        .replace(/\bmenn\s+solishans?\b/gi, 'main solutions')
+        .replace(/\bsolishans?\b/gi, 'solutions')
         .replace(/\bselsaphors?\s+siaaraem\b/gi, 'Salesforce system')
         .replace(/\bkonvarsiya\b/gi, 'Converse AI')
         .replace(/\bintigret\b/gi, 'integrate')
