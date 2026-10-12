@@ -58,6 +58,26 @@ export class WhisperSTT {
         this.audioChunks = [];
         this.preSpeechRingBuffer = [];
         this.isRecording = false;
+        // Must also kill the parallel MediaRecorder here -- otherwise a discarded turn
+        // (AI already speaking/thinking) leaves it running into the next startRecording(),
+        // which reassigns recordedChunks mid-flight and lets audio leak/accumulate across
+        // turns, producing oversized multi-utterance blobs on later turns.
+        this._discardCompressedRecorder();
+    }
+
+    /**
+     * Hard-stop the MediaRecorder without caring about its output -- used when a turn
+     * is discarded (clearBuffer) or before starting a new recorder, so there is never
+     * more than one MediaRecorder instance alive against the same mediaStream.
+     */
+    _discardCompressedRecorder() {
+        this.recordedChunks = [];
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.ondataavailable = null;
+            this.mediaRecorder.onstop = null;
+            try { this.mediaRecorder.stop(); } catch (_) {}
+        }
+        this.mediaRecorder = null;
     }
 
     startRecording() {
@@ -74,7 +94,7 @@ export class WhisperSTT {
      * browser/stream doesn't support it.
      */
     _startCompressedRecorder() {
-        this.recordedChunks = [];
+        this._discardCompressedRecorder();
         if (!this.mediaStream || !this.recorderMimeType) return;
         try {
             this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType: this.recorderMimeType });
@@ -102,11 +122,13 @@ export class WhisperSTT {
             this.mediaRecorder.onstop = () => {
                 const chunks = this.recordedChunks;
                 this.recordedChunks = [];
+                this.mediaRecorder = null;
                 resolve(chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null);
             };
             try {
                 this.mediaRecorder.stop();
             } catch (_) {
+                this.mediaRecorder = null;
                 resolve(null);
             }
         });
