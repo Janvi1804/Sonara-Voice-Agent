@@ -308,7 +308,7 @@ export class WhisperSTT {
     /**
      * Send recorded audio strictly to Groq Whisper endpoint
      */
-    async sendToGroqWhisper(wavBlob, meta = {}) {
+    async sendToGroqWhisper(wavBlob, meta = {}, signal) {
         this.isTranscribing = true;
         const tStart = performance.now();
         try {
@@ -330,7 +330,8 @@ export class WhisperSTT {
             const res = await fetch('/api/transcribe', {
                 method: 'POST',
                 headers,
-                body: whisperForm
+                body: whisperForm,
+                signal
             });
 
             if (!res.ok) {
@@ -365,6 +366,10 @@ export class WhisperSTT {
 
         } catch (err) {
             this.isTranscribing = false;
+            if (err.name === 'AbortError') {
+                // Lost the hedge race -- this request was intentionally cancelled, not a failure.
+                return null;
+            }
             // Don't surface this to the user yet -- the caller (transcribe()) automatically
             // falls back to Sarvam on a null/empty result. Only a final, total failure
             // (both engines down) should show an error.
@@ -378,7 +383,7 @@ export class WhisperSTT {
      * Pure attempt -- no internal fallback. Callers that want a Groq fallback
      * should use transcribeRace(), which hedges both engines concurrently.
      */
-    async sendToSarvam(wavBlob, meta = {}) {
+    async sendToSarvam(wavBlob, meta = {}, signal) {
         this.isTranscribing = true;
         try {
             const formData = new FormData();
@@ -388,10 +393,17 @@ export class WhisperSTT {
             // auto-detects Hindi/English/Hinglish per utterance, and forcing hi-IN right after a
             // Hindi turn broke transcription when the user then switched to English.
 
+            // Combine the caller's abort signal (hedge-race loser cancellation) with the
+            // existing 3.5s timeout, if both are available.
+            const timeoutSignal = AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined;
+            const combinedSignal = (signal && timeoutSignal && AbortSignal.any)
+                ? AbortSignal.any([signal, timeoutSignal])
+                : (signal || timeoutSignal);
+
             const res = await fetch('/api/sarvam-stt', {
                 method: 'POST',
                 body: formData,
-                signal: AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined
+                signal: combinedSignal
             });
 
             if (!res.ok) {
@@ -413,6 +425,11 @@ export class WhisperSTT {
             return { text, noSpeechProb: 0, avgLogProb: 0 };
         } catch (err) {
             this.isTranscribing = false;
+            if (err.name === 'AbortError') {
+                // Either lost the hedge race (cancelled by settleWith) or hit the 3.5s
+                // timeout -- neither is a real failure worth logging as an error.
+                return null;
+            }
             console.error('[SarvamSTT] Transcription error:', err.message);
             return null;
         }
@@ -428,28 +445,39 @@ export class WhisperSTT {
      * first; resolves null only if both engines end up without usable text.
      */
     async transcribeRace(wavBlob, meta = {}) {
-        const HEDGE_DELAY_MS = 1200;
+        // Fires both Sarvam and Groq together after a short head start for Sarvam, instead of
+        // waiting a near-fixed 1.2s for Sarvam before even starting Groq. Sarvam still gets to
+        // win uncontested if it answers fast; Groq joins quickly as a hedge otherwise, and the
+        // loser's in-flight request is aborted via AbortController once a winner settles.
+        const HEDGE_DELAY_MS = 400;
         return new Promise((resolve) => {
             let settled = false;
             let sarvamDone = false;
             let groqStarted = false;
 
-            const settleWith = (result) => {
+            const sarvamController = new AbortController();
+            const groqController = new AbortController();
+
+            const settleWith = (result, winner) => {
                 if (settled) return;
                 settled = true;
                 clearTimeout(hedgeTimer);
+                // Abort whichever request didn't win -- stops wasting API quota and
+                // suppresses the loser's late/duplicate transcript log.
+                if (winner !== 'sarvam') sarvamController.abort();
+                if (winner !== 'groq') groqController.abort();
                 resolve(result);
             };
 
             const maybeSettleNull = () => {
-                if (sarvamDone && groqStarted) settleWith(null);
+                if (sarvamDone && groqStarted) settleWith(null, null);
             };
 
             const startGroq = () => {
                 if (groqStarted) return;
                 groqStarted = true;
-                this.sendToGroqWhisper(wavBlob, meta).then((r) => {
-                    if (r && r.text) settleWith(r);
+                this.sendToGroqWhisper(wavBlob, meta, groqController.signal).then((r) => {
+                    if (r && r.text) settleWith(r, 'groq');
                     else maybeSettleNull();
                 });
             };
@@ -461,10 +489,10 @@ export class WhisperSTT {
                 }
             }, HEDGE_DELAY_MS);
 
-            this.sendToSarvam(wavBlob, meta).then((r) => {
+            this.sendToSarvam(wavBlob, meta, sarvamController.signal).then((r) => {
                 sarvamDone = true;
                 if (r && r.text) {
-                    settleWith(r);
+                    settleWith(r, 'sarvam');
                     return;
                 }
                 console.warn('[STT] Sarvam returned nothing usable, falling back to Groq Whisper...');
