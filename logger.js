@@ -56,6 +56,10 @@ export class ConversationLogger {
         };
 
         this.inMemoryLogs.push(record);
+        const MAX_IN_MEMORY_LOGS = 200;
+        if (this.inMemoryLogs.length > MAX_IN_MEMORY_LOGS) {
+            this.inMemoryLogs.splice(0, this.inMemoryLogs.length - MAX_IN_MEMORY_LOGS);
+        }
         await this.saveToIndexedDB(record);
 
         // Remote PostgreSQL sync via backend API (uses server-side DATABASE_URL/POSTGRES_URL)
@@ -189,8 +193,18 @@ export class ConversationLogger {
                 const store = tx.objectStore(this.storeName);
                 const req = store.getAll();
                 req.onsuccess = () => {
-                    this.inMemoryLogs = req.result || [];
-                    this.turnIndex = this.inMemoryLogs.length;
+                    const allLogs = req.result || [];
+                    // Cap in-memory history — nothing needs the full cross-session log,
+                    // and this grows without bound over the lifetime of the IndexedDB store.
+                    const MAX_IN_MEMORY_LOGS = 200;
+                    this.inMemoryLogs = allLogs.length > MAX_IN_MEMORY_LOGS
+                        ? allLogs.slice(-MAX_IN_MEMORY_LOGS)
+                        : allLogs;
+                    // turn_index must count turns within THIS session only, not the total
+                    // across every past session ever stored — otherwise turn-indexed
+                    // latency analytics drift further off from "turn N of this call" with
+                    // every session loaded from a long-lived IndexedDB store.
+                    this.turnIndex = allLogs.filter(l => l.session_id === this.currentSessionId).length;
                     resolve(this.inMemoryLogs);
                 };
                 req.onerror = () => resolve([]);

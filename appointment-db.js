@@ -303,8 +303,15 @@ export class AppointmentDB {
             console.warn('[AppointmentDB] /api/db request error:', err.message);
         }
 
-        // Fire email + WhatsApp notifications (non-blocking)
-        this.notifyBooking(record).catch(() => {});
+        // Fire email + WhatsApp notifications (non-blocking) — only if the booking actually
+        // persisted server-side. /api/notify now requires the appointment to exist in the DB
+        // and will always 404 on a local-only booking, so skip the call entirely in that case
+        // rather than silently swallowing a guaranteed failure.
+        if (dbPersisted) {
+            this.notifyBooking(record).catch(() => {});
+        } else {
+            console.warn('[AppointmentDB] Skipping notifyBooking — appointment was not persisted to the central DB:', apptId);
+        }
 
         return {
             success: true,

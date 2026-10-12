@@ -1,12 +1,10 @@
 /**
  * SONARA VOICE AI - Main Application & Full Duplex Orchestrator
- * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, ElevenLabs Flash v2.5,
+ * Integrates Silero VAD, WebRTC/Web Audio DSP, Groq Whisper v3 Turbo, Groq Llama 3.3 70B, Sarvam AI TTS,
  * PostgreSQL + pgvector, Multi-Turn Memory, Customer DB, Appointment DB, Tool Calling & Human Handoff.
  */
 import { SileroVAD } from './vad-silero.js?v=3.5';
 import { WhisperSTT } from './whisper-stt.js?v=3.5';
-// import { ElevenLabsTTS } from './elevenlabs-tts.js'; // 🔇 Disabled — using Sarvam
-// import { FishAudioTTS } from './fish-speech-tts.js'; // 🔇 Disabled — insufficient credits
 import { SarvamTTS } from './sarvam-tts-client.js?v=3.5';    // 🗣️ Sarvam AI TTS — Ritu voice (active)
 
 import { RAGEngine } from './rag.js';
@@ -89,6 +87,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let speechRecognition = null;
 
     let conversationHistory = [];
+    // Only the last 8 entries are ever read (see historySlice below) — cap growth so a
+    // long-running voice session (extended browser tab, long phone call) doesn't leak memory.
+    const MAX_CONVERSATION_HISTORY = 50;
+    const pushHistory = (entry) => {
+        conversationHistory.push(entry);
+        if (conversationHistory.length > MAX_CONVERSATION_HISTORY) {
+            conversationHistory.splice(0, conversationHistory.length - MAX_CONVERSATION_HISTORY);
+        }
+    };
     let currentSpeechText = '';
     let isAiThinking = false;
     let isAiSpeaking = false;
@@ -1358,7 +1365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isCallActive) return;
         const welcomeText = "Namaste! Welcome to Converse AI. I'm Sonara, how can I help you today?";
         appendChatMessage('assistant', welcomeText);
-        conversationHistory.push({ role: 'assistant', content: welcomeText });
+        pushHistory({ role: 'assistant', content: welcomeText });
         if (ttsEngine && isCallActive) {
             isWelcomeGreetingPlaying = true;
             // Pre-cached static audio — plays instantly, skips Sarvam API round-trip
@@ -1515,6 +1522,37 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 3b. VOICE COMMAND: "Talk to bot" / "Resume AI" / "AI se baat karo" — lets the caller
+        // explicitly opt back into AI assistance after a human-handoff escalation.
+        if (humanHandoff.isEscalated && (cleanCmd === 'talk to bot' || cleanCmd === 'resume ai' || cleanCmd === 'ai se baat karo' || cleanCmd === 'continue with ai' || cleanCmd === 'bot se baat karo')) {
+            humanHandoff.reset();
+            const banner = document.getElementById('humanHandoffBanner');
+            if (banner) banner.style.display = 'none';
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            const backMsg = "Sure, I'm back! How can I help you?";
+            appendChatMessage('assistant', backMsg);
+            if (ttsEngine) ttsEngine.speak(backMsg);
+            setAgentState('listening', 'Resumed AI assistance • Listening...');
+            isAiThinking = false;
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
+        // Once escalated to a human agent, the AI must go quiet on substantive answers —
+        // otherwise the bot and the human agent can both respond to the same customer,
+        // producing duplicate or contradictory replies. Just acknowledge and stop here.
+        if (humanHandoff.isEscalated) {
+            turnStartTime = performance.now();
+            appendChatMessage('user', userPrompt);
+            const waitingMsg = "You're connected with our human support team — they'll respond here shortly. Say \"talk to bot\" if you'd like AI help again in the meantime.";
+            appendChatMessage('assistant', waitingMsg);
+            if (ttsEngine) ttsEngine.speak(waitingMsg);
+            isAiThinking = false;
+            setTimeout(() => { isProcessingUtterance = false; }, 300);
+            return;
+        }
+
         // If session is paused and user didn't say resume/continue, remind them
         if (isSessionPaused) {
             turnStartTime = performance.now();
@@ -1551,7 +1589,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         turnStartTime = performance.now();
         appendChatMessage('user', userPrompt);
-        conversationHistory.push({ role: 'user', content: effectivePrompt });
+        pushHistory({ role: 'user', content: effectivePrompt });
 
         // Sync TTS turn language context with user's language (ensures English responses speak numbers in English, and Hindi in Hindi)
         const isUserHindi = /[\u0900-\u097F]/.test(userPrompt) || /\b(hai|hain|hoon|kya|kyun|kaise|kaisi|kaisa|nahi|nahin|nhi|aur|mujhe|mera|meri|mere|hum|humara|aap|aapka|aapki|aapke|karo|karna|karta|karti|karte|krne|krdo|kardo|rahi|raha|rahe|mai|mein|batao|bataiye|bata|chahiye|madad|namaste|bilkul|theek|accha|acchi|haan|karein|hoga|hogi|honge|toh|bhi|liye|wala|wali|wale|sakta|sakti|sakte|boliye|kaam|baat|phir|sirf|zyada|thoda|abhi|baad|pehle|yahan|wahan|lekin|magar|kyunki|taaki|dijiye|lijiye|kijiye|pooch|pasand|kaunsa|zaroor|jaldi|samajh|kuch|sab|bahut|bohot|kabhi|kaafi|dono|poora|seedha|alag|naya|purana|mat|iska|uska|jo)\b/i.test(userPrompt);
@@ -1577,6 +1615,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (toolResult) {
             let toolDirective = '';
             if (toolResult.tool === 'book_appointment') {
+                // Booking consumes the pending proposal regardless of outcome — a stale
+                // proposal must never carry over to a later, unrelated confirmation.
+                memory.entities.pendingConfirmation = null;
                 if (toolResult.success) {
                     toolDirective = `CRITICAL: The appointment has been successfully booked with ID "${toolResult.appointmentId}". State this exact Appointment ID "${toolResult.appointmentId}" to the user.`;
                     memory.entities.appointmentId = toolResult.appointmentId;
@@ -1585,6 +1626,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     toolDirective = `CRITICAL TRUTHFULNESS: The booking FAILED because the slot was unavailable (${toolResult.message}). You MUST NOT say the booking succeeded! DO NOT invent or fabricate any fake appointment ID! Inform the user that this slot is already booked and offer the open slots: ${(toolResult.availableSlots || []).join(', ')}.`;
                 }
             } else if (toolResult.tool === 'cancel_appointment') {
+                memory.entities.pendingConfirmation = null;
                 if (toolResult.success) {
                     toolDirective = `CRITICAL: Appointment ${toolResult.appointmentId || ''} has been successfully cancelled. Confirm cancellation clearly to the user.`;
                     memory.entities.appointmentId = null;
@@ -1605,6 +1647,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     toolDirective = `CRITICAL TRUTHFULNESS: Slot ${toolResult.time} on ${toolResult.date} is NOT available. You MUST explicitly tell the user this exact slot is already booked, and then offer these open alternative slots so they can pick one: ${(toolResult.availableSlots || []).join(', ')}. Do not skip mentioning the alternatives.`;
                 }
+                // Only arm the pending-confirmation gate when we actually proposed a real,
+                // available slot — not on a "no exact match" or "slot taken" response.
+                // armedAtUserTurn lets tool-calling.js expire this after exactly one user
+                // turn, so a stale proposal can't be confirmed by an unrelated "yes" later.
+                memory.entities.pendingConfirmation = toolResult.isAvailable
+                    ? { date: toolResult.date, time: toolResult.time, armedAtUserTurn: memory.userTurnCount }
+                    : null;
             }
             toolContext += `\n[SYSTEM ACTION TAKEN / TOOL RESULT]:\n${JSON.stringify(toolResult)}\n${toolDirective}\n`;
         }
@@ -2016,7 +2065,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             console.log(`[App] 🧠 Groq LLM (${reportedModel}): "${fullResponse}"`);
             aiMessageBubble.textContent = fullResponse;
 
-            conversationHistory.push({ role: 'assistant', content: fullResponse });
+            pushHistory({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
             const totalDuration = Math.round(performance.now() - turnStartTime);
             logger.logTurn({
@@ -2055,7 +2104,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             aiMessageBubble.textContent = fullResponse;
             aiMessageBubble.classList.add('error-bubble');
 
-            conversationHistory.push({ role: 'assistant', content: fullResponse });
+            pushHistory({ role: 'assistant', content: fullResponse });
             memory.addTurn('assistant', fullResponse);
             const totalDuration = Math.round(performance.now() - turnStartTime);
             logger.logTurn({
@@ -2412,7 +2461,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
                         ? `Namaste ${name}! Welcome to Converse AI. I'm Sonara — how can I help you today?`
                         : "Namaste! Welcome to Converse AI. I'm Sonara — how can I help you today?";
                     appendChatMessage('assistant', greeting);
-                    conversationHistory.push({ role: 'assistant', content: greeting });
+                    pushHistory({ role: 'assistant', content: greeting });
                     if (ttsEngine) {
                         // Personalised greeting (has a name) must still be synthesized live;
                         // the generic one uses the pre-cached static file for instant playback.

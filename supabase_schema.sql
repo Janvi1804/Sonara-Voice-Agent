@@ -20,9 +20,17 @@ CREATE TABLE IF NOT EXISTS appointments (
     date_time TEXT NOT NULL,
     status TEXT DEFAULT 'CONFIRMED',
     notes TEXT,
+    -- Set the first (and only the first) time /api/notify successfully dispatches a
+    -- confirmation for this appointment. Prevents a verified caller from re-POSTing the
+    -- same request indefinitely to spam ADMIN_EMAIL/ADMIN_WHATSAPP at our expense.
+    notified_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Migration for existing deployments: run this if the appointments table was created
+-- before notified_at existed.
+-- ALTER TABLE appointments ADD COLUMN IF NOT EXISTS notified_at TIMESTAMP WITH TIME ZONE;
 
 -- Standard lookup indexes
 CREATE INDEX IF NOT EXISTS idx_appointments_phone ON appointments(phone);

@@ -210,6 +210,16 @@ export class ToolCallingEngine {
         if (!userText) return null;
         const lower = userText.toLowerCase().trim();
 
+        // Expire a stale pending slot proposal after exactly one user turn — otherwise an
+        // unrelated "yes"/"confirm" several turns later could still match the booking
+        // path below and silently book a slot the user never meant to confirm.
+        if (memory?.entities?.pendingConfirmation) {
+            const armedAt = memory.entities.pendingConfirmation.armedAtUserTurn;
+            if (typeof armedAt !== 'number' || memory.userTurnCount > armedAt + 1) {
+                memory.entities.pendingConfirmation = null;
+            }
+        }
+
         // 0. Explicit refusal / rejection / negative intent (NEVER trigger booking or checking on refusal)
         const hasNegation = /\b(nahi|nhi|naini|nahin|na|no|not|don't|dont|mat|rehne do|never)\b/i.test(lower);
         const isRefusal = /^(no|no thanks|nah|nahi|naini|nhi|nahi chahiye|shukriya|thanks|thank you|ok thanks|bye|alvida|rehne do)[.,!]?/i.test(lower) ||
@@ -264,22 +274,30 @@ export class ToolCallingEngine {
 
         // ONLY trigger booking if:
         // a) User provided their phone number in this turn (and we have targetTime from this or previous turn)
-        // b) User explicitly said a booking confirmation keyword (e.g. "booking confirm kardo")
+        // b) The system just proposed a specific slot THIS TURN-WINDOW (pendingConfirmation, set by
+        //    check_availability and expired after one turn above) AND the user said a bare confirmation
+        //    word ("yes"/"haan"/"confirm"/etc.) — the pending proposal itself is what makes a bare "yes"
+        //    safe to act on; without a pending proposal, "yes"/"confirm" alone must NOT book anything,
+        //    since those words also appear in unrelated sentences (e.g. "can you confirm my email?").
         // c) User selected a time while phone is already saved and intent was to book
+        const pending = memory?.entities?.pendingConfirmation || null;
         const shouldBook = !hasNegation && (
             (hasPhoneInCurrentText && (memory?.entities?.targetTime || isTimeSelection)) ||
-            (hasExplicitConfirm && hasBookingWord && memory?.entities?.phone) ||
+            (hasExplicitConfirm && !!pending) ||
             (isTimeSelection && memory?.entities?.phone && memory?.entities?.userIntent === 'Book Demo / Consultation')
         );
 
         if (shouldBook && memory?.entities?.phone) {
+            const date = pending?.date || memory.entities.targetDate || 'today';
+            const time = pending?.time || memory.entities.targetTime || '11:30 AM';
+            if (memory?.entities) memory.entities.pendingConfirmation = null;
             return await this.executeTool('book_appointment', {
                 customerName: memory.entities.customerName || 'Valued Client',
                 phone: memory.entities.phone,
                 email: memory.entities.email || '',
                 service: memory.entities.service || 'Free AI Opportunity & Readiness Audit',
-                date: memory.entities.targetDate || 'today',
-                time: memory.entities.targetTime || '11:30 AM'
+                date,
+                time
             });
         }
 

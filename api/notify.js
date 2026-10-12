@@ -2,10 +2,78 @@
  * Vercel Serverless Function: /api/notify
  * Secure notification dispatcher for Email (Resend) and WhatsApp (Twilio).
  */
+import pg from 'pg';
 import { setCorsHeaders, checkRateLimit, escapeHtml, validatePhone, validateEmail } from './_utils.js';
+
+const { Pool } = pg;
 
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP;
+
+let poolCache = null;
+function getPool() {
+    const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL;
+    if (!url) return null;
+    if (!poolCache) {
+        poolCache = new Pool({
+            connectionString: url,
+            ssl: { rejectUnauthorized: false },
+            max: 2,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 1200
+        });
+    }
+    return poolCache;
+}
+
+// Guard against arbitrary notification spam: the appointment must actually exist
+// in the DB and the phone being notified must match what was booked.
+// Without this check, any caller could invoke /api/notify with a made-up
+// appointmentId and have us email/WhatsApp anyone they chose, at our expense.
+//
+// SECURITY: customerPhone is REQUIRED here, not optional — appointmentId alone is not
+// a secret (it's a small 4-digit random suffix generated client-side, easily guessable/
+// brute-forceable within the rate limit over time), so omitting the phone must never be
+// treated as "trust the caller." The verified DB row (not the request body) is also the
+// only source of truth used to render notification content, so a caller cannot spoof the
+// customer's name/phone on a real appointment ID by supplying fabricated fields.
+async function verifyAppointment({ appointmentId, customerPhone }) {
+    const pool = getPool();
+    if (!pool) return { verified: false, reason: 'db_unavailable' };
+
+    if (!customerPhone || !validatePhone(customerPhone)) {
+        return { verified: false, reason: 'phone_required' };
+    }
+
+    const result = await pool.query(
+        'SELECT id, customer_name, phone, service, date_time FROM appointments WHERE id = $1 LIMIT 1;',
+        [String(appointmentId).slice(0, 50)]
+    );
+    if (result.rows.length === 0) return { verified: false, reason: 'not_found' };
+
+    const appt = result.rows[0];
+    const normalize = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+    if (normalize(customerPhone) !== normalize(appt.phone)) {
+        return { verified: false, reason: 'mismatch' };
+    }
+    return { verified: true, appointment: appt };
+}
+
+// Idempotency guard: atomically claim the "already notified" flag for this appointment.
+// Without this, a verified caller (or anyone replaying a captured request) could re-POST
+// the identical request indefinitely — up to the rate limit, forever, across windows —
+// spamming ADMIN_EMAIL/ADMIN_WHATSAPP and burning Resend/Twilio spend with no new info.
+// The UPDATE...WHERE notified_at IS NULL is the atomic claim: only the request that wins
+// the race gets rowCount===1 and actually dispatches notifications.
+async function claimNotificationSlot(appointmentId) {
+    const pool = getPool();
+    if (!pool) return false;
+    const result = await pool.query(
+        'UPDATE appointments SET notified_at = NOW() WHERE id = $1 AND notified_at IS NULL;',
+        [String(appointmentId).slice(0, 50)]
+    );
+    return result.rowCount === 1;
+}
 
 async function sendEmail({ to, subject, html }) {
     const apiKey = process.env.RESEND_API_KEY;
@@ -165,21 +233,55 @@ export default async function handler(req, res) {
     try {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const {
-            customerName = 'Valued Customer',
             customerPhone = '',
             customerEmail = '',
-            appointmentId = 'APPT-XXXX',
-            date = '',
-            time = '',
-            service = 'Free AI Opportunity Audit'
+            appointmentId = 'APPT-XXXX'
         } = body;
 
-        // Validation & length limits
-        const safeName = String(customerName).slice(0, 100);
         const safeAppt = String(appointmentId).slice(0, 50);
-        const safeDate = String(date).slice(0, 50);
-        const safeTime = String(time).slice(0, 50);
-        const safeService = String(service).slice(0, 100);
+
+        // Verify the appointment is real and belongs to the phone being notified
+        // before spending email/WhatsApp sends on it. If the DB is unavailable
+        // (local-storage-only deployments), fail closed rather than trusting the caller.
+        // customerPhone is REQUIRED — see verifyAppointment() for why appointmentId alone
+        // (a small, guessable 4-digit suffix) must never be sufficient on its own.
+        let verification;
+        try {
+            verification = await verifyAppointment({ appointmentId: safeAppt, customerPhone });
+        } catch (e) {
+            console.error('[Notify] Appointment verification error:', e.message);
+            return res.status(503).json({ error: 'Unable to verify appointment at this time. Please try again.' });
+        }
+        if (!verification.verified) {
+            console.warn('[Notify] Rejected unverified notification request:', verification.reason, safeAppt);
+            return res.status(404).json({ error: 'Appointment not found or details do not match.' });
+        }
+
+        // Idempotency: only the first successful notify request for this appointment
+        // actually dispatches anything. Repeats are a no-op 200 (not an error — the
+        // caller's booking really is confirmed, we just won't re-notify for it).
+        let claimed;
+        try {
+            claimed = await claimNotificationSlot(safeAppt);
+        } catch (e) {
+            console.error('[Notify] Notification claim error:', e.message);
+            return res.status(503).json({ error: 'Unable to process notification at this time. Please try again.' });
+        }
+        if (!claimed) {
+            return res.status(200).json({ success: true, alreadyNotified: true });
+        }
+
+        // All notification content is built from the VERIFIED DB row, not the request
+        // body — this prevents a caller who knows/guesses a real appointmentId+phone from
+        // injecting a fabricated name/service/date/time into the email the business owner
+        // receives (e.g. spoofing what the "customer" supposedly booked).
+        const appt = verification.appointment;
+        const safeName = String(appt.customer_name || 'Valued Customer').slice(0, 100);
+        const safeService = String(appt.service || 'Free AI Opportunity Audit').slice(0, 100);
+        const dateTimeParts = String(appt.date_time || '').split(' ');
+        const safeDate = dateTimeParts[0] || '';
+        const safeTime = dateTimeParts.slice(1).join(' ') || '';
+        const verifiedPhone = appt.phone;
 
         const results = {};
 
@@ -203,7 +305,7 @@ export default async function handler(req, res) {
                 results.adminEmail = await sendEmail({
                     to: ADMIN_EMAIL,
                     subject: `New Booking ${safeAppt} - ${safeName} | Sonara`,
-                    html: adminEmailHtml({ customerName: safeName, phone: customerPhone, email: customerEmail, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService })
+                    html: adminEmailHtml({ customerName: safeName, phone: verifiedPhone, email: customerEmail, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService })
                 });
             } catch(e) {
                 results.adminEmailError = e.message;
@@ -211,14 +313,14 @@ export default async function handler(req, res) {
             }
         }
 
-        // 3. Customer WhatsApp (only if valid phone provided)
-        if (customerPhone && validatePhone(customerPhone)) {
+        // 3. Customer WhatsApp — always the verified DB phone, never the raw request body
+        if (verifiedPhone && validatePhone(verifiedPhone)) {
             try {
                 results.customerWA = await sendWhatsApp({
-                    to: customerPhone,
+                    to: verifiedPhone,
                     body: customerWA({ customerName: safeName, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService }),
                     contentVariables: {
-                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${customerPhone})`,
+                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${verifiedPhone})`,
                         '2': `${safeService} [ID: ${safeAppt}] | Email: ${customerEmail || 'N/A'}`
                     }
                 });
@@ -233,9 +335,9 @@ export default async function handler(req, res) {
             try {
                 results.adminWA = await sendWhatsApp({
                     to: ADMIN_WHATSAPP,
-                    body: adminWA({ customerName: safeName, phone: customerPhone, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService }),
+                    body: adminWA({ customerName: safeName, phone: verifiedPhone, appointmentId: safeAppt, date: safeDate, time: safeTime, service: safeService }),
                     contentVariables: {
-                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${customerPhone || 'N/A'})`,
+                        '1': `${safeDate} @ ${safeTime} for ${safeName} (Phone: ${verifiedPhone || 'N/A'})`,
                         '2': `${safeService} [ID: ${safeAppt}] | Email: ${customerEmail || 'N/A'}`
                     }
                 });

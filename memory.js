@@ -16,9 +16,19 @@ export class ConversationMemory {
             targetTime: null,
             appointmentId: null,
             userIntent: null,
+            // Set only when the system has just proposed a specific slot to the user
+            // (e.g. via check_availability: "Shall I book you for 3:30 PM today?").
+            // A bare confirmation word ("yes"/"haan"/"confirm") only triggers book_appointment
+            // if this is set — prevents misreading an unrelated "yes" as a booking confirmation.
+            pendingConfirmation: null,
             notes: []
         };
         this.turnHistory = [];
+        // Dedicated user-turn counter (separate from turnHistory.length, which also
+        // counts assistant turns) — used to expire pendingConfirmation after exactly
+        // one user turn so a stale slot proposal can't be confirmed by an unrelated
+        // "yes" several turns later.
+        this.userTurnCount = 0;
     }
 
     /**
@@ -110,7 +120,14 @@ export class ConversationMemory {
             content: text,
             timestamp: new Date().toISOString()
         });
+        // Unbounded growth over a long voice session is a slow memory leak — nothing in
+        // this codebase reads more than a handful of recent turns.
+        const MAX_TURN_HISTORY = 50;
+        if (this.turnHistory.length > MAX_TURN_HISTORY) {
+            this.turnHistory.splice(0, this.turnHistory.length - MAX_TURN_HISTORY);
+        }
         if (role === 'user') {
+            this.userTurnCount++;
             this.extractEntities(text);
         }
     }
@@ -149,8 +166,10 @@ export class ConversationMemory {
             targetTime: null,
             appointmentId: null,
             userIntent: null,
+            pendingConfirmation: null,
             notes: []
         };
         this.turnHistory = [];
+        this.userTurnCount = 0;
     }
 }

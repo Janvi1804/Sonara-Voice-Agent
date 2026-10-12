@@ -434,7 +434,8 @@ ${ragContext}`;
                             temperature: 0.15,
                             max_tokens: maxTokensClamped,
                             stream: true
-                        })
+                        }),
+                        signal: AbortSignal.timeout(8000)
                     });
 
                     if (attemptRes.ok) {
@@ -530,7 +531,8 @@ ${ragContext}`;
                         messages: formattedMessages,
                         temperature: 0.15,
                         max_tokens: maxTokensClamped
-                    })
+                    }),
+                    signal: AbortSignal.timeout(8000)
                 });
 
                 if (groqRes.ok) {

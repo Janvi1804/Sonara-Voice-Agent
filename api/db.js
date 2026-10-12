@@ -52,16 +52,28 @@ export default async function handler(req, res) {
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const { action, data = {} } = body;
 
-        // ── Auth Guard for Administrative Reads ─────────────────────
-        const sensitiveReadActions = ['get_appointments', 'get_customers', 'get_logs'];
-        if (sensitiveReadActions.includes(action)) {
+        // ── Auth Guard for Administrative Reads (fail-closed) ────────
+        // If ADMIN_SECRET isn't configured on the server, these actions are rejected
+        // outright rather than left open — an unset secret must never mean "no auth".
+        // NOTE: upsert_embeddings is intentionally NOT in this list — it's the browser
+        // app's own internal RAG-sync write path (rag.js/reindexer.js -> pgvector-store.js),
+        // called with no admin header. Gating it here breaks knowledge-base indexing for
+        // every visitor. It's still bounded by the 200-record batch cap below.
+        const adminActions = ['get_appointments', 'get_customers', 'get_logs'];
+        if (adminActions.includes(action)) {
             const authHeader = req.headers.authorization || req.headers['x-admin-secret'] || body.adminSecret || '';
             const adminSecret = process.env.ADMIN_SECRET;
             const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-            if (adminSecret && token !== adminSecret) {
+            if (!adminSecret) {
+                console.error('[API /api/db] ADMIN_SECRET not configured — rejecting admin action:', action);
+                return res.status(503).json({
+                    error: 'Admin operations are not available: server is missing required configuration.'
+                });
+            }
+            if (token !== adminSecret) {
                 return res.status(401).json({
-                    error: 'Unauthorized. Admin credentials required to read database records.'
+                    error: 'Unauthorized. Admin credentials required for this operation.'
                 });
             }
         }
@@ -247,6 +259,9 @@ export default async function handler(req, res) {
                 const { records = [] } = data;
                 if (!Array.isArray(records) || records.length === 0) {
                     return res.status(400).json({ error: 'records array is required' });
+                }
+                if (records.length > 200) {
+                    return res.status(400).json({ error: 'records array exceeds maximum batch size of 200.' });
                 }
 
                 for (const r of records) {

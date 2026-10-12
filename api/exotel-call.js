@@ -4,6 +4,28 @@
  */
 import { setCorsHeaders, checkRateLimit, validateIndianPhone, normalizeIndianPhone } from './_utils.js';
 
+// Per-phone-number limiter: prevents repeated nuisance/harassment calls to the
+// same target number regardless of which IP (or spoofed header) the request came from.
+const phoneCallLog = new Map();
+function checkPhoneRateLimit(phone, { maxRequests = 2, windowMs = 3600000 } = {}) {
+    const now = Date.now();
+    const record = phoneCallLog.get(phone) || { count: 0, startTime: now };
+    if (now - record.startTime > windowMs) {
+        record.count = 1;
+        record.startTime = now;
+        phoneCallLog.set(phone, record);
+        return true;
+    }
+    record.count += 1;
+    phoneCallLog.set(phone, record);
+    if (phoneCallLog.size > 2000) {
+        for (const [key, val] of phoneCallLog.entries()) {
+            if (now - val.startTime > windowMs) phoneCallLog.delete(key);
+        }
+    }
+    return record.count <= maxRequests;
+}
+
 export default async function handler(req, res) {
     const corsAllowed = setCorsHeaders(req, res, 'POST, OPTIONS');
 
@@ -42,6 +64,13 @@ export default async function handler(req, res) {
         }
 
         const normalizedPhone = normalizeIndianPhone(phone);
+
+        if (!checkPhoneRateLimit(normalizedPhone)) {
+            return res.status(429).json({
+                error: 'This number has already requested the maximum number of calls this hour. Please try again later.'
+            });
+        }
+
         // Exotel expects Indian phone numbers with leading 0 (e.g. 09057201392)
         const exotelFormattedPhone = `0${normalizedPhone}`;
 

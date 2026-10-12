@@ -76,7 +76,11 @@ export function setCorsHeaders(req, res, methods = 'GET, POST, OPTIONS') {
  * @returns {boolean} - true if request is allowed, false if rate limited
  */
 export function checkRateLimit(req, { maxRequests = 30, windowMs = 60000 } = {}) {
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    // Only trust Vercel's own edge-set header (not client-controllable `x-forwarded-for`,
+    // which can be spoofed by the caller to get a fresh rate-limit bucket on every request).
+    const ip = req.headers['x-vercel-forwarded-for']?.split(',')[0]?.trim()
+        || req.socket?.remoteAddress
+        || 'unknown';
     const now = Date.now();
 
     const record = ipRateLimits.get(ip) || { count: 0, startTime: now };

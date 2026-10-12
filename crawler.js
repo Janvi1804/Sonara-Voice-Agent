@@ -180,17 +180,36 @@ export class WebsiteCrawler {
     }
 
     /**
-     * Split documents into overlapping semantic chunks
+     * Stable slug for use in a chunk ID — same URL always produces the same prefix,
+     * regardless of what position it happens to occupy in the `pages` array that run.
+     */
+    slugifyUrl(url) {
+        return String(url || 'page').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'page';
+    }
+
+    /**
+     * Split documents into overlapping semantic chunks.
+     *
+     * Chunk IDs are content-addressed: `chunk_<url-slug>_<index-within-page>`, not a
+     * global array position. Position-based IDs (the old `chunk_${n++}`) silently
+     * collide across runs whenever a `customUrl` crawl changes page order (crawl()
+     * unshifts the custom page) — a later reindex can overwrite one page's content
+     * under another page's chunk IDs, and leave true orphans in knowledge_embeddings
+     * when the chunk counts don't line up between runs (nothing ever deletes rows).
+     * A stable per-URL ID means the same page always maps to the same IDs, so re-crawls
+     * cleanly upsert in place instead of drifting.
      */
     chunkPages(pages) {
         const chunks = [];
-        let chunkId = 1;
 
         for (const page of pages) {
             const text = page.content.trim();
+            const urlSlug = this.slugifyUrl(page.url);
+            let localIndex = 0;
+
             if (text.length <= this.chunkSize) {
                 chunks.push({
-                    id: `chunk_${chunkId++}`,
+                    id: `chunk_${urlSlug}_${localIndex++}`,
                     url: page.url,
                     title: page.title,
                     category: page.category,
@@ -205,7 +224,7 @@ export class WebsiteCrawler {
                 const chunkText = text.slice(start, end).trim();
                 if (chunkText.length > 20) {
                     chunks.push({
-                        id: `chunk_${chunkId++}`,
+                        id: `chunk_${urlSlug}_${localIndex++}`,
                         url: page.url,
                         title: page.title,
                         category: page.category,
