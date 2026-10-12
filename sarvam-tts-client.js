@@ -85,10 +85,22 @@ export class SarvamTTS {
      * Split ONLY at paragraph/major breaks for large chunks.
      * Short text → single chunk. Long text → split by paragraph or ~400 char boundary.
      * Never split at sentence periods — that causes inter-sentence API gaps.
+     *
+     * LATENCY NOTE: the old MAX_CHUNK=700 comment's "9-12s from 3 chunks" warning was about
+     * chunks being fetched SERIALLY. That's no longer how this works — speak() (below) kicks
+     * off this._fetchAudio() for every chunk in the array IMMEDIATELY and in parallel (see the
+     * forEach prefetch at queue-push time), so splitting one long chunk in two means two
+     * smaller, parallel Sarvam calls instead of one large serial one. Since TTS synthesis time
+     * scales with text length, two ~175-char parallel calls finish well before one ~350-char
+     * call — this measurably cuts time-to-first-audio on longer answers (observed: a single
+     * ~350-char chunk took 4-6s; splitting it in two should roughly halve that for the first
+     * half the user actually hears). Keep this at a value that produces AT MOST 2 chunks for a
+     * typical single-paragraph voice response — 3+ parallel chunks starts trading network
+     * concurrency for diminishing returns and extra Sarvam API cost per turn.
      */
     splitIntoChunks(text) {
         if (!text) return [];
-        const MAX_CHUNK = 700; // Most LLM responses (~260 tokens = ~250-350 chars) fit in ONE chunk → 1 API call → ~2-3s TTS latency instead of 9-12s from 3 chunks
+        const MAX_CHUNK = 320; // ~2 Sarvam calls in parallel for a typical 250-350 char answer
 
         // Short enough → single chunk (zero pause, one API call)
         if (text.length <= MAX_CHUNK) return [text];
