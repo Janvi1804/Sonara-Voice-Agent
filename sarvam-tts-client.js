@@ -200,28 +200,20 @@ export class SarvamTTS {
      */
     async _fetchAudio(text, lang, retriesLeft = 2) {
         const tStart = performance.now();
-        const isStaticDev = typeof window !== 'undefined' && (
-            window.location.port === '5500' || 
-            window.location.port === '5501' || 
-            window.location.protocol === 'file:'
-        );
 
         try {
-            let res = null;
-            if (!isStaticDev) {
-                res = await fetch('/api/sarvam-tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text,
-                        speaker: this.speaker,
-                        language_code: lang,
-                        pace: this.pace
-                    })
-                }).catch(() => null);
-            }
+            const res = await fetch('/api/sarvam-tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text,
+                    speaker: this.speaker,
+                    language_code: lang,
+                    pace: this.pace
+                })
+            });
 
-            if (res && res.ok) {
+            if (res.ok) {
                 const buf = await res.arrayBuffer();
                 const latencyMs = Math.round(performance.now() - tStart);
                 console.log(`[SarvamTTS] ⚡ Chunk synthesized in ${latencyMs}ms (${text.slice(0, 35)}...)`);
@@ -229,42 +221,7 @@ export class SarvamTTS {
                 return new Blob([buf], { type: contentType });
             }
 
-            // Direct Sarvam AI call for local development (Live Server)
-            console.log(`[SarvamTTS] 🎙️ Calling Sarvam AI API directly (Speaker: ${this.speaker || 'ritu'})...`);
-            const directRes = await fetch('https://api.sarvam.ai/text-to-speech', {
-                method: 'POST',
-                headers: {
-                    'api-subscription-key': 'sk_6sqicebf_5Yf0ukSk0PFULy1peAEmqvvA',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    inputs: [text],
-                    target_language_code: lang || 'hi-IN',
-                    speaker: this.speaker || 'ritu',
-                    model: 'bulbul:v3',
-                    pace: this.pace || 1.05
-                })
-            });
-
-            if (!directRes.ok) {
-                const err = await directRes.text();
-                throw new Error(`Direct Sarvam TTS failed (${directRes.status}): ${err}`);
-            }
-
-            const data = await directRes.json();
-            if (data.audios && data.audios[0]) {
-                const byteChars = atob(data.audios[0]);
-                const byteNumbers = new Array(byteChars.length);
-                for (let i = 0; i < byteChars.length; i++) {
-                    byteNumbers[i] = byteChars.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'audio/wav' });
-                const latencyMs = Math.round(performance.now() - tStart);
-                console.log(`[SarvamTTS] ⚡ Chunk synthesized directly in ${latencyMs}ms (${this.speaker || 'ritu'}): ${text.slice(0, 35)}...`);
-                return blob;
-            }
-            throw new Error('No audio returned from Sarvam API');
+            throw new Error(`Sarvam TTS proxy failed (${res.status})`);
         } catch (err) {
             if (err.name === 'AbortError') return null;
 

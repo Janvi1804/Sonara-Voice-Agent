@@ -99,13 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeChatAbortController = null;
     let currentGenerationId = 0;
 
-    // ── End-to-end latency instrumentation ──
-    // turnStartTime (above) only measures from "LLM request sent" to first token, so STT time
-    // (including any STT hedge delay) was invisible. These capture the true VAD-speech-end ->
-    // STT-done -> LLM-first-token -> TTS-first-chunk pipeline so the full latency can be logged.
-    let vadSpeechEndTime = 0;   // set the instant VAD detects end of user speech
-    let lastSttDurationMs = 0;  // STT duration for the most recently completed transcription
-    let ttsFirstChunkTime = 0;  // set when TTS playback starts for the current turn
+    // turnStartTime only measures from "LLM request sent" to first token, so STT time was
+    // invisible in logged latency. This captures the STT duration for the most recently
+    // completed transcription so it can be added into logTurn()'s latency fields below.
+    let lastSttDurationMs = 0;
 
     // Enterprise Architecture Modules (PostgreSQL + pgvector, Memory, DBs, Tool Calling, Logger)
     const customerDB = new CustomerDB();
@@ -222,7 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleTtsStart = (engineName) => {
         clearTimeout(ttsEndGraceTimer);
-        if (!ttsFirstChunkTime) ttsFirstChunkTime = performance.now();
         isAiSpeaking = true;
         ttsCooldownUntil = Date.now() + 999999;
         if (vadEngine) vadEngine.setAiSpeakingState(true);
@@ -821,7 +817,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     // full end-to-end latency (VAD-end -> STT -> LLM TTFT -> TTS first chunk) can
                     // be reconstructed later, instead of only measuring from LLM-request-sent.
                     const speechEndTime = performance.now();
-                    vadSpeechEndTime = speechEndTime;
                     if (vadStatus) {
                         vadStatus.textContent = 'SILENCE';
                         vadStatus.style.color = 'var(--text-secondary)';
@@ -2026,6 +2021,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             logger.logTurn({
                 userInput: userPrompt,
                 aiResponse: fullResponse,
+                latencyVadMs: lastSttDurationMs,
                 latencyTtftMs: firstTokenTime ? Math.round(firstTokenTime - turnStartTime) : 0,
                 latencyTtsMs: totalDuration,
                 toolCalls: toolResult ? [toolResult] : []
@@ -2064,6 +2060,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
             logger.logTurn({
                 userInput: userPrompt,
                 aiResponse: fullResponse,
+                latencyVadMs: lastSttDurationMs,
                 latencyTtftMs: 0,
                 latencyTtsMs: totalDuration,
                 toolCalls: toolResult ? [toolResult] : []
