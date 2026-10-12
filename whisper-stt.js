@@ -10,7 +10,7 @@ export class WhisperSTT {
         // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
         // Set to 'hi' or 'en' only if you want to FORCE a specific language
         this.language = options.language || '';
-        this.model = options.model || 'whisper-large-v3-turbo';
+        this.model = options.model || 'whisper-large-v3';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
         this.sampleRate = 16000;
@@ -48,7 +48,7 @@ export class WhisperSTT {
     }
 
     setApiKey(key) { this.apiKey = key; }
-    setModel(m) { this.model = m || 'whisper-large-v3-turbo'; }
+    setModel(m) { this.model = m || 'whisper-large-v3'; }
     // Allow 'hi', 'en', or '' (auto-detect)
     setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.005, Math.min(0.05, Number(val) || 0.018)); }
@@ -411,7 +411,7 @@ export class WhisperSTT {
             const ext = audioBlob.type.includes('ogg') ? 'ogg' : audioBlob.type.includes('webm') ? 'webm' : 'wav';
             const whisperForm = new FormData();
             whisperForm.append('file', audioBlob, `user_speech.${ext}`);
-            whisperForm.append('model', 'whisper-large-v3-turbo');
+            whisperForm.append('model', 'whisper-large-v3');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
             whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken (Devanagari for Hindi, e.g. नमस्ते). Do not translate. Domain vocabulary: Converse AI, Sonara, WhatsApp automation, lead generation, automatic calling, AI voice agents, unified inbox, enterprise RAG, Groq, Sarvam.');

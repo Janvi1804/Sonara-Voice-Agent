@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '',
-        model: 'whisper-large-v3-turbo',
+        model: 'whisper-large-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -283,13 +283,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sttMigrated = localStorage.getItem('sonara_stt_migrated_v8');
         if (!sttMigrated) {
             // Groq Whisper Large V3 Turbo default for sub-150ms real-time latency
-            if (selSttModel) selSttModel.value = 'whisper-large-v3-turbo';
-            localStorage.setItem('sonara_stt_model', 'whisper-large-v3-turbo');
+            if (selSttModel) selSttModel.value = 'whisper-large-v3';
+            localStorage.setItem('sonara_stt_model', 'whisper-large-v3');
             localStorage.setItem('sonara_stt_migrated_v8', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'whisper-large-v3-turbo';
+            selSttModel.value = 'whisper-large-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3-turbo');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -836,7 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isCallActive) {
                         isTranscribingSpeech = true;
                         try {
-                            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
+                            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3';
                             const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
                             const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
                             setAgentState('thinking', `Transcribing (${sttLabel})...`);
@@ -1273,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Only accumulate text and commit from Web Speech API if user explicitly chose web-speech mode
-                const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3-turbo';
+                const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3';
                 if (sttChoice === 'web-speech') {
                     if (finalChunk.trim()) {
                         currentSpeechText = (currentSpeechText + ' ' + finalChunk.trim()).trim();
@@ -1921,7 +1921,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
         };
 
         try {
-            // Groq API (whisper-large-v3-turbo -> qwen/qwen3.8-27b -> sarvam ritu)
+            // Groq API (whisper-large-v3 -> qwen/qwen3.8-27b -> sarvam ritu)
             const historySlice = conversationHistory.slice(-8);
             const messages = [
                 { role: 'system', content: systemPrompt },

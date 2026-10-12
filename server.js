@@ -138,7 +138,7 @@ async function stt(wavBuf) {
     if (!groqKey) throw new Error('GROQ_API_KEY not configured');
     const form = new FormData();
     form.append('file', new Blob([wavBuf], { type: 'audio/wav' }), 'call.wav');
-    form.append('model', 'whisper-large-v3-turbo');
+    form.append('model', 'whisper-large-v3');
     form.append('response_format', 'verbose_json');
     form.append('temperature', '0');
     form.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, pricing, services, or booking.');
