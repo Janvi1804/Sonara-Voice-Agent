@@ -28,7 +28,12 @@ export class RAGEngine {
     }
 
     /**
-     * Retrieve relevant knowledge chunks for user query
+     * Retrieve relevant knowledge chunks for user query.
+     *
+     * NOT CURRENTLY CALLED — app.js hardcodes `ragContext = ''` and retrieves knowledge
+     * via its own separate server-side path (api/chat.js's pgvectorSearch()) instead.
+     * Kept for potential future client-side use; if you wire this back in, note the
+     * filter below is 0.40, not the 0.65 this comment used to (incorrectly) claim.
      */
     async retrieveContext(query, topK = 3) {
         await this.init();
@@ -37,7 +42,7 @@ export class RAGEngine {
         const results = await this.vectorStore.similaritySearch(query, topK);
         if (!results || results.length === 0) return '';
 
-        // Filter results with meaningful semantic similarity (0.65 = genuinely relevant)
+        // Filter results with meaningful semantic similarity — 0.40 threshold (not 0.65)
         const relevant = results.filter(r => r.similarity >= 0.40 || results.length <= 1);
         if (relevant.length === 0) return '';
 

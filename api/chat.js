@@ -37,7 +37,16 @@ async function pgvectorSearch(query, topK = 3, minSimilarity = 0.40) {
         const pool = getPgPool();
         if (!pool) return null; // No DB configured — caller falls back to keyword RAG
 
-        const queryVector = await _embeddingsEngine.embedText(query);
+        // On a cold serverless instance, embedText() lazy-imports @xenova/transformers and
+        // downloads/loads the ~23MB ONNX model with no timeout of its own — unlike the Groq
+        // LLM call later in this request (which has an 8s AbortSignal.timeout), this step ran
+        // completely unbounded and could stall the whole turn for many seconds, or hit
+        // vercel.json's 30s maxDuration, in a product sold on sub-second voice latency.
+        // Time-box it and fall back to keyword-only RAG on timeout, same as the DB-error path.
+        const queryVector = await Promise.race([
+            _embeddingsEngine.embedText(query),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('embedText timeout')), 1800))
+        ]);
         const vectorString = `[${queryVector.slice(0, 384).join(',')}]`;
 
         const result = await pool.query(`
