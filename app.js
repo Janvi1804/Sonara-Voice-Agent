@@ -178,13 +178,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Groq Whisper default — Sarvam was adding a 400ms+ hedge-wait
-    // on every turn with no benefit since it kept failing silently in production.
-    // Sarvam remains an automatic fallback on Groq error — see whisper-stt.js)
+    // Initialize STT Engine (Sarvam default for better Hindi/Hinglish accuracy — Groq
+    // Whisper hedges in as fallback if Sarvam is slow/fails — see transcribeRace() in
+    // whisper-stt.js. Note: Sarvam previously had reliability issues in production
+    // (silent failures), so monitor for regressions.)
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
         language: '',
-        model: 'whisper-large-v3',
+        model: 'sarvam-saaras-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -283,13 +284,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sttMigrated = localStorage.getItem('sonara_stt_migrated_v8');
         if (!sttMigrated) {
             // Groq Whisper Large V3 Turbo default for sub-150ms real-time latency
-            if (selSttModel) selSttModel.value = 'whisper-large-v3';
-            localStorage.setItem('sonara_stt_model', 'whisper-large-v3');
+            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
+            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
             localStorage.setItem('sonara_stt_migrated_v8', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'whisper-large-v3';
+            selSttModel.value = 'sarvam-saaras-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
@@ -297,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sync STT Engine settings
         whisperEngine.setApiKey('');
         whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'whisper-large-v3');
+        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -427,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         settingsModal.classList.remove('active');
-        const sttName = (selSttModel?.value === 'sarvam-saaras-v3') ? 'Sarvam AI (saaras:v3) 🗣️' : 'Groq Whisper Large-v3-Turbo 🎙️';
+        const sttName = (selSttModel?.value === 'sarvam-saaras-v3') ? 'Sarvam AI (saaras:v3) 🗣️' : 'Groq Whisper Large-v3 🎙️';
         const activeModelName = selLlmModel ? selLlmModel.options[selLlmModel.selectedIndex]?.text : 'Qwen 2.5 32B 🧠';
         const activeTtsName = 'Sarvam AI (Ritu) 🎵';
         appendSystemMessage(`✅ Configuration saved! STT: ${sttName} • LLM: ${activeModelName} • TTS: ${activeTtsName}`);
@@ -836,7 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isCallActive) {
                         isTranscribingSpeech = true;
                         try {
-                            const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3';
+                            const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
                             const isSarvam = sttChoice === 'sarvam-saaras-v3' || sttChoice.startsWith('sarvam');
                             const sttLabel = isSarvam ? 'Sarvam AI (saaras:v3)' : 'Whisper Large V3 Turbo';
                             setAgentState('thinking', `Transcribing (${sttLabel})...`);
@@ -1273,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Only accumulate text and commit from Web Speech API if user explicitly chose web-speech mode
-                const sttChoice = selSttModel ? selSttModel.value : 'whisper-large-v3';
+                const sttChoice = selSttModel ? selSttModel.value : 'sarvam-saaras-v3';
                 if (sttChoice === 'web-speech') {
                     if (finalChunk.trim()) {
                         currentSpeechText = (currentSpeechText + ' ' + finalChunk.trim()).trim();

@@ -10,7 +10,7 @@ export class WhisperSTT {
         // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
         // Set to 'hi' or 'en' only if you want to FORCE a specific language
         this.language = options.language || '';
-        this.model = options.model || 'whisper-large-v3';
+        this.model = options.model || 'sarvam-saaras-v3';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
         this.sampleRate = 16000;
@@ -48,7 +48,7 @@ export class WhisperSTT {
     }
 
     setApiKey(key) { this.apiKey = key; }
-    setModel(m) { this.model = m || 'whisper-large-v3'; }
+    setModel(m) { this.model = m || 'sarvam-saaras-v3'; }
     // Allow 'hi', 'en', or '' (auto-detect)
     setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.005, Math.min(0.05, Number(val) || 0.018)); }
@@ -414,7 +414,7 @@ export class WhisperSTT {
             whisperForm.append('model', 'whisper-large-v3');
             whisperForm.append('response_format', 'verbose_json');
             whisperForm.append('temperature', '0.0');
-            whisperForm.append('prompt', 'Transcribe exactly what is said, in the same language and script as spoken (Devanagari for Hindi, e.g. नमस्ते). Do not translate. Domain vocabulary: Converse AI, Sonara, WhatsApp automation, lead generation, automatic calling, AI voice agents, unified inbox, enterprise RAG, Groq, Sarvam.');
+            whisperForm.append('prompt', 'नमस्ते, Converse AI ke baare mein aapka sawaal kya hai? Transcribe exactly what is said, word for word, in the same language and script as spoken. Hindi speech MUST stay in Devanagari script and MUST NOT be translated into English — e.g. "Converse AI kya hai?" stays as "Converse AI kya hai?", not "What is Converse AI?". Domain vocabulary: Converse AI, Sonara, WhatsApp automation, lead generation, automatic calling, AI voice agents, unified inbox, enterprise RAG, Groq, Sarvam.');
             if (this.language) {
                 whisperForm.append('language', this.language);
             }

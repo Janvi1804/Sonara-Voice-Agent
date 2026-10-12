@@ -141,7 +141,7 @@ async function stt(wavBuf) {
     form.append('model', 'whisper-large-v3');
     form.append('response_format', 'verbose_json');
     form.append('temperature', '0');
-    form.append('prompt', 'Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, pricing, services, or booking.');
+    form.append('prompt', 'नमस्ते, Converse AI ke baare mein aapka sawaal kya hai? Caller speaking in Hindi, Hinglish, or English to Sonara at Converse AI about voice agents, pricing, services, or booking. Transcribe word for word in the script spoken — Hindi speech MUST stay in Devanagari and MUST NOT be translated into English.');
 
     const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
