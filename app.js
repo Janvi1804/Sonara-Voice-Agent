@@ -1869,7 +1869,7 @@ The conversation should feel like a natural conversation with a knowledgeable hu
 
         try {
             // Groq API (whisper-large-v3-turbo -> qwen/qwen3.8-27b -> sarvam ritu)
-            const historySlice = conversationHistory.slice(-12);
+            const historySlice = conversationHistory.slice(-8);
             const messages = [
                 { role: 'system', content: systemPrompt },
                 ...historySlice.map((m, idx) => {

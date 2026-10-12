@@ -377,8 +377,9 @@ ${ragContext}`;
             { role: 'system', content: SYSTEM_PROMPT }
         ];
 
-        // Filter and append conversation turns (keep last 12 turns)
-        const recentTurns = messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-12);
+        // Filter and append conversation turns (keep last 8 — trimmed from 12 to reduce
+        // per-request input tokens against Groq's shared ITPM rate limit)
+        const recentTurns = messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-8);
         for (const turn of recentTurns) {
             formattedMessages.push({
                 role: turn.role,
@@ -449,10 +450,8 @@ ${ragContext}`;
                             sendEvent({ error: `Groq API Key Invalid: ${errMsg}` });
                             return res.end();
                         }
-                        if (attemptRes.status === 429) {
-                            sendEvent({ error: `Groq Rate Limit / Quota Exceeded: ${errMsg}` });
-                            return res.end();
-                        }
+                        // Rate limit is per-model on Groq — fall through to the next candidate
+                        // model instead of failing the whole turn (continue, don't return).
                         continue;
                     }
                 } catch (err) {
@@ -555,10 +554,8 @@ ${ragContext}`;
                     if (groqRes.status === 401) {
                         return res.status(401).json({ error: `Groq API Key Invalid: ${errMsg}`, provider: 'groq' });
                     }
-                    // Quota or rate limit exceeded — inform user directly
-                    if (groqRes.status === 429) {
-                        return res.status(429).json({ error: `Groq Rate Limit / Quota Exceeded: ${errMsg}`, provider: 'groq' });
-                    }
+                    // Rate limit is per-model on Groq — fall through to the next candidate
+                    // model instead of failing the whole turn.
                     continue;
                 }
             } catch (err) {
