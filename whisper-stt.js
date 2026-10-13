@@ -7,9 +7,11 @@
 export class WhisperSTT {
     constructor(options = {}) {
         this.apiKey = options.apiKey || '';
-        // language = '' means auto-detect (Whisper detects Hindi/English/Hinglish automatically)
-        // Set to 'hi' or 'en' only if you want to FORCE a specific language
-        this.language = options.language || '';
+        // Default to 'hi': Whisper still transcribes code-switched Hindi/English/Hinglish
+        // fine with this hint, but without it full auto-detect sometimes misreads
+        // ambiguous audio as Urdu script, which this pipeline never wants.
+        // Set to 'en' to force English-only, or '' to restore full auto-detect.
+        this.language = options.language || 'hi';
         this.model = options.model || 'sarvam-saaras-v3';
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});

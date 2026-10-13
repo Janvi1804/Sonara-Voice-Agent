@@ -28,6 +28,16 @@ function getPgPool() {
 
 const _embeddingsEngine = new EmbeddingsEngine({ dimensions: 384 });
 
+// Groq's TPM/ITPM rate limit is shared org-wide across all models on this key, so once one
+// model 429s, the others are almost certainly exhausted too — trying them just burns extra
+// round-trips for no benefit. Cache the cooldown and skip Groq entirely until it expires.
+let _groqRateLimitedUntil = 0;
+
+function parseRetryAfterMs(errMsg) {
+    const m = /try again in ([\d.]+)\s*s/i.exec(errMsg || '');
+    return m ? Math.ceil(parseFloat(m[1]) * 1000) : 3000; // default 3s cooldown if unspecified
+}
+
 /**
  * Semantic pgvector search — server-side, direct DB call
  * Returns top-K chunks with similarity >= minSimilarity
@@ -268,6 +278,26 @@ export default async function handler(req, res) {
             }
         }
 
+        // If we already know Groq is rate-limited org-wide from a recent call, don't waste a
+        // round-trip finding that out again — serve the fallback immediately.
+        if (Date.now() < _groqRateLimitedUntil) {
+            const busyMsg = "I'm getting a lot of requests right now — could you please repeat that in a few seconds?";
+            if (stream) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache, no-transform');
+                res.setHeader('Connection', 'keep-alive');
+                if (typeof res.flushHeaders === 'function') res.flushHeaders();
+                res.write(`data: ${JSON.stringify({ delta: busyMsg })}\n\n`);
+                res.write(`data: ${JSON.stringify({ done: true, text: busyMsg, model: 'rate-limit-cache', provider: 'local' })}\n\n`);
+                return res.end();
+            }
+            return res.status(200).json({
+                choices: [{ message: { role: 'assistant', content: busyMsg } }],
+                model: 'rate-limit-cache',
+                provider: 'local'
+            });
+        }
+
         // Classify query type: definitional ("what is X", "explain X") vs. service/company inquiry
         const isDefinitionalQuery = DEFINITIONAL_PATTERNS.test(lastUserMsg.trim());
 
@@ -460,8 +490,13 @@ ${ragContext}`;
                             sendEvent({ error: `Groq API Key Invalid: ${errMsg}` });
                             return res.end();
                         }
-                        // Rate limit is per-model on Groq — fall through to the next candidate
-                        // model instead of failing the whole turn (continue, don't return).
+                        // 429 is an org-wide TPM/ITPM limit shared by every model on this key —
+                        // the other candidates will fail the same way, so stop here instead of
+                        // burning more round-trips, and cache the cooldown for future requests.
+                        if (attemptRes.status === 429) {
+                            _groqRateLimitedUntil = Date.now() + parseRetryAfterMs(errMsg);
+                            break;
+                        }
                         continue;
                     }
                 } catch (err) {
@@ -565,8 +600,13 @@ ${ragContext}`;
                     if (groqRes.status === 401) {
                         return res.status(401).json({ error: `Groq API Key Invalid: ${errMsg}`, provider: 'groq' });
                     }
-                    // Rate limit is per-model on Groq — fall through to the next candidate
-                    // model instead of failing the whole turn.
+                    // 429 is an org-wide TPM/ITPM limit shared by every model on this key — the
+                    // other candidates will fail the same way, so stop here instead of burning
+                    // more round-trips, and cache the cooldown for future requests.
+                    if (groqRes.status === 429) {
+                        _groqRateLimitedUntil = Date.now() + parseRetryAfterMs(errMsg);
+                        break;
+                    }
                     continue;
                 }
             } catch (err) {
