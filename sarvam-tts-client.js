@@ -139,6 +139,14 @@ export class SarvamTTS {
      */
     fixPronunciation(text) {
         return text
+            // Email addresses: speak "@" as "at" so e.g. "contact@theconverseai.com" reads as
+            // one continuous phrase instead of choking on a literal "@" character.
+            .replace(/\s*@\s*/g, ' at ')
+            // Indian phone numbers: space out the 10 digits so Sarvam reads them as a clear
+            // sequence of digits instead of one giant number (e.g. "+91-9982323333" or a bare
+            // "9982323333" -> "9 9 8 2 3 2 3 3 3 3").
+            .replace(/\+91[\s-]?(\d{10})\b/g, (_, d) => '+91 ' + d.split('').join(' '))
+            .replace(/\b([6-9]\d{9})\b/g, (_, d) => d.split('').join(' '))
             // Common enterprise acronyms
             .replace(/\bAPI\b/g, 'A.P.I.')
             .replace(/\bCRM\b/g, 'C.R.M.')

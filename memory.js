@@ -38,10 +38,17 @@ export class ConversationMemory {
         if (!text || typeof text !== 'string') return;
         const lower = text.toLowerCase();
 
-        // 1. Phone number extraction (Indian 10-digit & international patterns)
-        const phoneMatch = text.match(/(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b/);
-        if (phoneMatch) {
-            this.entities.phone = phoneMatch[0].replace(/[\s-]/g, '');
+        // 1. Phone number extraction (Indian 10-digit mobile). Tolerant of any spacing/dash
+        // grouping the user speaks it in (e.g. "9982-32-3333", "99823 23333"), but still only
+        // accepts a genuinely valid Indian mobile number (10 digits, starting 6-9) — a fake
+        // or malformed number (e.g. starting with 1) is correctly rejected, not partially matched.
+        const phoneCandidate = text.match(/(?:\+91[\s-]?)?[6-9][\d\s-]{8,13}\d/);
+        if (phoneCandidate) {
+            const digitsOnly = phoneCandidate[0].replace(/\D/g, '');
+            const last10 = digitsOnly.slice(-10);
+            if (/^[6-9]\d{9}$/.test(last10)) {
+                this.entities.phone = last10;
+            }
         }
 
         // 2. Email extraction

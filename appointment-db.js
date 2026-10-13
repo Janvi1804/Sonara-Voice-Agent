@@ -205,6 +205,7 @@ export class AppointmentDB {
             requestedTime: match.slot,
             requestedTimeRaw: time || '',
             exactMatch: match.exact,
+            hadInput: match.hadInput,
             availableSlots: available
         };
     }

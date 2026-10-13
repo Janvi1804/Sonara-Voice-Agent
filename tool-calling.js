@@ -126,6 +126,7 @@ export class ToolCallingEngine {
                     date: avail.requestedDate,
                     time: avail.requestedTime,
                     exactMatch: avail.exactMatch,
+                    hadInput: avail.hadInput,
                     availableSlots: avail.availableSlots,
                     message
                 };

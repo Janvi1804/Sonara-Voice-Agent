@@ -1603,11 +1603,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ttsEngine && typeof ttsEngine.setTurnLanguage === 'function') {
             ttsEngine.setTurnLanguage(isUserHindi ? 'hi-IN' : 'en-IN');
         }
-        // Pass language hint to Whisper STT for the NEXT turn.
-        // When user speaks Hindi/Hinglish, Whisper is told to expect Hindi → correct transcript.
-        // When user speaks English, use auto-detect '' so Hinglish mid-session isn't blocked.
+        // Pass language hint to Whisper STT for the NEXT turn. Only 'hi' or 'en' are ever
+        // used now — 'hi' still transcribes Hinglish/English fine, so never fall back to ''
+        // (full auto-detect), which is what let Whisper drift into Urdu script before.
         if (whisperEngine && typeof whisperEngine.setLanguage === 'function') {
-            whisperEngine.setLanguage(isUserHindi ? 'hi' : '');
+            whisperEngine.setLanguage(isUserHindi ? 'hi' : 'en');
         }
 
 
@@ -1619,6 +1619,12 @@ document.addEventListener('DOMContentLoaded', () => {
         let toolContext = isUserHindi
             ? 'CRITICAL LANGUAGE RULE: The user just asked this question in Hindi/Hinglish. You MUST respond in warm, natural Hindi/Hinglish — even if the user\'s sentence contains English product/brand names like "Converse AI" or "Solutions". Do NOT switch the rest of your answer to English.\n'
             : '';
+        // CRITICAL ANTI-HALLUCINATION RULE: never let the LLM claim a booking/cancellation/
+        // reschedule succeeded, or state/confirm an Appointment ID, unless a tool result for
+        // THIS EXACT TURN (below) explicitly confirms it. If the user is trying to book/cancel
+        // but no tool result appears this turn (e.g. missing or invalid phone/name/time), ask
+        // for the missing/corrected info instead of inventing a success message or fake ID.
+        toolContext += 'CRITICAL ANTI-HALLUCINATION RULE: Only state that an appointment has been booked, cancelled, or rescheduled, or give/confirm an Appointment ID, if a [SYSTEM ACTION TAKEN / TOOL RESULT] block for THIS turn below explicitly confirms that outcome. If no such tool result appears below, you MUST NOT claim any booking/cancellation/reschedule succeeded or invent an Appointment ID — ask the user for the missing or corrected detail (name, valid 10-digit phone, date, or time) instead.\n';
         if (toolResult) {
             let toolDirective = '';
             if (toolResult.tool === 'book_appointment') {
@@ -1643,7 +1649,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     toolDirective = `CRITICAL: Cancellation could not be completed: ${toolResult.message}. Inform user truthfully.`;
                 }
             } else if (toolResult.tool === 'check_availability') {
-                if (!toolResult.exactMatch) {
+                if (toolResult.hadInput === false) {
+                    // User never mentioned any time at all — do NOT invent/suggest a specific
+                    // slot (e.g. a silent 11:30 AM default) as if they asked for it. List every
+                    // open slot and let them pick.
+                    toolDirective = `CRITICAL: The user has NOT mentioned any specific time. Do NOT say or imply they asked for ${toolResult.time} or any other specific slot. Instead, list ALL open slots for ${toolResult.date}: ${(toolResult.availableSlots || []).join(', ')}, and ask which one they'd like.`;
+                } else if (!toolResult.exactMatch) {
                     // The user's requested time doesn't correspond exactly to a real slot — tell the LLM the
                     // real slot time explicitly so it doesn't claim the user's exact requested time is free.
                     toolDirective = toolResult.isAvailable
@@ -1655,10 +1666,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     toolDirective = `CRITICAL TRUTHFULNESS: Slot ${toolResult.time} on ${toolResult.date} is NOT available. You MUST explicitly tell the user this exact slot is already booked, and then offer these open alternative slots so they can pick one: ${(toolResult.availableSlots || []).join(', ')}. Do not skip mentioning the alternatives.`;
                 }
                 // Only arm the pending-confirmation gate when we actually proposed a real,
-                // available slot — not on a "no exact match" or "slot taken" response.
-                // armedAtUserTurn lets tool-calling.js expire this after exactly one user
-                // turn, so a stale proposal can't be confirmed by an unrelated "yes" later.
-                memory.entities.pendingConfirmation = toolResult.isAvailable
+                // available slot the user asked about — not on a "no time given", "no exact
+                // match", or "slot taken" response. armedAtUserTurn lets tool-calling.js expire
+                // this after exactly one user turn, so a stale proposal can't be confirmed by
+                // an unrelated "yes" later.
+                memory.entities.pendingConfirmation = (toolResult.hadInput !== false && toolResult.isAvailable)
                     ? { date: toolResult.date, time: toolResult.time, armedAtUserTurn: memory.userTurnCount }
                     : null;
             }
