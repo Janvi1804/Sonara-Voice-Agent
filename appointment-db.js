@@ -356,15 +356,27 @@ export class AppointmentDB {
         await this.init();
         let target = this.inMemoryAppointments.get(appointmentId);
 
-        // If not found by ID, look up latest active appointment by phone
+        // If not found by ID, look up the MOST RECENTLY created active appointment by
+        // phone — iteration order over the map is insertion order, which can put an
+        // older stale appointment (e.g. loaded from a previous session via Supabase
+        // sync) ahead of the one the customer actually just booked. Picking "first
+        // match" instead of "latest match" was cancelling the wrong appointment.
         if (!target && phone) {
-            const cleanPhone = String(phone).replace(/[\s-]/g, '');
+            // Normalize the same way bookAppointment() does — stored phones are always
+            // bare 10-digit numbers, so a raw "+91..." input here previously never matched.
+            let cleanPhone = String(phone).trim().replace(/[\s\-()]/g, '');
+            if (cleanPhone.startsWith('+91')) cleanPhone = cleanPhone.slice(3);
+            else if (cleanPhone.startsWith('91') && cleanPhone.length === 12) cleanPhone = cleanPhone.slice(2);
+            else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = cleanPhone.slice(1);
+            let latest = null;
             for (const appt of this.inMemoryAppointments.values()) {
                 if (appt.phone === cleanPhone && appt.status === 'confirmed') {
-                    target = appt;
-                    break;
+                    if (!latest || new Date(appt.created_at) > new Date(latest.created_at)) {
+                        latest = appt;
+                    }
                 }
             }
+            target = latest;
         }
 
         if (!target) {

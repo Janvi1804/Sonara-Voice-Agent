@@ -1539,7 +1539,10 @@ document.addEventListener('DOMContentLoaded', () => {
             appendChatMessage('user', userPrompt);
             const backMsg = "Sure, I'm back! How can I help you?";
             appendChatMessage('assistant', backMsg);
-            if (ttsEngine) ttsEngine.speak(backMsg);
+            if (ttsEngine) {
+                ttsEngine.interrupt();
+                ttsEngine.speak(backMsg);
+            }
             setAgentState('listening', 'Resumed AI assistance • Listening...');
             isAiThinking = false;
             setTimeout(() => { isProcessingUtterance = false; }, 300);
@@ -1554,7 +1557,13 @@ document.addEventListener('DOMContentLoaded', () => {
             appendChatMessage('user', userPrompt);
             const waitingMsg = "You're connected with our human support team — they'll respond here shortly. Say \"talk to bot\" if you'd like AI help again in the meantime.";
             appendChatMessage('assistant', waitingMsg);
-            if (ttsEngine) ttsEngine.speak(waitingMsg);
+            if (ttsEngine) {
+                // Clear any already-queued/playing chunk first — otherwise repeated
+                // utterances while escalated stack up duplicate "waiting" audio instead
+                // of replacing it (observed as overlapping/garbled playback).
+                ttsEngine.interrupt();
+                ttsEngine.speak(waitingMsg);
+            }
             isAiThinking = false;
             setTimeout(() => { isProcessingUtterance = false; }, 300);
             return;

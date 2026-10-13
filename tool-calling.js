@@ -260,8 +260,20 @@ export class ToolCallingEngine {
 
         // 3. Reschedule intent
         if (lower.includes('reschedule') || lower.includes('time change') || lower.includes('date change')) {
+            // Never fall back to a hardcoded placeholder ID — that could reschedule a
+            // real, unrelated customer's appointment. If we don't know this caller's
+            // appointment, surface that explicitly instead of guessing one.
+            if (!memory?.entities?.appointmentId) {
+                const noApptResult = {
+                    tool: 'reschedule_appointment',
+                    success: false,
+                    message: 'No active appointment found for this caller to reschedule.'
+                };
+                this.onToolExecuted(noApptResult);
+                return noApptResult;
+            }
             return await this.executeTool('reschedule_appointment', {
-                appointmentId: memory?.entities?.appointmentId || 'APPT-1001',
+                appointmentId: memory.entities.appointmentId,
                 newDate: memory?.entities?.targetDate || 'tomorrow',
                 newTime: memory?.entities?.targetTime || '03:30 PM'
             });
