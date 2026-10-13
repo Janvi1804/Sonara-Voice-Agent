@@ -52,7 +52,9 @@ export class WhisperSTT {
     setApiKey(key) { this.apiKey = key; }
     setModel(m) { this.model = m || 'sarvam-saaras-v3'; }
     // Allow 'hi', 'en', or '' (auto-detect)
-    setLanguage(lang) { this.language = (lang === 'hi' || lang === 'en') ? lang : ''; }
+    // Only 'hi' or 'en' are valid hints now; anything else (including legacy '' auto-detect)
+    // falls back to 'hi' so Whisper never drifts into Urdu or other unwanted scripts.
+    setLanguage(lang) { this.language = (lang === 'en') ? 'en' : 'hi'; }
     setRmsFloor(val) { this.rmsFloor = Math.max(0.005, Math.min(0.05, Number(val) || 0.018)); }
 
 

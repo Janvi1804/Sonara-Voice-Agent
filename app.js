@@ -178,14 +178,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Users can optionally enter their own key in Settings → it is stored ONLY in localStorage, not bundled here.
     const DEFAULT_GROQ_KEY = '';
 
-    // Initialize STT Engine (Sarvam default for better Hindi/Hinglish accuracy — Groq
-    // Whisper hedges in as fallback if Sarvam is slow/fails — see transcribeRace() in
-    // whisper-stt.js. Note: Sarvam previously had reliability issues in production
-    // (silent failures), so monitor for regressions.)
+    // Groq Whisper is primary STT (Sarvam only as fallback if Groq errors/rate-limits
+    // — see stopAndTranscribe() in whisper-stt.js). language: 'hi' restricts Whisper
+    // to Hindi/Hinglish/English only — without this hint it sometimes misreads
+    // ambiguous audio as Urdu script, which this pipeline never wants.
     const whisperEngine = new WhisperSTT({
         apiKey: DEFAULT_GROQ_KEY,
-        language: '',
-        model: 'sarvam-saaras-v3',
+        language: 'hi',
+        model: 'whisper-large-v3',
         onTranscript: (text) => {
             if (text && text.trim().length > 1) {
                 console.log('🎙️ STT Transcribed:', text);
@@ -281,24 +281,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v8');
+        const sttMigrated = localStorage.getItem('sonara_stt_migrated_v9');
         if (!sttMigrated) {
-            // Groq Whisper Large V3 Turbo default for sub-150ms real-time latency
-            if (selSttModel) selSttModel.value = 'sarvam-saaras-v3';
-            localStorage.setItem('sonara_stt_model', 'sarvam-saaras-v3');
-            localStorage.setItem('sonara_stt_migrated_v8', 'true');
+            // Groq Whisper primary (Sarvam only as fallback) for accuracy + no Urdu drift
+            if (selSttModel) selSttModel.value = 'whisper-large-v3';
+            localStorage.setItem('sonara_stt_model', 'whisper-large-v3');
+            localStorage.setItem('sonara_language', 'hi');
+            localStorage.setItem('sonara_stt_migrated_v9', 'true');
         } else if (localStorage.getItem('sonara_stt_model') && selSttModel) {
             selSttModel.value = localStorage.getItem('sonara_stt_model');
         } else if (selSttModel) {
-            selSttModel.value = 'sarvam-saaras-v3';
+            selSttModel.value = 'whisper-large-v3';
         }
         if (localStorage.getItem('sonara_language') && selLanguage) {
             selLanguage.value = localStorage.getItem('sonara_language');
         }
-        // Sync STT Engine settings
+        // Sync STT Engine settings. '' (legacy auto-detect, no longer offered in the UI)
+        // falls back to 'hi', which still transcribes English/Hinglish fine but never
+        // drifts into Urdu script the way full auto-detect did.
         whisperEngine.setApiKey('');
-        whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
-        whisperEngine.setModel(selSttModel ? selSttModel.value : 'sarvam-saaras-v3');
+        whisperEngine.setLanguage((selLanguage && selLanguage.value) || 'hi');
+        whisperEngine.setModel((selSttModel && selSttModel.value) || 'whisper-large-v3');
         const savedProvider = localStorage.getItem('sonara_llm_provider');
         if (savedProvider && savedProvider !== 'huggingface') {
             selLlmProvider.value = savedProvider;
@@ -414,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (whisperEngine) {
             whisperEngine.setApiKey(txtLlmApiKey ? txtLlmApiKey.value.trim() : '');
-            whisperEngine.setLanguage(selLanguage ? selLanguage.value : 'hi');
+            whisperEngine.setLanguage((selLanguage && selLanguage.value) || 'hi');
             if (selSttModel) whisperEngine.setModel(selSttModel.value);
         }
 
